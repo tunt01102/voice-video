@@ -107,12 +107,16 @@ def clarity(text: str, heard: str) -> dict[str, Any]:
             "score": round((base + full) / (2 * n), 3)}
 
 
+# Share of the spoken tone's own micro-contour kept on top of each note (A/B on the owner's voice, 6 takes per line:
+# line-2 clarity 0.56 → 0.63–0.66 chanted, 0.42 → 0.50–0.52 sung at 0.5–0.8).
+PROSODY = 0.7
 # Speech candidates per line (engine, seed offset): the sung result of each is heard back and the clearest kept.
 CANDIDATES = [(None, 0), ("vieneu", 101), ("voxcpm", 202), (None, 303), ("vieneu", 404), ("voxcpm", 505)]
 
 
 def sing_vocal(lines: list[list[tones.Syllable]], mel: melody.Melody, *, voice: str | None, engine: str | None,
-               seed: int, out: Path, progress: Progress, key_shift: float = 0.0, tries: int = 4) -> dict[str, Any]:
+               seed: int, out: Path, progress: Progress, key_shift: float = 0.0, tries: int = 6,
+               prosody: float = PROSODY) -> dict[str, Any]:
     """Speak each line in the owner's voice, re-sing it on the melody, and listen back.
 
     Self-repair: when Whisper does not catch every syllable of the sung line, the line is spoken again
@@ -136,7 +140,7 @@ def sing_vocal(lines: list[list[tones.Syllable]], mel: melody.Melody, *, voice: 
                 home = melody.ladder_to_semitones(melody.MOODS[mel.mood]["home"], mel.scale)
                 tonic = snap_hz(resynth.median_f0(an) * 2 ** ((2 + key_shift - home) / 12))
             bounds = resynth.refine_bounds(an, [(w.start, w.end) for w in words], [w.text for w in words])
-            y = resynth.sing_line(an, bounds, notes, tonic, seed=seed + li)
+            y = resynth.sing_line(an, bounds, notes, tonic, seed=seed + li, prosody=prosody)
             cl = clarity(text, asr.transcribe(y, lang="vi")["text"])
             take = {"y": y, "audio": audio, "clarity": cl, "engine": rep.get("engine"), "tts_score": rep.get("score"),
                     "take": k + 1}
@@ -307,7 +311,8 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None, *, kin
     (out / "melody.json").write_text(json.dumps(mel.as_dict(), ensure_ascii=False, indent=1))
 
     vo = sing_vocal(lines, mel, voice=voice, engine=p.get("engine"), seed=seed, out=out,
-                    progress=_sub(progress, 0.05, 0.55), key_shift=float(p.get("key_shift", fxp.pitch)))
+                    progress=_sub(progress, 0.05, 0.55), key_shift=float(p.get("key_shift", fxp.pitch)),
+                    prosody=float(p.get("prosody", PROSODY)))
     progress(0.57, "accompaniment")
     acc = p.get("accompaniment", "auto")
     backing = None

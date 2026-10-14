@@ -85,8 +85,13 @@ the voice's `pitch` FX. It is snapped to equal temperament so the backing shares
 4. **Pitch.** f0 is set to the melody contour, with ~45 ms legato smoothing, vibrato (5.3 Hz, ramping in after
    30 % of the note) and a tiny random drift. Notes longer than 1 s swell and ease (messa di voce).
    Aperiodicity on sung vowels is reduced by 25 %.
+   **Speech micro-prosody** (`PROSODY = 0.7`): each syllable's own spoken pitch movement, as a deviation from its
+   median and clipped to ±4 st, is added on top of the note. This keeps the cues Vietnamese ears use to tell the
+   tones apart: nặng's drop, ngã's break, sắc's rise.
+   **Consonant passthrough**: natural-speed unvoiced runs (s, x, ch, h, stop bursts) are copied from the spoken
+   waveform with 4 ms crossfades, because they carry no pitch and WORLD renders them as plain hiss.
 5. **Self-repair.** Each sung line is transcribed back. Clarity = mean(syllables right ignoring tones,
-   syllables right with tones). Up to 4 takes are tried, alternating seed and engine (VieNeu/VoxCPM), and the
+   syllables right with tones). Up to 6 takes are tried, alternating seed and engine (VieNeu/VoxCPM), and the
    clearest is kept. Each take is still the owner's cloned speech. Scores are **advisory**: Whisper is trained
    on speech and under-hears held vowels.
 
@@ -97,8 +102,25 @@ Measured on "Mình ta với cả trời sao sáng / Nâng chén sương đêm c�
 | WORLD identity resynthesis of the spoken line | 7/7 and 4/7 syllables (line 2's speech was already marginal: "xương") |
 | Line 1 sung (ngâm and hát) | 6–7/7 syllables, 6–7/7 with tones |
 | Line 2 sung, best take | 5/7 syllables |
-| Audio only, both lines | ~35 s |
+| Audio only, both lines | ~35 s (cached speech) |
 | With LLM + 4 images + video | ~3 min |
+
+### 5.1 Tone-aware vs tone-agnostic melody (the design's core claim)
+
+The measurement uses the owner's voice, the same 6 speech takes per line and the same resynthesis.
+"Agnostic" means every syllable is treated as a level tone with no speech prosody, which is how a generic
+melody ignores Vietnamese tones. Clarity is the mean of syllables-right and syllables-right-with-tones (Whisper,
+6 takes); "tones right" is out of 7.
+
+| Line | Agnostic clarity | Tone-aware clarity | Tones right (agnostic → aware) |
+|---|---|---|---|
+| Ngâm, line 1 | 0.60 | **0.81** | 3.8 → **5.7** |
+| Ngâm, line 2 | 0.49 | **0.66** | 2.2 → **4.3** |
+| Hát, line 1 | 0.61 | **0.86** | 4.0 → **5.8** |
+| Hát, line 2 | 0.45 | **0.51** | 2.2 → **3.2** |
+
+Line 2's speech is the weak point before any singing: both engines tend to read "sương" as "xương". Takes per
+line went from 4 to 6 so the selector can pick past it.
 
 ## 6. Accompaniment (`sing/accompany.py`)
 

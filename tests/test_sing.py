@@ -134,3 +134,22 @@ def test_every_catalogue_poem_and_version_can_be_chanted():
             mel = melody.plan(lines, style="ngam", mood=p["mood"])
             assert len(mel.notes) == sum(len(l) for l in lines)
     assert poems.text_for(poems.get("hoang-hac-lau")).startswith("Hạc vàng ai cưỡi đi đâu?")
+
+
+def test_speech_prosody_follows_the_spoken_contour():
+    import pyworld as pw
+
+    # A spoken syllable whose pitch falls 120 → 90 Hz: with prosody the sung note falls too, around the note.
+    sr, t = A.SR, np.arange(int(0.8 * A.SR)) / A.SR
+    f = np.linspace(120, 90, t.size)
+    ph = 2 * np.pi * np.cumsum(f) / sr
+    x = (sum(np.sin(k * ph) / k for k in range(1, 25)) * 0.2).astype(np.float32)
+    an = resynth.analyse(np.concatenate([np.zeros(4800, np.float32), x, np.zeros(4800, np.float32)]))
+    note = melody.Note("a", "ngang", 0, 0, 0.0, 0.8, [(0.0, 12.0), (1.0, 12.0)])
+    flat = resynth.sing_line(an, [(0, an.frames)], [note], 100.0)
+    shaped = resynth.sing_line(an, [(0, an.frames)], [note], 100.0, prosody=1.0)
+    def slope(y):
+        f0, _ = pw.harvest(y.astype(np.float64), sr, frame_period=5.0)
+        v = f0[f0 > 0]
+        return np.median(v[: v.size // 3]) - np.median(v[-v.size // 3:])
+    assert slope(shaped) > slope(flat) + 15
