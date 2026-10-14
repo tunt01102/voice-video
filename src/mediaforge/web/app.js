@@ -361,7 +361,8 @@ const selections = new Map();
 function defaultSelection(job) {
   const sel = {};
   (job.result?.sentences || []).forEach((s, i) => {
-    const ok = (s.takes || []).filter((t) => t.passed);
+    // A take made for a reading the owner typed (🗣 Sửa phát âm) is kept even if QA was unsure about it.
+    const ok = (s.takes || []).filter((t) => t.passed || t.source === "repronounce");
     if (ok.length) sel[i] = ok[ok.length - 1].id;
   });
   return sel;

@@ -104,6 +104,14 @@ readings ──► 1 clean + match ──► 2 save to lexicon ──► 3 takes
   reference has changed since the render.
 - **LLM respelling.** In the repair loop, the LLM respelling step could in theory propose its own respelling for
   a term the owner set. Lexicon terms are excluded from QA misses, so in practice the owner's reading stands.
+- **Short slots force a recompose.** A reading that lengthens a short sentence can exceed its slot beyond ×1.15.
+  The whole job then takes the recompose path:
+  - the video is re-encoded, not stream-copied, which adds about 1–2 min;
+  - images still come from the cache;
+  - subtitles are re-timed to the new audio;
+  - the duration can shift by a few hundred ms.
+- **QA cannot prove the reading.** Whisper spells an acronym back as letters ("PNJ") and lexicon terms are
+  lenient. A pass means the rest of the sentence is intact; only listening confirms "Pi En Di".
 
 ## 4. Dashboard
 
@@ -149,11 +157,14 @@ No recording is involved, so the voice's samples and corrections are untouched.
   - lexicon save overrides an older `manual` reading and a shadowing voice entry;
   - `run` re-reads only the affected sentences, selects the new takes and keeps earlier passed takes, reports
     `not_found`, has monotonic progress, and rejects a request where no term occurs.
-- **Live** on job `8fbbb5893211` with `PNJ → Pi En Di`, `GRI → Gi A AI`, `CSR → Ci Ét A`, `pháp lý → pháp lí`:
-  - one take per affected sentence;
-  - the export's `path == remux`;
-  - `ffprobe` checks: video codec copied, duration within 0.1 s of `final.mp4`;
-  - Whisper on the re-read sentences hears the new readings.
+- **Live, 2026-10-14**, on job `8fbbb5893211` (repronounce job `812a36dd7c44`), with `PNJ → Pi En Di`,
+  `GRI → Gi A AI`, `CSR → Ci Ét A` and `pháp lý → pháp lí`:
+  - **Coverage.** 10 sentences were matched (0, 3, 4, 6, 11, 13, 20, 27, 31, 45), and one take was made for each.
+    9 passed QA. Sentence 13 was unsure: score 0.09, heard "SAR I-417".
+  - **Recompose.** Sentence 27's take (4.00 s) did not fit its 3.55 s slot, so the export took `path = recompose`.
+  - **Images.** All 14 scene images are byte-identical to the original render.
+  - **Output.** H.264 1920×1080 + AAC; 277.2 s against 277.5 s for the original. The job took about 2.5 min in
+    total.
 
 ## 8. Later
 

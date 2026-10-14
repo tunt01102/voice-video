@@ -56,10 +56,11 @@ def save_readings(readings: dict[str, str], langs: set[str], voice_id: str | Non
 
 
 def base_selection(sentences: list[dict[str, Any]]) -> dict[int, str]:
-    """What the dashboard selects by default: the latest take that passed QA, per sentence."""
+    """What the dashboard selects by default: the latest take that passed QA (or was made for an owner's
+    reading), per sentence."""
     sel = {}
     for i, s in enumerate(sentences):
-        ok = [t for t in s.get("takes") or [] if t.get("passed")]
+        ok = [t for t in s.get("takes") or [] if t.get("passed") or t.get("source") == "repronounce"]
         if ok:
             sel[i] = ok[-1]["id"]
     return sel
