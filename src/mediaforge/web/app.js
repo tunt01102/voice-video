@@ -3,7 +3,7 @@ const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const api = async (path, opts = {}) => {
   const r = await fetch(path, { headers: opts.body && !(opts.body instanceof FormData) ? { "content-type": "application/json" } : {}, ...opts });
-  if (!r.ok) throw new Error((await r.text()).slice(0, 400));
+  if (!r.ok) { const t = await r.text(); let m = t; try { const d = JSON.parse(t).detail; if (d) m = typeof d === "string" ? d : JSON.stringify(d); } catch {} throw new Error(m.slice(0, 400)); }
   return r.json();
 };
 const toast = (msg) => { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 3500); };
@@ -32,6 +32,7 @@ setInterval(loadHealth, 15000); loadHealth();
 
 // ------------------------------------------------------------------ create form
 let kind = "tts";
+const doc = { title: "", images: [] };  // imported Word/PDF: images [{path, url, width, height, removed}]
 const VIDEO_KINDS = ["short", "narrated", "explainer"];
 function applyKind() {
   const isVideo = VIDEO_KINDS.includes(kind);
@@ -57,6 +58,7 @@ function applyKind() {
   sb.textContent = isVideo ? "Dựng ngay (bỏ qua kiểm tra)" : "Tạo";
   sb.className = isVideo ? "ghost" : "primary";
   if (!isVideo) $("#prescan").hidden = true;
+  renderDocImages();
 }
 $$("#create-kind button").forEach((b) => b.onclick = () => {
   $$("#create-kind button").forEach((x) => x.classList.toggle("active", x === b));
@@ -104,6 +106,8 @@ async function buildParams(f) {
       params = { lang: f.lang.value, voice: f.voice.value || null, seconds: +f.seconds.value, style: f.style.value, fx, theme: f.theme.value };
       const src = f.source.value;
       if (src === "brief") params.brief = f.text.value; else if (src === "slides") params.slides_markdown = f.text.value; else params.script = f.text.value;
+      if (doc.images.length) params.doc_images = doc.images.map((im) => im.removed ? "" : im.path);
+      if (doc.title && src === "script") params.title = doc.title;
       if (f.music.value === "__upload") { if (f.music_file.files[0]) params.music = await upload(f.music_file.files[0]); }
       else if (f.music.value) params.music = f.music.value;
     }
@@ -123,6 +127,105 @@ $("#create-form").onsubmit = async (e) => {
   try { const { type, params } = await buildParams(e.target); await submitJob(type, params); $("#prescan").hidden = true; }
   catch (err) { toast(err.message); }
   finally { btn.disabled = false; }
+};
+
+// ------------------------------------------------------------------ Word/PDF import (SDD-doc-import-preview-chibi §3.1)
+// The text arrives with "[ảnh N]" markers where picture N sits; a video shows picture N on that scene.
+function renderDocImages() {
+  const box = $("#doc-images");
+  if (!doc.images.length) { box.innerHTML = ""; return; }
+  box.innerHTML = doc.images.map((im, i) => `<figure class="${im.removed ? "off" : ""}" data-i="${i}">
+      <a href="${im.url}" target="_blank"><img src="${im.url}" alt="ảnh ${i + 1}"></a>
+      <figcaption>[ảnh ${i + 1}] <button type="button" class="ghost small" title="${im.removed ? "Dùng lại ảnh này" : "Không dùng ảnh này"}">${im.removed ? "↺" : "✕"}</button></figcaption></figure>`).join("")
+    + `<p class="muted">${kind === "tts" ? "Giọng nói: các dấu [ảnh N] được bỏ qua khi đọc."
+      : "Ảnh N hiện nguyên vẹn ở cảnh có dấu <b>[ảnh N]</b> trong nội dung — có thể di chuyển hoặc xoá dấu. Cảnh khác dùng ảnh AI theo phong cách đã chọn."}</p>`;
+  $$("figure button", box).forEach((b) => b.onclick = () => { const im = doc.images[+b.closest("figure").dataset.i]; im.removed = !im.removed; renderDocImages(); });
+}
+$("#doc-file").onchange = async (e) => {
+  const file = e.target.files[0]; e.target.value = "";
+  const f = $("#create-form"), st = $("#doc-status");
+  if (!file || (f.text.value.trim() && !confirm("Thay nội dung hiện tại bằng nội dung của tài liệu?"))) return;
+  st.textContent = "⏳ Đang đọc tài liệu…";
+  try {
+    const fd = new FormData(); fd.append("file", file);
+    const d = await api("/api/documents", { method: "POST", body: fd });
+    f.text.value = d.text; doc.title = d.title; doc.images = d.images;
+    if (f.source.value === "slides") { f.source.value = "brief"; applyKind(); }
+    renderDocImages();
+    st.textContent = `${d.kind === "pdf" ? "PDF" : "Word"} “${d.title}” · ${d.text.length.toLocaleString("vi")} ký tự · ${d.images.length} ảnh${d.warnings.length ? " · " + d.warnings.join(" ") : ""}`;
+    $("#doc-clear").hidden = false;
+  } catch (err) { st.textContent = ""; toast(err.message); }
+};
+$("#doc-clear").onclick = () => {
+  doc.title = ""; doc.images = []; renderDocImages();
+  $("#create-form").text.value = ""; $("#doc-status").textContent = ""; $("#doc-clear").hidden = true;
+};
+
+// ------------------------------------------------------------------ voice settings: remembered + "Nghe thử" (§3.2, §3.3)
+// The four sliders live on the voice profile (PATCH /api/voices/{id}); other choices in localStorage.
+const store = {
+  get: (k, d = null) => { try { return localStorage.getItem("mf." + k) ?? d; } catch { return d; } },
+  set: (k, v) => { try { localStorage.setItem("mf." + k, v); } catch { /* private window */ } },
+};
+const FX_KEYS = ["pitch", "pace", "warmth", "clarity"], FX_NEUTRAL = { pitch: 0, pace: 1, warmth: 0, clarity: 0.5 };
+const PREVIEW_TEXT = { vi: "Xin chào, đây là giọng đọc thử với chất giọng tôi vừa thiết lập.",
+  en: "Hello, this is a quick preview of the voice settings I just chose." };
+const currentVoice = () => voices.find((v) => v.id === ($("#voice-select").value || voices.find((x) => x.default)?.id));
+const readFxSliders = () => Object.fromEntries(FX_KEYS.map((k) => [k, +$("#create-form")[k].value]));
+let fxTimer = null;
+function applyVoiceFx() {
+  if (fxTimer) return;  // an unsaved slider change wins over the stored value
+  const v = currentVoice(), f = $("#create-form"), fx = { ...FX_NEUTRAL, ...(v?.fx || {}) };
+  for (const k of FX_KEYS) { f[k].value = fx[k]; f[k].oninput?.(); }
+  $("#fx-saved").textContent = v ? `· đã nạp thiết lập gần nhất của giọng ${v.name}` : "";
+}
+function saveFxSoon() {
+  const v = currentVoice(); if (!v) return;
+  const fx = readFxSliders();
+  clearTimeout(fxTimer);
+  $("#fx-saved").textContent = "· đang lưu…";
+  fxTimer = setTimeout(async () => {
+    try {
+      await api(`/api/voices/${v.id}`, { method: "PATCH", body: JSON.stringify({ fx }) });
+      v.fx = { ...(v.fx || {}), ...fx };
+      $("#fx-saved").textContent = `· đã lưu cho giọng ${v.name}`;
+    } catch (err) { $("#fx-saved").textContent = ""; toast("Chưa lưu được chất giọng: " + err.message); }
+    finally { fxTimer = null; }
+  }, 600);
+}
+FX_KEYS.forEach((k) => $("#create-form")[k].addEventListener("input", saveFxSoon));
+$("#voice-select").addEventListener("change", () => { store.set("voice", $("#voice-select").value); applyVoiceFx(); });
+$("#fx-reset").onclick = () => { const f = $("#create-form"); for (const k of FX_KEYS) { f[k].value = FX_NEUTRAL[k]; f[k].oninput?.(); } saveFxSoon(); };
+for (const k of ["lang", "engine"]) {
+  const el = $("#create-form")[k], v = store.get(k);
+  if (v !== null && [...el.options].some((o) => o.value === v)) el.value = v;
+  el.addEventListener("change", () => store.set(k, el.value));
+}
+const pvLang = $("#pv-lang"), pvText = $("#pv-text");
+pvLang.value = store.get("previewLang", "vi") === "en" ? "en" : "vi";
+const fillPreviewText = () => { pvText.value = store.get("previewText." + pvLang.value, PREVIEW_TEXT[pvLang.value]); };
+fillPreviewText();
+pvLang.onchange = () => { store.set("previewLang", pvLang.value); fillPreviewText(); };
+pvText.onchange = () => store.set("previewText." + pvLang.value, pvText.value.trim() || PREVIEW_TEXT[pvLang.value]);
+$("#pv-btn").onclick = async (ev) => {
+  const b = ev.currentTarget, st = $("#pv-status"), f = $("#create-form"), lang = pvLang.value;
+  const text = pvText.value.trim() || PREVIEW_TEXT[lang];
+  b.disabled = true; st.textContent = "⏳ Đang đọc…";
+  try {
+    const params = { text, voice: f.voice.value || null, lang, fx: readFxSliders(), preview: true,
+      engine: kind === "tts" ? f.engine.value || null : null };
+    const job = await api("/api/jobs", { method: "POST", body: JSON.stringify({ type: "tts", params, source: "dashboard" }) });
+    followJob(job.id, {
+      onProgress: (j) => { st.textContent = j.status === "queued" ? "⏳ Đang chờ GPU — có job khác đang chạy, câu thử sẽ đọc ngay khi job đó xong…" : `⏳ ${(j.progress * 100).toFixed(0)}%`; },
+      onEnd: (j) => {
+        b.disabled = false;
+        const url = fileUrl(j?.files?.mp3) || fileUrl(j?.files?.audio);
+        if (!url) { st.textContent = ""; toast("Chưa nghe thử được: " + (j?.message || j?.status || "lỗi")); return; }
+        const a = $("#pv-audio"); a.hidden = false; a.src = url; a.play().catch(() => {});
+        st.textContent = `${lang === "vi" ? "Tiếng Việt" : "English"} · ${j.result?.duration ?? "?"} s`;
+      },
+    });
+  } catch (err) { b.disabled = false; st.textContent = ""; toast(err.message); }
 };
 
 // ------------------------------------------------------------------ pronunciation pre-scan (before rendering)
@@ -558,7 +661,7 @@ async function loadJobs() {
   const status = $("#jobs-filter").value;
   const jobs = await api("/api/jobs?limit=60" + (status ? "&status=" + status : ""));
   const list = $("#jobs-list"); list.innerHTML = "";
-  jobs.filter((j) => !HIDDEN_TYPES.includes(j.type)).forEach((j) => { list.append(renderJob(j)); if (["queued", "running"].includes(j.status)) followJob(j.id); });
+  jobs.filter((j) => !HIDDEN_TYPES.includes(j.type) && !j.params?.preview).forEach((j) => { list.append(renderJob(j)); if (["queued", "running"].includes(j.status)) followJob(j.id); });
   if (!list.children.length) list.innerHTML = `<p class="muted">Chưa có job nào.</p>`;
 }
 $("#jobs-filter").onchange = loadJobs; $("#jobs-refresh").onclick = loadJobs;
@@ -568,9 +671,10 @@ let voices = [], selVoice = null, prompts = { vi: [], en: [] };
 async function loadVoices() {
   voices = await api("/api/voices");
   prompts = await api("/api/voices/prompts");
-  const sel = $("#voice-select"); const cur = sel.value;
+  const sel = $("#voice-select"); const cur = sel.value || store.get("voice", "");
   sel.innerHTML = `<option value="">Mặc định</option>` + voices.map((v) => `<option value="${v.id}">${esc(v.name)}${v.default ? " ★" : ""}</option>`).join("");
-  sel.value = cur;
+  sel.value = cur; if (sel.value !== cur) sel.value = "";
+  applyVoiceFx();
   $("#voices-list").innerHTML = voices.map((v) => `<div class="voice-item ${v.id === selVoice ? "sel" : ""}" data-id="${v.id}">
       <span>${v.default ? "★ " : ""}<b>${esc(v.name)}</b> <small class="muted">${v.id}</small></span>
       <small class="muted">${v.samples.length} mẫu · ${Object.keys(v.refs || {}).join("/")}</small></div>`).join("") || `<p class="muted">Chưa có giọng nào.</p>`;
@@ -671,9 +775,7 @@ async function sendSample(v, file, text) {
     const s = job.result.sample;
     toast(`Đã lưu mẫu ${s.duration}s — nghe được: “${s.asr_text.slice(0, 60)}”`);
     recIdx = Math.min(recIdx + 1, (prompts[recLang] || []).length - 1);
-    const openHashTab = () => { const t = location.hash.slice(1); const b = t && $(`#tabs button[data-tab="${t}"]`); if (b && !b.classList.contains("active")) b.click(); };
-window.addEventListener("hashchange", openHashTab);
-loadVoices().then(openHashTab);
+    loadVoices();
   } catch (err) { $("#rec-status").textContent = ""; toast(err.message); }
 }
 

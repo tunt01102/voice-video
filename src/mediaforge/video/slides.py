@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+
+from mediaforge.text.documents import MARKER_RE
 
 FONT_DIR = Path("/System/Library/Fonts/Supplemental")
 FONT_REG = FONT_DIR / "Arial.ttf"
@@ -93,6 +95,45 @@ def render_slide(
     return Path(out)
 
 
+def figure_frame(
+    src: str | Path, out: str | Path, *, width: int = 1920, height: int = 1080, title: str | None = None,
+    theme: str = "midnight", pad: float = 0.08,
+) -> Path:
+    """A document figure (chart, diagram, screenshot) fitted whole inside the frame, never cropped.
+
+    The figure sits over a blurred, dimmed copy of itself; `pad` leaves room for the Ken Burns zoom. With a title
+    (explainer slides) a band above the figure carries it.
+    """
+    t = THEMES.get(theme, THEMES["midnight"])
+    fig = ImageOps.exif_transpose(Image.open(src)).convert("RGBA")
+    flat = Image.new("RGB", fig.size, (255, 255, 255))
+    flat.paste(fig, mask=fig.split()[3])  # transparent PNG figures are drawn on white, as on the page
+    bg = ImageOps.fit(flat, (width, height)).filter(ImageFilter.GaussianBlur(28))
+    img = Image.blend(bg, Image.new("RGB", (width, height), t["bg"][0]), 0.55)
+    d = ImageDraw.Draw(img)
+    unit = height / (1920 if height > width else 1080)
+    top = int(height * pad)
+    if title:
+        f = _font(True, int(56 * unit))
+        lines = _wrap(d, title, f, int(width * 0.86))[:2]
+        y = int(height * 0.05)
+        for line in lines:
+            d.text(((width - d.textlength(line, font=f)) / 2, y), line, font=f, fill=t["title"])
+            y += int(f.size * 1.2)
+        top = y + int(24 * unit)
+    box_w, box_h = int(width * (1 - 2 * pad)), height - top - int(height * pad)
+    scale = min(box_w / flat.width, box_h / flat.height)
+    fig_img = flat.resize((max(1, int(flat.width * scale)), max(1, int(flat.height * scale))), Image.LANCZOS)
+    x, y = (width - fig_img.width) // 2, top + (box_h - fig_img.height) // 2
+    shadow = Image.new("L", (width, height), 0)
+    ImageDraw.Draw(shadow).rectangle([x + 8, y + 12, x + fig_img.width + 8, y + fig_img.height + 12], fill=150)
+    img.paste((0, 0, 0), mask=shadow.filter(ImageFilter.GaussianBlur(14)))
+    img.paste(fig_img, (x, y))
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    img.save(out)
+    return Path(out)
+
+
 def parse_markdown_slides(md: str) -> list[dict]:
     """`# Title` starts a slide; `- bullet` lines are bullets; `> text` lines are narration."""
     slides: list[dict] = []
@@ -108,6 +149,8 @@ def parse_markdown_slides(md: str) -> list[dict]:
             cur["bullets"].append(line[2:].strip())
         elif line.startswith(">"):
             cur["narration"] = (cur["narration"] + " " + line.lstrip("> ").strip()).strip()
+        elif m := MARKER_RE.fullmatch(line):  # [ảnh N] from an imported document: this slide's picture
+            cur["image"] = int(m.group(1))
     for s in slides:
         if not s["narration"]:
             s["narration"] = ". ".join([s["title"], *s["bullets"]]) + "."

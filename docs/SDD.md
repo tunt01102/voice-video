@@ -132,6 +132,7 @@ src/mediaforge/
   llm.py             Claude CLI → Ollama fallback; JSON-mode helpers
   models.py          lazy model cache with eviction (LRU by memory class)
   text/normalize.py  language detection, VI/EN normalisation, lexicon, sentence split
+  text/documents.py  Word/PDF import → text with [ảnh N] markers + pictures (SDD-doc-import-preview-chibi.md)
   tts/base.py        TTSEngine protocol + SynthResult
   tts/vieneu.py      VieNeu adapter
   tts/voxcpm.py      VoxCPM2 (mlx-audio) adapter
@@ -253,7 +254,10 @@ to 48 kHz on exit; ASR always receives 16 kHz mono.
    + 0.3 s tail).
 3. **Visuals** per scene: image (mflux Z-Image-Turbo, "standard" 1024×576 / 7 steps, seeded,
    style preset; falls back to Ollama while the MLX weights are not fully cached)
-   or AI clip (LTX-2 i2v from that image, when `clips=true`), or user-supplied media.
+   or AI clip (LTX-2 i2v from that image, when `clips=true`), or user-supplied media, or a picture from an
+   imported Word/PDF (`scene.image`, fitted whole by `slides.figure_frame`, never cropped). Style presets:
+   cinematic, photo, illustration, 3d, minimal, tech, **chibi** (the LLM is told to put cute chibi characters
+   acting out each scene) — see SDD-doc-import-preview-chibi.md.
 4. **Compose** (FFmpeg): Ken Burns (`zoompan` on pre-upscaled stills, alternating
    zoom/pan directions), `xfade` transitions, voice track, optional music with
    `sidechaincompress` ducking, `loudnorm`, subtitles burned (ASS via `ffmpeg-full`) and
@@ -305,6 +309,7 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 | `POST /api/jobs/{id}/cancel`, `DELETE /api/jobs/{id}` | control |
 | `GET /files/{path}` | download outputs (path-confined to `data/`) |
 | `POST /api/uploads` | upload media for later jobs |
+| `POST /api/documents` | multipart Word/PDF → `{text with [ảnh N] markers, images, title, warnings}`; video params take `doc_images` |
 | `GET /api/music`, `GET /api/music/{id}/audio` | background-music library / preview |
 
 `?wait=true` on `POST /api/jobs` blocks until completion (≤ 600 s) for simple clients.
@@ -313,7 +318,8 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 Tools: `speak`, `generate_image`, `prepare_video`, `create_video`, `resubtitle_video`, `repronounce_video`, `recite_poem`, `sing_song`, `list_poems`,
 `transcribe_subtitles`, `job_status`, `list_voices`, `list_jobs`, `list_music`. Long jobs return a job id
 immediately plus a `wait_seconds` option; results return absolute file paths (sessions
-run on the same machine). Registered with
+run on the same machine). `create_video`/`prepare_video` take `document` (+ `document_as` brief|script) to use a
+Word/PDF and its pictures; voice settings left unset come from the voice profile (the owner's last setup). Registered with
 `claude mcp add -s user --transport http mediaforge http://127.0.0.1:8765/mcp`.
 
 ### 9.3 CLI

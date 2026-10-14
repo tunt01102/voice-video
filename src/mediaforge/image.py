@@ -22,6 +22,9 @@ STYLE_PRESETS = {
     "3d": "3D render, soft global illumination, octane, smooth materials, studio lighting",
     "minimal": "minimalist composition, lots of negative space, soft pastel palette, simple shapes",
     "tech": "sleek technology aesthetic, dark background, neon cyan and violet accents, glowing UI elements",
+    "chibi": "chibi anime style, cute small cartoon characters with oversized heads, tiny bodies and big sparkling "
+             "eyes, kawaii, soft pastel colours, clean bold lineart, cel shading, playful cheerful mood, "
+             "simple soft background",
     "none": "",
 }
 

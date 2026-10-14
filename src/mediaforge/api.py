@@ -373,6 +373,26 @@ def create_app() -> FastAPI:
             shutil.copyfileobj(file.file, f)
         return {"path": str(dest), "url": "/files/" + str(dest.relative_to(settings.data_dir))}
 
+    @app.post("/api/documents")
+    async def import_document(file: UploadFile = File(...)):
+        """Word/PDF → text with [ảnh N] markers + its pictures (docs/SDD-doc-import-preview-chibi.md §3.1)."""
+        from mediaforge.text import documents
+
+        name = Path(file.filename or "document").name
+        if Path(name).suffix.lower() not in documents.SUPPORTED:
+            raise HTTPException(400, "Chỉ nhận .docx, .pdf, .doc, .rtf, .odt")
+        up = settings.sub("uploads") / f"{int(time.time())}-{uuid.uuid4().hex[:6]}-{name}"
+        with up.open("wb") as f:
+            shutil.copyfileobj(file.file, f)
+        try:
+            doc = await anyio.to_thread.run_sync(lambda: documents.import_file(up, settings.data_dir, filename=name))
+        except documents.DocumentError as e:
+            raise HTTPException(422, str(e)) from e
+        root = settings.data_dir.resolve()
+        for im in doc["images"]:
+            im["url"] = "/files/" + str(Path(im["path"]).resolve().relative_to(root))
+        return {**doc, "source": str(up)}
+
     @app.get("/files/{path:path}")
     def files(path: str):
         root = settings.data_dir.resolve()

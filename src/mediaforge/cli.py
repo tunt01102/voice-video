@@ -107,9 +107,13 @@ def _video(kind: str, brief, script, lang, voice, seconds, style, music, pitch, 
 def video(brief: Optional[str] = typer.Argument(None), script: Optional[str] = typer.Option(None, help="own narration or @file"),
           lang: str = "auto", voice: Optional[str] = None, seconds: int = 75, style: str = "cinematic",
           music: Optional[str] = None, pitch: Optional[float] = None, aspect: Optional[str] = None,
-          clips: bool = typer.Option(False, help="animate scenes with LTX-2 (slow)"), local: bool = False) -> None:
-    """Narrated 16:9 video with AI visuals and subtitles."""
-    _video("narrated", brief, script, lang, voice, seconds, style, music, pitch, aspect, local, {"clips": clips})
+          clips: bool = typer.Option(False, help="animate scenes with LTX-2 (slow)"),
+          document: Optional[Path] = typer.Option(None, help="Word/PDF as the content; its pictures go on their scenes"),
+          document_as: str = typer.Option("brief", help="brief (Claude writes the script) | script (read verbatim)"),
+          local: bool = False) -> None:
+    """Narrated 16:9 video with AI visuals and subtitles (style chibi = cute cartoon characters)."""
+    extra = {"clips": clips, **({"document": str(document.resolve()), "document_as": document_as} if document else {})}
+    _video("narrated", brief, script, lang, voice, seconds, style, music, pitch, aspect, local, extra)
 
 
 @app.command()

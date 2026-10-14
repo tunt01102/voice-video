@@ -61,7 +61,8 @@ tar -xzf data/backups/<snapshot>.tar.gz -C data/
 | 16:9 video | 🎬 Video | `mediaforge video "How MFA stops account takeover" --lang en --seconds 60` |
 | Slide explainer | 🧑‍🏫 Explainer | `mediaforge explainer --slides deck.md` |
 | Voice-over on a screen recording | — | `mediaforge screen demo.mov "@script.txt"` |
-| Images | 🖼 Ảnh | `mediaforge image "a cozy café in Hanoi" --count 4` |
+| Video from a Word/PDF (pictures kept) | 📄 Nhập từ Word/PDF | `mediaforge video --document report.pdf --style chibi` |
+| Images | 🖼 Ảnh | `mediaforge image "a cozy café in Hanoi" --count 4 --style chibi` |
 | Subtitles for any media | 💬 Phụ đề | `mediaforge subtitle talk.mp4 --burn --translate-to en` |
 | Chant a poem (ngâm thơ) | 🪷 Ngâm thơ | `mediaforge recite "@tho.txt" --video` or `mediaforge recite --poem hoang-hac-lau` |
 | Sing lyrics | 🎵 Hát | `mediaforge sing "@loi.txt" --mood hung-trang --video` |
@@ -76,6 +77,19 @@ For videos, the dashboard has two buttons:
 - **Dựng ngay** skips the check.
 
 Notes on the inputs:
+
+- **📄 Nhập từ Word/PDF** (under *Nội dung*) reads a `.docx` or `.pdf` (`.doc/.rtf/.odt` are converted) into the
+  text box. Each picture becomes a marker such as `[ảnh 1]` where it sat in the document, with a thumbnail below:
+  - The video shows that picture whole on the scene after its marker. Move or delete markers to change this, or
+    press ✕ on a thumbnail to drop the picture.
+  - With *Ý tưởng → Claude viết kịch bản*, Claude places the pictures on the matching scenes.
+  - A voice-over skips the markers.
+  - Scanned PDFs (no text layer) are not supported yet.
+- **Phong cách hình → chibi** draws every AI scene with small, cute cartoon characters acting out the narration.
+- **Chất giọng** is saved on the chosen voice as you move the sliders and reloaded next time. MCP/API calls that
+  don't pass pitch/pace/warmth/clarity use these settings too, and so does the default key for Hát/Ngâm.
+  **▶ Nghe thử** reads one sample sentence in Tiếng Việt or English (your choice, editable) with the current
+  settings. If a render is running, the preview waits for it to finish (one GPU).
 
 - Pass `--script "@file.txt"` to read your own narration word for word. Without it, Claude writes the script from your brief.
 - For explainers, slide markdown looks like this:
