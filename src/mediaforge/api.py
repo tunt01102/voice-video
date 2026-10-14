@@ -242,7 +242,7 @@ def create_app() -> FastAPI:
         if job["status"] in ("queued", "running"):
             raise HTTPException(409, "cancel the job first")
         if files:  # moved to data/trash, never destroyed outright
-            for kind in ("tts", "images", "videos", "subtitles"):
+            for kind in ("tts", "images", "videos", "subtitles", "songs"):
                 src = settings.data_dir / "outputs" / kind / jid
                 if src.exists():
                     shutil.move(str(src), settings.sub("trash") / f"{time.strftime('%Y%m%d-%H%M%S')}-{kind}-{jid}")
@@ -338,6 +338,19 @@ def create_app() -> FastAPI:
         if lang not in ("vi", "en"):
             raise HTTPException(400, "lang must be vi or en")
         return pronounce.remember(lang, body.get("terms") or {}, body.get("verified") or [], voice=voice or body.get("voice"))
+
+    # ---------------------------------------------------------------- poems (Ngâm thơ tab)
+    @app.get("/api/poems")
+    def list_poems():
+        from mediaforge.sing import poems
+
+        return poems.summary()
+
+    @app.get("/api/sing/moods")
+    def sing_moods():
+        from mediaforge.sing import melody
+
+        return {"moods": list(melody.MOODS), "styles": ["ngam", "hat"]}
 
     # ---------------------------------------------------------------- music library
     @app.get("/api/music")

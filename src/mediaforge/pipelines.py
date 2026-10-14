@@ -463,10 +463,22 @@ def run_repronounce(p: dict[str, Any], progress: Progress, job_id: str | None = 
     return repronounce.run(p, progress, job_id)
 
 
+def run_sing(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
+    from mediaforge.sing import pipeline as sing
+
+    return sing.run(p, progress, job_id, kind="sing")
+
+
+def run_recite(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
+    from mediaforge.sing import pipeline as sing
+
+    return sing.run(p, progress, job_id, kind="recite")
+
+
 RUNNERS: dict[str, Callable[..., dict[str, Any]]] = {
     "tts": run_tts, "image": run_image, "subtitle": run_subtitle, "video": run_video, "enrol": run_enrol,
     "rerender": run_rerender, "export": run_export, "prepare": run_prepare, "resubtitle": run_resubtitle,
-    "repronounce": run_repronounce,
+    "repronounce": run_repronounce, "sing": run_sing, "recite": run_recite,
 }
 
 

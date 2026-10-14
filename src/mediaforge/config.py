@@ -43,6 +43,8 @@ class Settings:
     # QA thresholds (error rates after normalisation)
     qa_max_cer_vi: float = field(default_factory=lambda: float(_env("qa_max_cer_vi", "0.08")))
     qa_max_wer_en: float = field(default_factory=lambda: float(_env("qa_max_wer_en", "0.10")))
+    # ACE-Step 1.5 sidecar (own venv; scripts/install_ace_step.sh) — optional "AI phối khí" accompaniment.
+    ace_step_root: Path = field(default_factory=lambda: Path(_env("ace_step_root", "~/.local/share/mediaforge-sidecars/ace-step")).expanduser())
     qa_max_attempts: int = field(default_factory=lambda: int(_env("qa_max_attempts", "4")))
 
     @property

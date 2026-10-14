@@ -63,6 +63,8 @@ tar -xzf data/backups/<snapshot>.tar.gz -C data/
 | Voice-over on a screen recording | — | `mediaforge screen demo.mov "@script.txt"` |
 | Images | 🖼 Ảnh | `mediaforge image "a cozy café in Hanoi" --count 4` |
 | Subtitles for any media | 💬 Phụ đề | `mediaforge subtitle talk.mp4 --burn --translate-to en` |
+| Chant a poem (ngâm thơ) | 🪷 Ngâm thơ | `mediaforge recite "@tho.txt" --video` or `mediaforge recite --poem hoang-hac-lau` |
+| Sing lyrics | 🎵 Hát | `mediaforge sing "@loi.txt" --mood hung-trang --video` |
 
 For videos, the dashboard has two buttons:
 
@@ -94,6 +96,37 @@ Outputs are written to `data/outputs/<kind>/<job-id>/`:
   static subtitles.
 - `plan.json`
 - `report.json` (pronunciation QA for each sentence)
+
+### Hát & Ngâm thơ
+
+Your cloned voice chants a poem or sings lyrics, with accompaniment and an optional illustrated video.
+
+- **🪷 Ngâm thơ**: paste your poem (one line per row) or pick a built-in Tang poem (`mediaforge poems`). Choose
+  the Hán-Việt reading or a verse translation.
+- **🎵 Hát**: paste lyrics and optionally set a BPM.
+
+How it works:
+
+- **Melody.** The melody follows Vietnamese tones (sắc rises, huyền falls, nặng drops), so the words stay clear.
+  Line ends are held with ornaments and vibrato.
+- **Accompaniment.** Đàn tranh and sáo trúc play in your voice's key and answer each line. Songs add mõ and
+  trống on the beat.
+- **Tinh thần.** Leave it on *auto* and Claude reads the poem's spirit. Or pick a mood: hùng tráng (khí khái),
+  trầm mặc, u hoài or bi ai.
+- **Khí khái field.** Describe the stance you want affirmed. It steers both the melody's mood and the images.
+- **Dựng video hoạt cảnh.** Produces one image per line with one consistent figure, a title card, and lyrics
+  that light up syllable by syllable.
+
+Each line is listened back and re-taken if unclear. The table under the result shows what the AI heard.
+Outputs go to `data/outputs/songs/<job-id>/`:
+
+- `song.wav` / `song.mp3`
+- `vocal.wav`
+- `accompaniment.wav`
+- `melody.json`
+- `final.mp4` and `lyrics.srt` / `.ass`, with video
+
+Design: [docs/SDD-sing-recite.md](docs/SDD-sing-recite.md).
 
 ## 3. Use from other Claude Code sessions
 

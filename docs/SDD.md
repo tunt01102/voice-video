@@ -1,6 +1,6 @@
 # MediaForge — Software Design Document
 
-Status: v1.3 (implemented) · 2026-10-14 · Owner: tu.dev@block8.ai · Internal tool, localhost only
+Status: v1.4 (implemented) · 2026-10-14 · Owner: tu.dev@block8.ai · Internal tool, localhost only
 
 MediaForge is the single local service on this Mac that every other task (and every
 Claude Code session) calls to produce **voice, audio, subtitles, images and videos**.
@@ -18,6 +18,7 @@ cloned voice**, in **English and Vietnamese**.
 | Automatic pronunciation QA and self-repair | Network exposure beyond 127.0.0.1 |
 | Subtitles: SRT, VTT, karaoke ASS, burned-in or soft | Multi-user auth |
 | Image generation (local diffusion) | |
+| **Hát & Ngâm thơ**: singing / poetry chanting in the cloned voice, traditional accompaniment, illustrated video ([SDD-sing-recite.md](SDD-sing-recite.md)) | |
 | Video styles: **narrated + AI visuals (16:9)**, **vertical shorts (9:16)**, **slide / screen explainer** | |
 | Optional AI video clips (LTX-2 MLX), off by default | |
 | REST API + SSE, MCP server for Claude sessions, web dashboard | |
@@ -75,6 +76,7 @@ and step count are the effective levers (`image.QUALITY`).
 | Fallback TTS | OmniVoice (k2-fsa) | k2-fsa/OmniVoice (14.5k) | Apache-2.0 |
 | ASR, word timings, QA | mlx-whisper large-v3-turbo | ml-explore/mlx-examples (9k) | MIT |
 | VI text normalisation | vietnormalizer + own lexicon | PyPI vietnormalizer | MIT |
+| Singing / chanting resynthesis (f0 replace, syllable re-timing) | WORLD via pyworld | JeremyCCHsu/Python-Wrapper-for-World-Vocoder (1.3k), mmorise/World | MIT / modified BSD |
 | Voice FX (pitch w/ formants, EQ, comp) | pedalboard | spotify/pedalboard (6.4k) | GPL-3.0 (internal use only, not distributed) |
 | Loudness, de-ess, compose, encode | FFmpeg (`loudnorm`, `deesser`, `zoompan`, `xfade`, `sidechaincompress`, `subtitles`, `hevc_videotoolbox`) | FFmpeg | LGPL/GPL |
 | Reference clean-up | noisereduce (MVP); VieNeu built-in denoise | timsainb/noisereduce (1.9k) | MIT |
@@ -95,7 +97,8 @@ Fish-Speech S2 (research licence), Higgs Audio (non-commercial), IndexTTS (bilib
 licence), vinorm (non-commercial, Linux binary), WhisperX VI aligners and
 ctc-forced-aligner default model (CC-BY-NC-4.0), Wav2Lip (non-commercial models),
 Remotion (company licence), aeneas (AGPL), VibeVoice (TTS removed upstream),
-CosyVoice/Chatterbox/Qwen3-TTS/Kokoro (no Vietnamese), DiffusionKit (archived).
+CosyVoice/Chatterbox/Qwen3-TTS/Kokoro (no Vietnamese), DiffusionKit (archived), Seed-VC (GPL-3.0 singing
+voice conversion), SoulX-Singer / YingMusic-Singer (no Vietnamese; licences unclear).
 
 ## 4. Architecture
 
@@ -145,6 +148,8 @@ src/mediaforge/
   takes.py           guided sentence re-render ("takes"), sentence spans, splice
   export.py          export formats table + remux/recompose export job
   music.py           background-music library (music_catalog.json metadata; audio in data/music/)
+  sing/              hát & ngâm thơ: tones.py, melody.py (tone-aware), resynth.py (WORLD), accompany.py,
+                     poems.py + poems_catalog.json, pipeline.py — see SDD-sing-recite.md
   api.py             FastAPI app (+ dashboard static, + MCP mount)
   mcp_server.py      MCP tools (thin wrappers over the job layer)
   cli.py             Typer CLI
@@ -287,7 +292,8 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 | `GET/POST /api/voices`, `GET/PATCH/DELETE /api/voices/{id}` | voice profiles |
 | `POST /api/voices/{id}/samples` | multipart upload/recording → processed sample |
 | `GET/PUT /api/voices/{id}/lexicon`, `GET/PUT /api/lexicon` | pronunciation lexicons |
-| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip, prepare` (+ internal `rerender`, `export`, `resubtitle`, `repronounce`) |
+| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip, prepare, sing, recite` (+ internal `rerender`, `export`, `resubtitle`, `repronounce`) |
+| `GET /api/poems`, `GET /api/sing/moods` | Tang poem catalogue (Ngâm thơ tab); moods/styles for sing/recite |
 | `POST /api/jobs/{id}/sentences/{i}/rerender` | `{file?, lang?}` — AI re-renders sentence *i* as a take (recording = guide) |
 | `POST /api/jobs/{id}/repronounce` | `{readings: {term: reading}, format?}` — re-read every sentence containing a term, export (no re-render); `GET /api/jobs/{id}/occurrences?terms=` previews matches |
 | `POST /api/jobs/{id}/resubtitle` | rebuild subtitles of a finished video (no TTS/image work) |
@@ -304,14 +310,14 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 `?wait=true` on `POST /api/jobs` blocks until completion (≤ 600 s) for simple clients.
 
 ### 9.2 MCP (streamable HTTP at `http://127.0.0.1:8765/mcp`)
-Tools: `speak`, `generate_image`, `prepare_video`, `create_video`, `resubtitle_video`, `repronounce_video`, `create_short`, `create_explainer`,
+Tools: `speak`, `generate_image`, `prepare_video`, `create_video`, `resubtitle_video`, `repronounce_video`, `recite_poem`, `sing_song`, `list_poems`,
 `transcribe_subtitles`, `job_status`, `list_voices`, `list_jobs`, `list_music`. Long jobs return a job id
 immediately plus a `wait_seconds` option; results return absolute file paths (sessions
 run on the same machine). Registered with
 `claude mcp add -s user --transport http mediaforge http://127.0.0.1:8765/mcp`.
 
 ### 9.3 CLI
-`mediaforge serve | speak | image | video | short | explainer | subtitle | voice … | music list|sync | doctor`.
+`mediaforge serve | speak | image | video | short | explainer | subtitle | recite | sing | poems | voice … | music list|sync | doctor`.
 CLI talks to the running server when available, otherwise runs in-process.
 
 ## 10. Phases
@@ -321,6 +327,7 @@ CLI talks to the running server when available, otherwise runs in-process.
 | P1 Video | subtitles, images, composer, narrated/short/explainer/screen pipelines | Done 2026-10-14 |
 | P2 Service | FastAPI + jobs + SSE, MCP, `claude mcp add`, launchd | Done 2026-10-14 |
 | P3 Dashboard | record/enrol voice, lexicon editor, job launcher, gallery | Done 2026-10-14 |
+| P3b Hát & Ngâm thơ | tone-aware melody, WORLD resynthesis of the cloned voice, đàn tranh/sáo accompaniment, video hoạt cảnh, dashboard tabs | Done 2026-10-14 |
 | P4 Later | install ltx-2-mlx and enable clips; OmniVoice adapter; music generation (ACE-Step, Apache-2.0 — evaluate); speaker-similarity score (WavLM-SV) to auto-pick the best reference and check take timbre; fine-tune on `corrections/`; broader automated tests (unit tests for guided repair/export exist in `tests/`); React upgrade | Open |
 
 **Owner action required:** record real samples (dashboard → Voices → Record). Until then
