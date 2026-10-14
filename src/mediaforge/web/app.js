@@ -8,8 +8,8 @@ const api = async (path, opts = {}) => {
 };
 const toast = (msg) => { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 3500); };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const TYPE_LABEL = { tts: "Giọng nói", image: "Ảnh", subtitle: "Phụ đề", short: "Short", narrated: "Video", explainer: "Explainer", screen: "Screen", video: "Video", enrol: "Thu mẫu", rerender: "Đọc lại câu", export: "Xuất file", prepare: "Chuẩn bị kịch bản", resubtitle: "Dựng lại phụ đề" };
-const HIDDEN_TYPES = ["enrol", "rerender", "export", "prepare", "resubtitle"];
+const TYPE_LABEL = { tts: "Giọng nói", image: "Ảnh", subtitle: "Phụ đề", short: "Short", narrated: "Video", explainer: "Explainer", screen: "Screen", video: "Video", enrol: "Thu mẫu", rerender: "Đọc lại câu", export: "Xuất file", prepare: "Chuẩn bị kịch bản", resubtitle: "Dựng lại phụ đề", repronounce: "Sửa phát âm" };
+const HIDDEN_TYPES = ["enrol", "rerender", "export", "prepare", "resubtitle", "repronounce"];
 
 // ------------------------------------------------------------------ tabs
 $$("#tabs button").forEach((b) => b.onclick = () => {
@@ -240,6 +240,7 @@ function renderOutputs(job, out) {
   const r = job.result || {};
   if (fileUrl(f.video) && Array.isArray(r.words) && r.plan) out.append(renderResubtitle(job));
   if (fileUrl(f.video) || (fileUrl(f.audio) && Array.isArray(r.sentences))) out.append(renderExport(job));
+  if (Array.isArray(r.sentences) && r.sentences.length) out.append(renderRepronounce(job));
   if (Array.isArray(r.sentences) && r.sentences.length) out.append(renderQA(job));
   if (r.text && job.type === "subtitle") out.insertAdjacentHTML("beforeend", `<pre>${esc(r.text)}</pre>`);
 }
@@ -263,6 +264,79 @@ function renderResubtitle(job) {
         },
       });
     } catch (err) { b.disabled = false; b.textContent = "🔤 Dựng lại phụ đề"; toast(err.message); }
+  };
+  return box;
+}
+// ------------------------------------------------------------------ fix pronunciation of a finished job
+function renderRepronounce(job) {
+  const box = document.createElement("div");
+  box.className = "repron";
+  const isVideo = !!fileUrl(job.files?.video);
+  const hist = job.result?.repronounced || [], fhist = job.files?.repronounced || [];
+  const last = hist[hist.length - 1], lastUrl = fileUrl(fhist[fhist.length - 1]?.file);
+  box.innerHTML = `<div class="repron-head"><b>🗣 Sửa phát âm</b> <small class="muted">nhập từ bị đọc sai và cách đọc mới — AI đọc lại mọi câu có từ đó rồi ghép vào ${isVideo ? "video" : "audio"}, không dựng lại hình</small></div>
+    <div class="repron-rows"></div>
+    <div class="repron-actions"><button class="ghost small repron-add">+ thêm từ</button>
+      <button class="primary small repron-go">🗣 Đọc lại &amp; xuất ${isVideo ? "video" : "audio"}</button>
+      <span class="muted repron-status"></span></div>
+    ${last ? `<div class="repron-last"><div class="muted">Bản sửa gần nhất (${new Date(last.at * 1000).toLocaleString()}): ${Object.entries(last.readings).map(([t, s]) => `<b>${esc(t)}</b> → “${esc(s)}”`).join(", ")} · ${last.sentences.length} câu${last.path === "recompose" ? " · đã dựng lại timeline" : ""}</div>
+      ${lastUrl ? (isVideo ? `<video controls preload="metadata" src="${lastUrl}"></video>` : `<audio controls src="${lastUrl}"></audio>`) + `<div class="links"><a href="${lastUrl}" download>⬇ Tải bản đã sửa</a></div>` : ""}
+      <ul class="repron-sents">${last.sentences.map((s) => `<li class="${s.passed ? "ok" : "warn"}">câu ${s.index + 1}: ${esc(s.text)} <span class="muted">${s.passed ? "✓" : `· kiểm tra chưa chắc, nghe thành “${esc(s.heard)}”`}</span></li>`).join("")}</ul></div>` : ""}`;
+  const rows = $(".repron-rows", box);
+  let timer = null;
+  const count = () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const items = $$(".repron-row", rows).map((row) => [row, $(".repron-term", row).value.trim()]).filter(([, t]) => t);
+      if (!items.length) return;
+      const hits = await api(`/api/jobs/${job.id}/occurrences?terms=${encodeURIComponent(items.map(([, t]) => t.replace(/,/g, " ")).join(","))}`).catch(() => ({}));
+      items.forEach(([row, t]) => {
+        const n = (hits[t] || []).length;
+        const c = $(".repron-count", row);
+        c.textContent = n ? `${n} câu` : "không có trong video";
+        c.className = "repron-count " + (n ? "muted" : "qa-bad");
+      });
+    }, 300);
+  };
+  const addRow = (term = "", say = "") => {
+    const row = document.createElement("div");
+    row.className = "repron-row";
+    row.innerHTML = `<input class="repron-term" placeholder="Từ bị đọc sai, vd: PNJ" value="${esc(term)}"> →
+      <input class="repron-say" placeholder="Cách đọc mới, vd: Pi En Di" value="${esc(say)}">
+      <span class="repron-count muted"></span><button class="ghost small repron-del" title="Bỏ">✕</button>`;
+    $(".repron-term", row).oninput = count;
+    $(".repron-del", row).onclick = () => { row.remove(); if (!$$(".repron-row", rows).length) addRow(); };
+    rows.append(row);
+    if (term) count();
+  };
+  addRow();
+  $(".repron-add", box).onclick = () => addRow();
+  $(".repron-go", box).onclick = async (ev) => {
+    const btn = ev.currentTarget, st = $(".repron-status", box);
+    const readings = {};
+    $$(".repron-row", rows).forEach((row) => {
+      const t = $(".repron-term", row).value.trim(), s = $(".repron-say", row).value.trim();
+      if (t && s) readings[t] = s;
+    });
+    if (!Object.keys(readings).length) { toast("Nhập từ bị đọc sai và cách đọc mới"); return; }
+    btn.disabled = true; st.textContent = "Đang gửi…";
+    try {
+      const r = await api(`/api/jobs/${job.id}/repronounce`, { method: "POST", body: JSON.stringify({ readings }) });
+      const n = new Set(Object.values(r.occurrences).flat()).size;
+      st.textContent = `AI sẽ đọc lại ${n} câu…`;
+      followJob(r.job.id, {
+        onProgress: (j) => { st.textContent = j.status === "queued" ? "Đang chờ GPU…" : `${j.message} · ${(j.progress * 100).toFixed(0)}%`; },
+        onEnd: async (j) => {
+          btn.disabled = false; st.textContent = "";
+          if (j?.status !== "done") { toast("Không sửa được: " + (j?.message || "")); return; }
+          // The new takes become these sentences' export choices.
+          const sel = selectionFor(job);
+          Object.entries(j.result?.selection || {}).forEach(([i, t]) => { sel[i] = t; });
+          toast(`Đã đọc lại ${j.result?.sentences?.length || 0} câu và xuất bản mới`);
+          await refreshJob(job.id);
+        },
+      });
+    } catch (err) { btn.disabled = false; st.textContent = ""; toast(err.message); }
   };
   return box;
 }
@@ -355,7 +429,8 @@ function renderTakes(job, s, i, li) {
   const rows = [opt("original", "Bản gốc (AI)", fileUrl(fs.original_audio), `lỗi ${(s.score * 100).toFixed(0)}%`)];
   takes.forEach((t, k) => {
     const ft = fs.takes?.[k] || {};
-    const what = t.source === "guided" ? "AI đọc lại theo bản ghi của bạn" : "AI tạo lại";
+    const what = t.source === "guided" ? "AI đọc lại theo bản ghi của bạn"
+      : t.source === "repronounce" ? `Đọc lại: ${Object.entries(t.readings || {}).map(([a, b]) => `${esc(a)} → ${esc(b)}`).join(", ")}` : "AI tạo lại";
     rows.push(opt(t.id, `${what} #${k + 1}`, fileUrl(ft.audio), `${esc(t.engine)} · lỗi ${(t.score * 100).toFixed(0)}% ${t.passed ? "✓" : `· nghe thành: “${esc(t.heard)}”`}`));
   });
   const recs = takes.map((t, k) => fileUrl(fs.takes?.[k]?.recording)).filter(Boolean);

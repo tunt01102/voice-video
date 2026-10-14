@@ -167,7 +167,7 @@ def synth_sentence(
     # Sentence-level cache: identical requests are free. A new guide changes the key, so a sentence the owner
     # corrected is re-synthesised with the guide instead of returning the cached failure.
     key_src = json.dumps([sentence, lang, voice_id, ref.audio_path if ref else None, plan_engines, seed,
-                          {k: v for k, v in lexicon.items() if k in sentence}]
+                          {k: lexicon[k] for k in N.terms_in(sentence, lexicon)}]
                          + ([guide["id"]] if guide else []) + (["phrases"] if phrase_first else []), ensure_ascii=False)
     key = hashlib.sha256(key_src.encode()).hexdigest()[:24]
     cache_dir = settings.sub("cache", "tts")
@@ -176,7 +176,9 @@ def synth_sentence(
 
     attempts: list[Attempt] = []
     thr = _threshold(lang)
-    lenient = asr.lenient_terms(sentence, {k for k in lexicon if k in sentence})
+    # Match the case the sentence uses ("Pháp lý" for the lexicon term "pháp lý") so QA forgives the respelling.
+    lenient = asr.lenient_terms(sentence, {m.group(0) for k in N.terms_in(sentence, lexicon)
+                                           for m in N.term_pattern(k).finditer(sentence)})
 
     def make(e: str, sd: int, temp: float, respell: dict[str, str] | None = None, *, phrases: list[str] | None = None,
              pauses: list[float] | None = None, prompt: VoiceRef | None = None, strategy: str = "whole") -> Attempt:

@@ -219,7 +219,7 @@ def _deess(x: np.ndarray, fxp: FX.VoiceFX) -> np.ndarray:
 
 
 def rerender(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
-    """p: {job, index, file?, lang?}. With `file` the owner's recording guides the re-render; without it this is a
+    """p: {job, index, file?, lang?, source?, readings?}. With `file` the owner's recording guides the re-render; without it this is a
     fresh-seed / phrase-wise retry. Appends a take to the source job's sentence; never re-renders the video."""
     src_id, idx = p["job"], int(p["index"])
     job = load_done_job(src_id)
@@ -269,12 +269,12 @@ def rerender(p: dict[str, Any], progress: Progress, job_id: str | None = None) -
     raw_path = A.save(out / f"{tid}.wav", audio)
     fx_path = A.save(out / f"{tid}.fx.wav", shaped)
     take = {
-        "id": tid, "source": "guided" if guide else "regen", "engine": rep["engine"], "strategy": rep.get("strategy"),
+        "id": tid, "source": p.get("source") or ("guided" if guide else "regen"), "engine": rep["engine"], "strategy": rep.get("strategy"),
         "score": rep["score"], "passed": rep["passed"], "heard": rep["heard"], "missing": rep.get("missing", []),
         "extra": rep.get("extra", []), "file": str(raw_path), "audio": str(fx_path),
         "duration": round(len(shaped) / A.SR, 2), "slot": round(b - a, 2), "created_at": time.time(),
         "guide": guide["id"] if guide else None, "recording": str(settings.data_dir / guide["raw"]) if guide else None,
-        "rerender_job": job_id,
+        "rerender_job": job_id, **({"readings": p["readings"]} if p.get("readings") else {}),
     }
     # Re-read: another rerender of this job may have finished while we synthesised.
     fresh = load_done_job(src_id)["result"]

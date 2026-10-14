@@ -168,6 +168,42 @@ def create_app() -> FastAPI:
         params = {"job": jid, "selection": body.get("selection") or {}, "format": fmt}
         return {"job": _public_job(runner.submit("export", params, source="dashboard"))}
 
+    @app.get("/api/jobs/{jid}/occurrences")
+    def term_occurrences(jid: str, terms: str = ""):
+        """Which sentences of a finished job contain each term (comma-separated), for the Sửa phát âm panel."""
+        from mediaforge import repronounce
+
+        job = db.get_job(jid)
+        if not job or not (job.get("result") or {}).get("sentences"):
+            raise HTTPException(404, "job has no sentences")
+        wanted = [t.strip() for t in terms.split(",") if t.strip()]
+        return repronounce.occurrences(job["result"]["sentences"], wanted)
+
+    @app.post("/api/jobs/{jid}/repronounce")
+    def repronounce_job(jid: str, body: dict[str, Any] = Body(...)):
+        """Change how words are read in a finished job without re-rendering it.
+
+        body: {"readings": {"PNJ": "Pi En Di"}, "format"?: "mp4"}. Saves the readings to the lexicon, re-reads every
+        sentence containing them and exports a new file with those sentences replaced.
+        """
+        from mediaforge import export, repronounce
+
+        job = db.get_job(jid)
+        if not job or job["status"] != "done" or not (job.get("result") or {}).get("sentences"):
+            raise HTTPException(409, "job must be finished and have sentences")
+        readings = repronounce.clean_readings(body.get("readings"))
+        if not readings:
+            raise HTTPException(400, "readings must map at least one term to a different reading")
+        hits = repronounce.occurrences(job["result"]["sentences"], readings)
+        if not any(hits.values()):
+            raise HTTPException(400, f"not found in this job: {', '.join(readings)}")
+        allowed = export.formats_for(job["result"])
+        fmt = (body.get("format") or allowed[0]).lower()
+        if fmt not in allowed:
+            raise HTTPException(400, f"format must be one of {allowed}")
+        params = {"job": jid, "readings": readings, "format": fmt}
+        return {"job": _public_job(runner.submit("repronounce", params, source="dashboard")), "occurrences": hits}
+
     @app.get("/api/export-formats")
     def export_formats():
         from mediaforge import export

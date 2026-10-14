@@ -106,11 +106,22 @@ def learn(voice_id: str | None, lang: str, term: str, say: str) -> None:
     save_lexicon(data, voice_id)
 
 
+def term_pattern(term: str) -> re.Pattern[str]:
+    """Whole-word match; a term with a capital (PNJ) is case-sensitive, a lower-case one (pháp lý) is not."""
+    flags = 0 if any(c.isupper() for c in term) else re.I
+    return re.compile(rf"(?<!\w){re.escape(unicodedata.normalize('NFC', term))}(?!\w)", flags)
+
+
+def terms_in(text: str, terms) -> list[str]:
+    """The lexicon terms apply_lexicon would rewrite in `text`."""
+    text = unicodedata.normalize("NFC", text)
+    return [t for t in terms if t and term_pattern(t).search(text)]
+
+
 def apply_lexicon(text: str, lexicon: dict[str, str], extra: dict[str, str] | None = None) -> str:
     table = {**lexicon, **(extra or {})}
     for term in sorted(table, key=len, reverse=True):
-        flags = 0 if any(c.isupper() for c in term) else re.I
-        text = re.sub(rf"(?<!\w){re.escape(term)}(?!\w)", table[term], text, flags=flags)
+        text = term_pattern(term).sub(lambda _m, say=table[term]: say, text)
     return text
 
 

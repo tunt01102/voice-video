@@ -216,6 +216,9 @@ Routing default: `vi → vieneu`, `en → voxcpm`, configurable per voice and pe
       cannot fit its slot.
     - **Legacy.** `POST /api/jobs/{id}/patch` (full re-render, recording replaces the synthesis) remains
       for API clients only.
+    - **Fix a word everywhere.** **🗣 Sửa phát âm** on a finished job takes `term → reading` (e.g. `PNJ → Pi En Di`).
+      It saves the reading to the lexicon as `manual`, re-reads every sentence containing the term as a take,
+      and exports a remuxed MP4. There is no video re-render. Design: [SDD-repronounce.md](SDD-repronounce.md).
     - **Punctuation split.** The automatic repair loop also tries phrase-wise synthesis split at internal
       punctuation before asking the LLM, because long sentences truncate or babble.
 
@@ -284,8 +287,9 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 | `GET/POST /api/voices`, `GET/PATCH/DELETE /api/voices/{id}` | voice profiles |
 | `POST /api/voices/{id}/samples` | multipart upload/recording → processed sample |
 | `GET/PUT /api/voices/{id}/lexicon`, `GET/PUT /api/lexicon` | pronunciation lexicons |
-| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip, prepare` (+ internal `rerender`, `export`, `resubtitle`) |
+| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip, prepare` (+ internal `rerender`, `export`, `resubtitle`, `repronounce`) |
 | `POST /api/jobs/{id}/sentences/{i}/rerender` | `{file?, lang?}` — AI re-renders sentence *i* as a take (recording = guide) |
+| `POST /api/jobs/{id}/repronounce` | `{readings: {term: reading}, format?}` — re-read every sentence containing a term, export (no re-render); `GET /api/jobs/{id}/occurrences?terms=` previews matches |
 | `POST /api/jobs/{id}/resubtitle` | rebuild subtitles of a finished video (no TTS/image work) |
 | `POST /api/lexicon/terms` | `{lang, terms: {term: reading}, verified: [term]}` — merge pre-scan answers |
 | `POST /api/jobs/{id}/export` | `{selection: {i: take_id}, format}` — mp4 (default), mov, mkv, webm, mp3, wav, m4a |
@@ -300,7 +304,7 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 `?wait=true` on `POST /api/jobs` blocks until completion (≤ 600 s) for simple clients.
 
 ### 9.2 MCP (streamable HTTP at `http://127.0.0.1:8765/mcp`)
-Tools: `speak`, `generate_image`, `prepare_video`, `create_video`, `resubtitle_video`, `create_short`, `create_explainer`,
+Tools: `speak`, `generate_image`, `prepare_video`, `create_video`, `resubtitle_video`, `repronounce_video`, `create_short`, `create_explainer`,
 `transcribe_subtitles`, `job_status`, `list_voices`, `list_jobs`, `list_music`. Long jobs return a job id
 immediately plus a `wait_seconds` option; results return absolute file paths (sessions
 run on the same machine). Registered with
