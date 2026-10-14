@@ -24,7 +24,7 @@ import numpy as np
 from mediaforge import asr, image, llm, music, subtitles
 from mediaforge import audio as A
 from mediaforge.config import settings
-from mediaforge.sing import accompany, melody, poems, resynth, tones
+from mediaforge.sing import accompany, ace, melody, poems, resynth, tones
 from mediaforge.video import compose
 from mediaforge.voice import fx as FX
 from mediaforge.voice import profiles
@@ -313,6 +313,18 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None, *, kin
     backing = None
     if acc in ("auto", "traditional", None):
         backing = accompany.arrange(mel, vo["tonic"], seed=seed)
+    elif acc in ("ace", "ace+traditional"):
+        # AI arrangement bed (ACE-Step sidecar) under the key-locked traditional instruments.
+        progress(0.58, "accompaniment: ACE-Step")
+        bed = ace.bed(mood=mood, style=style, seconds=mel.length + 1, tonic_hz=vo["tonic"], scale=mel.scale,
+                      bpm=mel.bpm, seed=seed)
+        trad = accompany.arrange(mel, vo["tonic"], seed=seed)
+        n = max(bed.shape[1], trad.shape[1])
+        backing = np.zeros((2, n), dtype=np.float32)
+        backing[:, :bed.shape[1]] += bed * (0.55 if acc == "ace+traditional" else 1.0)
+        if acc == "ace+traditional":
+            backing[:, :trad.shape[1]] += trad * 0.75
+        backing /= np.abs(backing).max() + 1e-9
     elif acc not in ("none", ""):
         backing = library_backing(acc, mel.length + 1)
     progress(0.62, "mixing")
@@ -325,7 +337,8 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None, *, kin
         "bpm": mel.bpm, "duration": round(A.probe_duration(files["audio"]), 2), "voice_id": voice,
         "words": words, "melody": str(out / "melody.json"),
         "report": {"lines": vo["lines"], "spirit": (interp or {}).get("spirit_vi"), "llm": (interp or {}).get("llm"),
-                   "accompaniment": acc, "music_credit": music.credit(acc) if acc not in ("auto", "none", "traditional") else None},
+                   "accompaniment": acc,
+                   "music_credit": music.credit(acc) if acc not in ("auto", "none", "traditional", "ace", "ace+traditional") else None},
     }
     if want_video:
         aspect = p.get("aspect") or "16:9"

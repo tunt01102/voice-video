@@ -108,3 +108,15 @@ def test_clarity_scoring_ignores_case_and_separates_tones():
 def test_key_is_snapped_to_equal_temperament():
     assert P.snap_hz(442.0) == pytest.approx(440.0)
     assert P.note_name(110.0) == "A2"
+
+
+def test_ace_key_and_missing_sidecar(monkeypatch, tmp_path):
+    from mediaforge.config import settings
+    from mediaforge.sing import ace
+
+    assert ace.keyscale(116.54, "bac") == "A# major"
+    assert ace.keyscale(110.0, "oan") == "A minor"
+    monkeypatch.setattr(settings, "ace_step_root", tmp_path)
+    assert not ace.available()
+    with pytest.raises(RuntimeError, match="install_ace_step"):
+        ace.bed(mood="hung-trang", style="hat", seconds=10, tonic_hz=110, scale="bac", bpm=76, seed=1)

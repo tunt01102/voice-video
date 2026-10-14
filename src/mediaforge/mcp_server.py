@@ -122,7 +122,7 @@ async def recite_poem(text: str | None = None, poem_id: str | None = None, versi
     text: the poem, one line per row (or poem_id from list_poems; version 'phien-am' or 'dich:<translator>').
     mood: auto (Claude reads the poem) | hung-trang (proud, heroic) | tram-mac (calm) | u-hoai (longing) | bi-ai.
     spirit: the feeling the author wants affirmed (guides mood and images). accompaniment: auto (traditional
-    instruments in the voice's key) | none | a list_music id. video=True adds an illustrated film ("hoạt cảnh")
+    instruments in the voice's key) | ace+traditional (adds an ACE-Step AI orchestra bed) | ace | none | a list_music id. video=True adds an illustrated film ("hoạt cảnh")
     with karaoke lyrics. Returns a job id; poll job_status.
     """
     return await _submit("recite", {"text": text, "poem_id": poem_id, "version": version, "voice": voice,
