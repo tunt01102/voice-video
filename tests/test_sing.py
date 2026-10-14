@@ -153,3 +153,10 @@ def test_speech_prosody_follows_the_spoken_contour():
         v = f0[f0 > 0]
         return np.median(v[: v.size // 3]) - np.median(v[-v.size // 3:])
     assert slope(shaped) > slope(flat) + 15
+
+
+def test_backing_ducks_under_the_voice():
+    v = np.zeros(48000 * 2, dtype=np.float32)
+    v[48000:] = 0.5 * np.sin(np.arange(48000) / 10)
+    g = P.duck_curve(v, v.size)
+    assert g[:24000].min() > 0.95 and g[60000:90000].max() < 0.5
