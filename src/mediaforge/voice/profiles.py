@@ -1,6 +1,7 @@
 """Voice profiles: the owner's recordings, cleaned references and default voice settings.
 
-Layout: data/voices/<id>/profile.json, samples/<sid>.wav (cleaned), raw/<sid>.<ext>, lexicon.json
+Layout: data/voices/<id>/profile.json, samples/<sid>.wav (cleaned), raw/<sid>.<ext>, lexicon.json,
+        corrections/index.json + corrections/<cid>.<ext|wav> (sentence guides, see docs/SDD-guided-repair.md)
 Voice recordings are biometric personal data: they stay under data/ and are never sent
 to any LLM (only text is).
 """
@@ -151,7 +152,8 @@ def _snr_db(x: np.ndarray, sr: int) -> float:
     return float(20 * np.log10(speech / max(noise, 1e-6)))
 
 
-def add_sample(voice_id: str, src: str | Path, *, lang: str | None = None, text: str | None = None, denoise: bool = True) -> dict[str, Any]:
+def add_sample(voice_id: str, src: str | Path, *, lang: str | None = None, text: str | None = None, denoise: bool = True,
+               source: str = "enrol") -> dict[str, Any]:
     """Clean a recording, transcribe it, store it and re-pick the best references."""
     from mediaforge import asr
 
@@ -178,6 +180,7 @@ def add_sample(voice_id: str, src: str | Path, *, lang: str | None = None, text:
         "id": sid, "file": str(out.relative_to(settings.data_dir)), "lang": lang,
         "text": (text or heard).strip(), "asr_text": heard.strip(),
         "duration": round(len(x) / A.SR, 2), "snr_db": round(_snr_db(x, A.SR), 1), "created_at": time.time(),
+        "source": source,
     }
     profile["samples"].append(sample)
     profile["refs"] = pick_refs(profile["samples"])
@@ -222,7 +225,10 @@ def remove_sample(voice_id: str, sample_id: str) -> dict[str, Any]:
 def _quality(s: dict[str, Any]) -> float:
     dur = s["duration"]
     dur_score = 1.0 if 5 <= dur <= MAX_REF_SECONDS else max(0.0, 1 - abs(dur - 8) / 8)
-    return dur_score * 2 + min(s.get("snr_db", 0), 40) / 20
+    # Sentence-correction clips grow the pool but rank below dedicated enrolment reads, so one
+    # emphatic sentence does not become the main reference.
+    penalty = 0.4 if s.get("source") == "correction" else 0.0
+    return dur_score * 2 + min(s.get("snr_db", 0), 40) / 20 - penalty
 
 
 def pick_refs(samples: list[dict[str, Any]]) -> dict[str, str]:
@@ -254,6 +260,16 @@ def voice_ref(voice_id: str | None, lang: str) -> VoiceRef | None:
     if sample is None:
         return None
     return VoiceRef(audio_path=str(settings.data_dir / sample["file"]), text=sample["text"], lang=sample["lang"])
+
+
+def ref_from_path(voice_id: str | None, path: str | None, lang: str) -> VoiceRef | None:
+    """The reference an earlier render used (pinned so a re-rendered sentence keeps the same timbre)."""
+    if not voice_id or not path or not Path(path).exists():
+        return None
+    for s in get_voice(voice_id)["samples"]:
+        if (settings.data_dir / s["file"]).resolve() == Path(path).resolve():
+            return VoiceRef(audio_path=str(settings.data_dir / s["file"]), text=s["text"], lang=s["lang"])
+    return None
 
 
 def create_demo_voice(voice_id: str = "demo") -> dict[str, Any]:
@@ -288,3 +304,106 @@ def default_voice() -> str | None:
 def set_default_voice(voice_id: str) -> None:
     get_voice(voice_id)
     (settings.sub("voices") / "DEFAULT").write_text(voice_id)
+
+
+# ---------------------------------------------------------------- sentence guides (corrections)
+# The owner's recording of one sentence that the AI got wrong. Used only as reference data for
+# re-synthesis (phrasing, prosody prompt); never mixed into any output. Never deleted.
+
+GUIDE_MIN_PAUSE = 0.18
+
+
+def sentence_key(sentence: str) -> str:
+    """Stable identity for a sentence across renders (whitespace/case-insensitive)."""
+    import unicodedata
+
+    return " ".join(unicodedata.normalize("NFC", sentence).lower().split())
+
+
+def _corrections_dir(voice_id: str) -> Path:
+    d = _dir(voice_id) / "corrections"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def corrections(voice_id: str) -> dict[str, list[dict[str, Any]]]:
+    f = _dir(voice_id) / "corrections" / "index.json"
+    return json.loads(f.read_text("utf-8")) if f.exists() else {}
+
+
+def _save_corrections(voice_id: str, data: dict[str, list[dict[str, Any]]]) -> None:
+    f = _corrections_dir(voice_id) / "index.json"
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
+    tmp.replace(f)
+
+
+def guide_pauses(script: str, words: list, min_pause: float = GUIDE_MIN_PAUSE) -> tuple[list[str], list[float]]:
+    """Split `script` into phrases at the pauses the speaker made. words: asr.Word aligned to the recording."""
+    from mediaforge import asr
+
+    tokens = script.split()
+    aligned = asr.align_script(script, words) if words else []
+    if len(aligned) != len(tokens) or len(tokens) < 2:
+        return [script], []
+    phrases, pauses, cur = [], [], [tokens[0]]
+    for k in range(1, len(tokens)):
+        gap = aligned[k].start - aligned[k - 1].end
+        if gap >= min_pause and len(cur) >= 2 and len(tokens) - k >= 2:
+            phrases.append(" ".join(cur))
+            pauses.append(round(min(max(gap, 0.08), 0.6), 3))
+            cur = []
+        cur.append(tokens[k])
+    phrases.append(" ".join(cur))
+    return phrases, pauses
+
+
+def add_correction(voice_id: str, src: str | Path, *, text: str, lang: str, job: str | None = None,
+                   index: int | None = None) -> dict[str, Any]:
+    """Store the owner's recording of `text` as a guide: raw + cleaned clip, ASR, and the owner's phrasing."""
+    from mediaforge import asr
+
+    get_voice(voice_id)
+    d = _corrections_dir(voice_id)
+    cid = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
+    raw = d / f"{cid}{Path(src).suffix or '.wav'}"
+    shutil.copy(src, raw)
+    x = clean_recording(raw)
+    clip = A.save(d / f"{cid}.wav", x)
+    tr = asr.transcribe(x, lang=lang)
+    qa = asr.error_rate(text, tr["text"], lang)
+    phrases, pauses = guide_pauses(text, tr["words"])
+    entry = {
+        "id": cid, "text": text, "lang": lang, "raw": str(raw.relative_to(settings.data_dir)),
+        "file": str(clip.relative_to(settings.data_dir)), "asr_text": tr["text"], "asr_score": qa["score"],
+        "duration": round(len(x) / A.SR, 2), "phrases": phrases, "pauses": pauses,
+        "job": job, "index": index, "created_at": time.time(), "strategy": None, "score": None,
+    }
+    data = corrections(voice_id)
+    data.setdefault(sentence_key(text), []).append(entry)
+    _save_corrections(voice_id, data)
+    backup_voices(f"correction-{voice_id}")
+    return entry
+
+
+def guide_for(voice_id: str | None, sentence: str) -> dict[str, Any] | None:
+    """Latest usable guide for this sentence: prefer one whose strategy already passed QA."""
+    if not voice_id:
+        return None
+    try:
+        entries = corrections(voice_id).get(sentence_key(sentence)) or []
+    except (KeyError, ValueError):
+        return None
+    entries = [e for e in entries if (settings.data_dir / e["file"]).exists()]
+    if not entries:
+        return None
+    passed = [e for e in entries if e.get("passed")]
+    return (passed or entries)[-1]
+
+
+def update_correction(voice_id: str, sentence: str, cid: str, **fields: Any) -> None:
+    data = corrections(voice_id)
+    for e in data.get(sentence_key(sentence), []):
+        if e["id"] == cid:
+            e.update(fields)
+    _save_corrections(voice_id, data)

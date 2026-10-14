@@ -125,6 +125,45 @@ def create_app() -> FastAPI:
         new = runner.submit(job["type"], params, source="dashboard")
         return {"job": _public_job(new), "enrol": enrol}
 
+    @app.post("/api/jobs/{jid}/sentences/{index}/rerender")
+    def rerender_sentence(jid: str, index: int, body: dict[str, Any] = Body(default={})):
+        """AI re-renders one sentence of a finished job as a new take (the video is not re-rendered).
+
+        body: {"file": <uploaded recording path>, "lang"?}. With a recording, it guides the re-render and is kept
+        under the voice as training data; it is never inserted into the output. Without one: fresh seed/phrasing.
+        """
+        job = db.get_job(jid)
+        if not job or job["status"] != "done":
+            raise HTTPException(409, "job must be finished")
+        sents = (job.get("result") or {}).get("sentences") or []
+        if not 0 <= index < len(sents):
+            raise HTTPException(404, "sentence not found")
+        if body.get("file") and not Path(body["file"]).is_file():
+            raise HTTPException(400, "recording file not found")
+        params = {"job": jid, "index": index, "file": body.get("file"), "lang": body.get("lang")}
+        return {"job": _public_job(runner.submit("rerender", params, source="dashboard"))}
+
+    @app.post("/api/jobs/{jid}/export")
+    def export_job(jid: str, body: dict[str, Any] = Body(default={})):
+        """Export with a chosen voice per sentence ({"selection": {index: take_id|"original"}, "format": "mp4"})."""
+        from mediaforge import export
+
+        job = db.get_job(jid)
+        if not job or job["status"] != "done" or not job.get("result"):
+            raise HTTPException(409, "job must be finished")
+        allowed = export.formats_for(job["result"])
+        fmt = (body.get("format") or allowed[0]).lower()
+        if fmt not in allowed:
+            raise HTTPException(400, f"format must be one of {allowed}")
+        params = {"job": jid, "selection": body.get("selection") or {}, "format": fmt}
+        return {"job": _public_job(runner.submit("export", params, source="dashboard"))}
+
+    @app.get("/api/export-formats")
+    def export_formats():
+        from mediaforge import export
+
+        return export.catalog()
+
     @app.get("/api/jobs/{jid}/events")
     async def job_events(jid: str):
         if not db.get_job(jid):
@@ -217,6 +256,10 @@ def create_app() -> FastAPI:
         if wait:
             job = await anyio.to_thread.run_sync(runner.wait, job["id"], 300)
         return _public_job(job)
+
+    @app.get("/api/voices/{vid}/corrections")
+    def voice_corrections(vid: str):
+        return profiles.corrections(vid)
 
     @app.delete("/api/voices/{vid}/samples/{sid}")
     def delete_sample(vid: str, sid: str):

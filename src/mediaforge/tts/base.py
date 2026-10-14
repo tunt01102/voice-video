@@ -21,7 +21,10 @@ class TTSEngine(Protocol):
     sample_rate: int
     self_normalises: set[str]   # languages for which the engine normalises raw text itself
 
-    def synth(self, text: str, lang: str, ref: VoiceRef | None, *, seed: int, temperature: float) -> np.ndarray: ...
+    def synth(self, text: str, lang: str, ref: VoiceRef | None, *, seed: int, temperature: float,
+              prompt: VoiceRef | None = None) -> np.ndarray: ...
+    # prompt: optional prosody guide (the owner reading this very sentence). Engines without a
+    # continuation-prompt channel ignore it; `ref` always sets the timbre.
 
 
 _REGISTRY: dict[str, type] = {}

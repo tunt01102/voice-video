@@ -1,6 +1,6 @@
 # MediaForge — Software Design Document
 
-Status: v1.1 (implemented) · 2026-10-14 · Owner: tu.dev@block8.ai · Internal tool, localhost only
+Status: v1.2 (implemented) · 2026-10-14 · Owner: tu.dev@block8.ai · Internal tool, localhost only
 
 MediaForge is the single local service on this Mac that every other task (and every
 Claude Code session) calls to produce **voice, audio, subtitles, images and videos**.
@@ -142,6 +142,8 @@ src/mediaforge/
   video/slides.py    slide rendering (Pillow)
   video/clips.py     optional LTX-2 clips
   pipelines.py       narrated / short / explainer orchestrations
+  takes.py           guided sentence re-render ("takes"), sentence spans, splice
+  export.py          export formats table + remux/recompose export job
   music.py           background-music library (music_catalog.json metadata; audio in data/music/)
   api.py             FastAPI app (+ dashboard static, + MCP mount)
   mcp_server.py      MCP tools (thin wrappers over the job layer)
@@ -199,11 +201,23 @@ Routing default: `vi → vieneu`, `en → voxcpm`, configurable per voice and pe
    - Final loudness `loudnorm I=-16 TP=-1.5 LRA=11`, 48 kHz.
 8. **Cache** by `sha256(normalised_text, voice, engine, params)` so re-renders are free.
 9. Output: WAV (+ MP3), word timings, QA report JSON (per sentence: score, heard, missing/extra words).
-10. **Human-in-the-loop repair**: `POST /api/jobs/{id}/patch` re-renders a finished job with
-    `record` (the owner's recording of one sentence replaces the synthesis and is enrolled as a
-    voice sample) or `regen` (new seed for that sentence). Unchanged sentences hit the TTS cache.
-    Videos reuse `plan.json` and the content-addressed image cache, so only the voice track and
-    final mux are redone. The dashboard shows failed sentences in red with misheard words underlined.
+10. **Human-in-the-loop repair (guided)** — full design in [SDD-guided-repair.md](SDD-guided-repair.md).
+    The dashboard shows failed sentences in red with the misheard words underlined.
+    - **Recording as a guide.** The owner records the failed sentence. The recording is a **guide**,
+      never part of the output.
+    - **Storage.** It is stored for good under `voices/<id>/corrections/` and also enrolled as a
+      `correction` sample.
+    - **Re-render.** The AI re-renders the sentence as a **take**, using the job's own reference clip
+      and voice FX. The recording supplies the phrasing (the owner's pauses → phrase-wise synthesis)
+      and, for VoxCPM2, the prosody prompt.
+    - **Learning.** Later renders of that sentence pick up the guide automatically.
+    - **Export.** Takes are listed under the video. Exporting splices the chosen takes into the voice
+      track and remuxes; the video stream is copied, not re-rendered. A recompose runs only when a take
+      cannot fit its slot.
+    - **Legacy.** `POST /api/jobs/{id}/patch` (full re-render, recording replaces the synthesis) remains
+      for API clients only.
+    - **Punctuation split.** The automatic repair loop also tries phrase-wise synthesis split at internal
+      punctuation before asking the LLM, because long sentences truncate or babble.
 
 Sample-rate contract: engines 48 kHz (VoxCPM2/VieNeu) or 24 kHz (OmniVoice) → resampled
 to 48 kHz on exit; ASR always receives 16 kHz mono.
@@ -233,7 +247,8 @@ to 48 kHz on exit; ASR always receives 16 kHz mono.
    zoom/pan directions), `xfade` transitions, voice track, optional music with
    `sidechaincompress` ducking, `loudnorm`, subtitles burned (ASS via `ffmpeg-full`) and
    attached as soft track; H.264 (default, compatibility) or HEVC VideoToolbox.
-5. Outputs: `final.mp4`, `subs.srt/.vtt/.ass`, `voice.wav`, `plan.json`, thumbnail.
+5. Outputs: `final.mp4`, `subs.srt/.vtt/.ass`, `voice.wav`, `plan.json`, thumbnail; `result.sentence_spans`
+   (sentence positions in `voice.wav`), and later `takes/` and `exports/` (see SDD-guided-repair.md §5).
 
 **Music library.** `music` is either a local path or an id from `music_catalog.json`, a curated
 list of calm instrumental tracks that are CC0 / public domain or CC BY (recording licence checked,
@@ -266,7 +281,10 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 | `GET/POST /api/voices`, `GET/PATCH/DELETE /api/voices/{id}` | voice profiles |
 | `POST /api/voices/{id}/samples` | multipart upload/recording → processed sample |
 | `GET/PUT /api/voices/{id}/lexicon`, `GET/PUT /api/lexicon` | pronunciation lexicons |
-| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip` |
+| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip` (+ internal `rerender`, `export`) |
+| `POST /api/jobs/{id}/sentences/{i}/rerender` | `{file?, lang?}` — AI re-renders sentence *i* as a take (recording = guide) |
+| `POST /api/jobs/{id}/export` | `{selection: {i: take_id}, format}` — mp4 (default), mov, mkv, webm, mp3, wav, m4a |
+| `GET /api/export-formats`, `GET /api/voices/{id}/corrections` | format catalogue; a voice's sentence guides |
 | `GET /api/jobs`, `GET /api/jobs/{id}` | list / detail (status, progress, result, report) |
 | `GET /api/jobs/{id}/events` | SSE progress stream |
 | `POST /api/jobs/{id}/cancel`, `DELETE /api/jobs/{id}` | control |
@@ -294,7 +312,7 @@ CLI talks to the running server when available, otherwise runs in-process.
 | P1 Video | subtitles, images, composer, narrated/short/explainer/screen pipelines | Done 2026-10-14 |
 | P2 Service | FastAPI + jobs + SSE, MCP, `claude mcp add`, launchd | Done 2026-10-14 |
 | P3 Dashboard | record/enrol voice, lexicon editor, job launcher, gallery | Done 2026-10-14 |
-| P4 Later | install ltx-2-mlx and enable clips; OmniVoice adapter; music generation (ACE-Step, Apache-2.0 — evaluate); speaker-similarity score (WavLM-SV) to auto-pick the best reference; automated tests; React upgrade | Open |
+| P4 Later | install ltx-2-mlx and enable clips; OmniVoice adapter; music generation (ACE-Step, Apache-2.0 — evaluate); speaker-similarity score (WavLM-SV) to auto-pick the best reference and check take timbre; fine-tune on `corrections/`; broader automated tests (unit tests for guided repair/export exist in `tests/`); React upgrade | Open |
 
 **Owner action required:** record real samples (dashboard → Voices → Record). Until then
 a placeholder voice (macOS `say`) proves the pipeline; "sounds like me" can only be

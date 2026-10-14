@@ -8,7 +8,7 @@ const api = async (path, opts = {}) => {
 };
 const toast = (msg) => { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 3500); };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const TYPE_LABEL = { tts: "Giọng nói", image: "Ảnh", subtitle: "Phụ đề", short: "Short", narrated: "Video", explainer: "Explainer", screen: "Screen", video: "Video", enrol: "Thu mẫu" };
+const TYPE_LABEL = { tts: "Giọng nói", image: "Ảnh", subtitle: "Phụ đề", short: "Short", narrated: "Video", explainer: "Explainer", screen: "Screen", video: "Video", enrol: "Thu mẫu", rerender: "Đọc lại câu", export: "Xuất file" };
 
 // ------------------------------------------------------------------ tabs
 $$("#tabs button").forEach((b) => b.onclick = () => {
@@ -138,6 +138,7 @@ function renderOutputs(job, out) {
   if (f.translated) add("SRT (dịch)", f.translated.srt);
   if (links.length) out.insertAdjacentHTML("beforeend", `<div class="links">${links.join("")}</div>`);
   const r = job.result || {};
+  if (fileUrl(f.video) || (fileUrl(f.audio) && Array.isArray(r.sentences))) out.append(renderExport(job));
   if (Array.isArray(r.sentences) && r.sentences.length) out.append(renderQA(job));
   if (r.text && job.type === "subtitle") out.insertAdjacentHTML("beforeend", `<pre>${esc(r.text)}</pre>`);
 }
@@ -157,47 +158,146 @@ function markMissing(text, missing, heard) {
     return k && bad.has(k) ? `<mark class="miss">${esc(tok)}</mark>` : esc(tok);
   }).join("");
 }
+// Which voice each sentence uses when exporting: {jobId: {index: takeId | "original"}}.
+const selections = new Map();
+function defaultSelection(job) {
+  const sel = {};
+  (job.result?.sentences || []).forEach((s, i) => {
+    const ok = (s.takes || []).filter((t) => t.passed);
+    if (ok.length) sel[i] = ok[ok.length - 1].id;
+  });
+  return sel;
+}
+function selectionFor(job) {
+  if (!selections.has(job.id)) selections.set(job.id, defaultSelection(job));
+  return selections.get(job.id);
+}
+let exportFormats = null;
+async function loadExportFormats() {
+  if (!exportFormats) exportFormats = await api("/api/export-formats").catch(() => ({ video: [{ id: "mp4", label: "MP4" }], audio: [{ id: "mp3", label: "MP3" }] }));
+  return exportFormats;
+}
+function renderExport(job) {
+  const box = document.createElement("div");
+  box.className = "export-bar";
+  const isVideo = !!fileUrl(job.files?.video);
+  box.innerHTML = `<div class="export-row">
+      <span class="export-sum muted"></span>
+      <label class="inline-label">Định dạng <select class="export-fmt"></select></label>
+      <button class="primary small export-go">⬇ ${isVideo ? "Xuất video" : "Xuất audio"}</button>
+      <span class="muted export-status"></span></div>
+    <div class="export-list links"></div>`;
+  loadExportFormats().then((fm) => {
+    const list = isVideo ? fm.video : fm.audio;
+    $(".export-fmt", box).innerHTML = list.map((f, i) => `<option value="${f.id}" ${i === 0 ? "selected" : ""}>${esc(f.label)}</option>`).join("");
+  });
+  const sum = () => {
+    const n = Object.values(selectionFor(job)).filter((v) => v && v !== "original").length;
+    $(".export-sum", box).textContent = n ? `Giọng: ${n} câu dùng bản AI đã sửa, còn lại giữ bản gốc` : "Giọng: bản gốc";
+  };
+  sum(); box.refreshSummary = sum;
+  const exports = job.files?.exports || [];
+  $(".export-list", box).innerHTML = exports.slice().reverse().map((e) =>
+    `<a href="${fileUrl(e.file)}" download>⬇ ${esc(e.label || e.format)}</a>`).join("");
+  $(".export-go", box).onclick = async (ev) => {
+    const btn = ev.currentTarget, st = $(".export-status", box);
+    btn.disabled = true; st.textContent = "Đang xuất…";
+    try {
+      const r = await api(`/api/jobs/${job.id}/export`, { method: "POST", body: JSON.stringify({ selection: selectionFor(job), format: $(".export-fmt", box).value }) });
+      followJob(r.job.id, {
+        onProgress: (j) => { st.textContent = j.status === "running" ? `Đang xuất… ${(j.progress * 100).toFixed(0)}%` : ""; },
+        onEnd: async (j) => {
+          btn.disabled = false;
+          if (j?.status !== "done") { st.textContent = ""; toast("Xuất thất bại: " + (j?.message || "")); return; }
+          toast("Đã xuất xong"); await refreshJob(job.id);
+          const url = fileUrl(j.files?.file); if (url) { const a = document.createElement("a"); a.href = url; a.download = ""; document.body.append(a); a.click(); a.remove(); }
+        },
+      });
+    } catch (err) { btn.disabled = false; st.textContent = ""; toast(err.message); }
+  };
+  return box;
+}
+function renderTakes(job, s, i, li) {
+  const fs = job.files?.sentences?.[i] || {};
+  const takes = s.takes || [];
+  if (!takes.length) return;
+  const sel = selectionFor(job);
+  const name = `sel-${job.id}-${i}`;
+  const cur = sel[i] || "original";
+  const opt = (id, label, url, meta) => `<label class="take ${cur === id ? "on" : ""}">
+      <input type="radio" name="${name}" value="${id}" ${cur === id ? "checked" : ""}>
+      <span class="take-label">${label}</span>${meta ? `<span class="muted take-meta">${meta}</span>` : ""}
+      ${url ? `<audio controls preload="none" src="${url}"></audio>` : ""}</label>`;
+  const rows = [opt("original", "Bản gốc (AI)", fileUrl(fs.original_audio), `lỗi ${(s.score * 100).toFixed(0)}%`)];
+  takes.forEach((t, k) => {
+    const ft = fs.takes?.[k] || {};
+    const what = t.source === "guided" ? "AI đọc lại theo bản ghi của bạn" : "AI tạo lại";
+    rows.push(opt(t.id, `${what} #${k + 1}`, fileUrl(ft.audio), `${esc(t.engine)} · lỗi ${(t.score * 100).toFixed(0)}% ${t.passed ? "✓" : `· nghe thành: “${esc(t.heard)}”`}`));
+  });
+  const recs = takes.map((t, k) => fileUrl(fs.takes?.[k]?.recording)).filter(Boolean);
+  const box = document.createElement("div");
+  box.className = "takes";
+  box.innerHTML = `<div class="muted takes-head">Chọn giọng cho câu này khi xuất:</div>${rows.join("")}` +
+    (recs.length ? `<div class="take rec-ref"><span class="take-label">🎙 Bản ghi của bạn</span><span class="muted take-meta">chỉ để nghe đối chiếu — không chèn vào video</span><audio controls preload="none" src="${recs[recs.length - 1]}"></audio></div>` : "");
+  $$("input[type=radio]", box).forEach((rb) => rb.onchange = () => {
+    sel[i] = rb.value;
+    $$(".take", box).forEach((x) => x.classList.toggle("on", $("input", x)?.checked));
+    jobEls.get(job.id) && $(".export-bar", jobEls.get(job.id))?.refreshSummary?.();
+  });
+  li.append(box);
+}
 function renderQA(job) {
   const r = job.result, sents = r.sentences;
-  const failed = sents.filter((s) => !s.passed);
+  const failed = sents.filter((s) => !s.passed && !(s.takes || []).some((t) => t.passed));
+  const nFixed = sents.filter((s) => !s.passed && (s.takes || []).some((t) => t.passed)).length;
   const box = document.createElement("div");
   box.className = "qa";
   box.innerHTML = `<div class="qa-head">${failed.length
-      ? `<span class="qa-bad">⚠ ${failed.length}/${sents.length} câu chưa đạt kiểm tra phát âm — bôi đỏ bên dưới. Bấm 🎙 để tự ghi âm câu đó (bản ghi thay vào kết quả và được lưu làm mẫu giọng) hoặc 🔁 để tạo lại.</span>`
-      : `<span class="qa-ok">✓ ${sents.length}/${sents.length} câu đạt kiểm tra phát âm</span>`}
-    <button class="ghost small qa-toggle">${failed.length ? "Ẩn/hiện tất cả câu" : "Xem từng câu"}</button></div>
-    <ol class="qa-list ${failed.length ? "" : "collapsed"}"></ol>`;
+      ? `<span class="qa-bad">⚠ ${failed.length}/${sents.length} câu chưa đạt kiểm tra phát âm — bôi đỏ bên dưới. Bấm 🎙 để đọc mẫu câu đó: AI dùng bản ghi của bạn làm hướng dẫn để đọc lại bằng giọng nhân bản (bản ghi không bị chèn vào video, và được lưu để giọng lần sau tốt hơn). 🔁 để AI tạo lại. Bản mới hiện ngay dưới câu để bạn chọn khi xuất.</span>`
+      : `<span class="qa-ok">✓ ${sents.length}/${sents.length} câu đạt kiểm tra phát âm${nFixed ? ` (${nFixed} câu nhờ bản AI đọc lại)` : ""}</span>`}
+    <button class="ghost small qa-toggle">${failed.length || sents.some((s) => s.takes?.length) ? "Ẩn/hiện tất cả câu" : "Xem từng câu"}</button></div>
+    <ol class="qa-list ${failed.length || sents.some((s) => s.takes?.length) ? "" : "collapsed"}"></ol>`;
   const list = $(".qa-list", box);
-  sents.forEach((s) => {
+  sents.forEach((s, i) => {
     const li = document.createElement("li");
-    li.className = s.passed ? (s.source === "recording" ? "rec-ok" : "ok") : "bad";
+    const fixed = (s.takes || []).some((t) => t.passed);
+    li.className = s.passed ? (s.source === "recording" ? "rec-ok" : "ok") : fixed ? "fixed" : "bad";
     li.innerHTML = `<div class="qa-text">${s.passed ? esc(s.text) : markMissing(s.text, s.missing, s.heard)}</div>
-      <div class="qa-meta">${s.source === "recording" ? "🎙 giọng ghi âm của bạn" :
-        `${s.lang} · ${s.engine} · lỗi ${(s.score * 100).toFixed(0)}%${s.passed ? "" : ` · nghe thành: “${esc(s.heard)}”`}`}</div>
+      <div class="qa-meta">${s.source === "recording" ? "🎙 giọng ghi âm của bạn (bản cũ)" :
+        `${s.lang} · ${s.engine} · lỗi ${(s.score * 100).toFixed(0)}%${s.passed ? "" : ` · nghe thành: “${esc(s.heard)}”`}`}${fixed ? " · ✓ đã có bản AI sửa" : ""}</div>
       <div class="qa-actions">
         <button class="rec small" data-act="rec">🎙 Ghi âm câu này</button>
         <button class="ghost small" data-act="regen">🔁 Tạo lại</button>
         <span class="muted qa-status"></span></div>`;
-    if (s.passed) li.classList.add("only-hover");
-    $("[data-act=rec]", li).onclick = (e) => recordSentence(job, s, e.currentTarget, li);
-    $("[data-act=regen]", li).onclick = () => patchJob(job, { regen: [s.text] }, li);
+    if (s.passed && !(s.takes || []).length) li.classList.add("only-hover");
+    $("[data-act=rec]", li).onclick = (e) => recordSentence(job, s, i, e.currentTarget, li);
+    $("[data-act=regen]", li).onclick = () => rerenderSentence(job, i, {}, li);
+    renderTakes(job, s, i, li);
     list.append(li);
   });
   $(".qa-toggle", box).onclick = () => list.classList.toggle("collapsed");
   return box;
 }
-async function patchJob(job, body, li) {
-  $(".qa-status", li).textContent = "Đang tạo bản mới…";
+async function rerenderSentence(job, i, body, li) {
+  const st = $(".qa-status", li);
+  st.textContent = "AI đang đọc lại câu này…";
   try {
-    const r = await api(`/api/jobs/${job.id}/patch`, { method: "POST", body: JSON.stringify(body) });
-    const el = renderJob(r.job);
-    jobEls.get(job.id)?.after(el); followJob(r.job.id);
-    $(".qa-status", li).textContent = "→ bản mới đang render ngay bên dưới";
-    if (r.enrol) toast("Đã lưu bản ghi làm mẫu giọng");
-  } catch (err) { $(".qa-status", li).textContent = ""; toast(err.message); }
+    const r = await api(`/api/jobs/${job.id}/sentences/${i}/rerender`, { method: "POST", body: JSON.stringify(body) });
+    followJob(r.job.id, {
+      onProgress: (j) => { if (j.status === "running") st.textContent = `${j.message} · ${(j.progress * 100).toFixed(0)}%`; else if (j.status === "queued") st.textContent = "Đang chờ GPU…"; },
+      onEnd: async (j) => {
+        if (j?.status !== "done") { st.textContent = ""; toast("Không đọc lại được: " + (j?.message || "")); return; }
+        const t = j.result?.take;
+        // The new take becomes this sentence's export choice when it passes QA.
+        if (t?.passed) selectionFor(job)[i] = t.id;
+        toast(t?.passed ? "Đã có bản AI đọc lại — hiện ngay dưới câu" : "Bản AI mới vẫn chưa đạt — thử ghi âm lại hoặc tạo lại");
+        await refreshJob(job.id);
+      },
+    });
+  } catch (err) { st.textContent = ""; toast(err.message); }
 }
 let sentRec = null;
-async function recordSentence(job, s, btn, li) {
+async function recordSentence(job, s, i, btn, li) {
   if (sentRec && sentRec.state === "recording") { sentRec.stop(); return; }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
@@ -208,12 +308,19 @@ async function recordSentence(job, s, btn, li) {
       const blob = new Blob(parts, { type: sentRec.mimeType || "audio/webm" });
       const ext = (sentRec.mimeType || "").includes("mp4") ? "m4a" : "webm";
       $(".qa-status", li).textContent = "Đang tải bản ghi…";
-      const file = await upload(new File([blob], `sentence.${ext}`, { type: blob.type }));
-      await patchJob(job, { record: { text: s.text, file, lang: s.lang } }, li);
+      try {
+        const file = await upload(new File([blob], `sentence.${ext}`, { type: blob.type }));
+        await rerenderSentence(job, i, { file, lang: s.lang }, li);
+      } catch (err) { $(".qa-status", li).textContent = ""; toast(err.message); }
     };
     sentRec.start(); btn.classList.add("on"); btn.textContent = "■ Dừng";
     $(".qa-status", li).textContent = "Đang ghi — đọc câu trên rồi bấm Dừng";
   } catch (err) { toast("Không truy cập được micro: " + err.message); }
+}
+async function refreshJob(id) {
+  const j = await api(`/api/jobs/${id}`);
+  const el = jobEls.get(id);
+  if (el) { el.dataset.rendered = ""; updateJob(j); }
 }
 
 function renderJob(job) {
@@ -237,18 +344,19 @@ function updateJob(job) {
   if (el.dataset.rendered !== job.status) { el.dataset.rendered = job.status; renderOutputs(job, $(".job-out", el)); }
 }
 const followers = new Set();
-function followJob(id) {
+function followJob(id, { onProgress, onEnd } = {}) {
   if (followers.has(id)) return; followers.add(id);
   const es = new EventSource(`/api/jobs/${id}/events`);
-  es.addEventListener("progress", (e) => updateJob(JSON.parse(e.data)));
-  es.addEventListener("end", () => { es.close(); followers.delete(id); loadHealth(); });
-  es.onerror = () => { es.close(); followers.delete(id); };
+  let last = null;
+  es.addEventListener("progress", (e) => { last = JSON.parse(e.data); updateJob(last); onProgress?.(last); });
+  es.addEventListener("end", () => { es.close(); followers.delete(id); loadHealth(); onEnd?.(last); });
+  es.onerror = () => { es.close(); followers.delete(id); if (onEnd) api(`/api/jobs/${id}`).then(onEnd, () => onEnd(null)); };
 }
 async function loadJobs() {
   const status = $("#jobs-filter").value;
   const jobs = await api("/api/jobs?limit=60" + (status ? "&status=" + status : ""));
   const list = $("#jobs-list"); list.innerHTML = "";
-  jobs.filter((j) => j.type !== "enrol").forEach((j) => { list.append(renderJob(j)); if (["queued", "running"].includes(j.status)) followJob(j.id); });
+  jobs.filter((j) => !["enrol", "rerender", "export"].includes(j.type)).forEach((j) => { list.append(renderJob(j)); if (["queued", "running"].includes(j.status)) followJob(j.id); });
   if (!list.children.length) list.innerHTML = `<p class="muted">Chưa có job nào.</p>`;
 }
 $("#jobs-filter").onchange = loadJobs; $("#jobs-refresh").onclick = loadJobs;

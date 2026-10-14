@@ -116,14 +116,7 @@ def compose(
         # audio
         if music:
             inputs += ["-stream_loop", "-1", "-i", str(music)]
-            m_idx = n + 1
-            fc.append(f"[{voice_idx}:a]aresample=48000,asplit=2[vo][key]")
-            fc.append(f"[{m_idx}:a]aresample=48000,volume={music_volume}[m]")
-            fc.append("[m][key]sidechaincompress=threshold=0.04:ratio=8:attack=15:release=350[duck]")
-            fc.append("[vo][duck]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,"
-                      "loudnorm=I=-16:TP=-1.5:LRA=11[aout]")
-        else:
-            fc.append(f"[{voice_idx}:a]aresample=48000,apad=pad_dur=0.6[aout]")
+        fc += audio_graph(voice_idx, n + 1 if music else None, music_volume)
         args = [*inputs]
         if soft_srt:
             args += ["-i", str(soft_srt)]
@@ -141,6 +134,18 @@ def compose(
             raise RuntimeError(f"ffmpeg compose failed: {proc.stderr[-2000:]}")
     progress(1.0, "done")
     return out_path
+
+
+def audio_graph(voice_idx: int, music_idx: int | None, music_volume: float = 0.18) -> list[str]:
+    """Voice (+ ducked music) → [aout]. Shared by compose and export so a remuxed voice track mixes identically."""
+    if music_idx is None:
+        return [f"[{voice_idx}:a]aresample=48000,apad=pad_dur=0.6[aout]"]
+    return [
+        f"[{voice_idx}:a]aresample=48000,asplit=2[vo][key]",
+        f"[{music_idx}:a]aresample=48000,volume={music_volume}[m]",
+        "[m][key]sidechaincompress=threshold=0.04:ratio=8:attack=15:release=350[duck]",
+        "[vo][duck]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11[aout]",
+    ]
 
 
 def thumbnail(video: str | Path, out: str | Path, at: float = 1.0) -> Path:

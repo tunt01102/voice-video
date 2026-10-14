@@ -126,10 +126,16 @@ Job types: `tts`, `image`, `subtitle`, `narrated`, `short`, `explainer`, `screen
    3. Claude proposing phonetic respellings for the misheard words
 5. **Learning.** A respelling that fixes a sentence is saved to the lexicon as `learned`.
 6. **Reporting.** Sentences that still fail are **highlighted in red** in the job's result panel, with the misheard words underlined. Each one has two buttons:
-   - **🎙 Ghi âm câu này** records you reading the sentence. The recording replaces that sentence in a new render, and it's saved as a voice sample.
-   - **🔁 Tạo lại** synthesises the sentence again with a new seed.
+   - **🎙 Ghi âm câu này** records you reading the sentence. Your recording is **not** put into the video. The AI uses it as a guide (your pauses and phrasing) and reads the sentence again in your cloned voice, so it matches the sentences around it.
+   - **🔁 Tạo lại** has the AI read the sentence again without a guide, with a new seed and phrase-by-phrase synthesis.
 
-   Either way, the other sentences come from cache. A video re-render keeps the same script and images.
+   The new reading ("take") appears right under that sentence, next to the original and your recording (which is only there for comparison). The video is not re-rendered.
+7. **Export.** Under the video, pick which voice each sentence uses, choose a format from the dropdown (**MP4** by default; also MOV, MKV, WebM, MP3, WAV or M4A), and click **⬇ Xuất video**.
+   - The chosen takes are spliced into the voice track, and the original picture is kept as it is.
+   - Exports appear as download links. Exporting the same choice again reuses the earlier file.
+8. **Learning from your recordings.** Every recording is kept in `data/voices/<id>/corrections/` and added to the voice's samples.
+   - The next time any job says that sentence, the AI uses your guide automatically.
+   - Respellings that fixed a sentence are saved to the lexicon.
 
 ## Engines (all local, on Apple Silicon)
 

@@ -26,7 +26,8 @@ class VieNeuEngine:
         self.tts = Vieneu(backend="pytorch", device=device)
         self.sample_rate = self.tts.sample_rate
 
-    def synth(self, text: str, lang: str, ref: VoiceRef | None, *, seed: int, temperature: float) -> np.ndarray:
+    def synth(self, text: str, lang: str, ref: VoiceRef | None, *, seed: int, temperature: float,
+              prompt: VoiceRef | None = None) -> np.ndarray:  # no prompt channel: prompt is ignored
         import torch
 
         random.seed(seed)
