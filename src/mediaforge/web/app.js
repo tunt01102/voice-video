@@ -763,7 +763,7 @@ async function songForm(section) {
       const v = form.version.value, tr = (p.translations || []).find((t) => "dich:" + t.translator === v);
       form.text.value = (tr ? tr.lines : p.phien_am).join("\n"); form.text.readOnly = true;
       form.title.value = p.title; form.author.value = p.author;
-      $(".poem-meta", form).innerHTML = `${p.title_han ? esc(p.title_han) + " · " : ""}${esc(p.form || "")}${p.dich_nghia ? `<br><i>Dịch nghĩa:</i> ${esc(p.dich_nghia)}` : ""}`;
+      $(".poem-meta", form).innerHTML = `${p.title_han ? esc(p.title_han) + " · " : ""}${esc(p.form || "")}${p.dich_nghia ? `<br><i>Dịch nghĩa:</i> ${esc(p.dich_nghia)}` : ""}${tr?.note ? `<br><small>Ghi chú văn bản: ${esc(tr.note)}</small>` : ""}`;
     };
     form.poem.onchange = fillVersions; form.version.onchange = showPoem; fillVersions();
   }

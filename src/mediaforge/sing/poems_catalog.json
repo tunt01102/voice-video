@@ -1,0 +1,652 @@
+[
+ {
+  "id": "tinh-da-tu",
+  "title_hv": "Tĩnh dạ tứ",
+  "title_han": "靜夜思",
+  "title_vi": "Cảm nghĩ trong đêm thanh tĩnh",
+  "author_hv": "Lý Bạch",
+  "dynasty": "Đường",
+  "form": "ngu-ngon-tu-tuyet",
+  "han": [
+   "牀前明月光，",
+   "疑是地上霜。",
+   "舉頭望明月，",
+   "低頭思故鄉。"
+  ],
+  "phien_am": [
+   "Sàng tiền minh nguyệt quang,",
+   "Nghi thị địa thượng sương.",
+   "Cử đầu vọng minh nguyệt,",
+   "Đê đầu tư cố hương."
+  ],
+  "dich_nghia": "Ánh trăng sáng soi đầu giường, ngỡ như sương phủ trên mặt đất. Ngẩng đầu ngắm vầng trăng, cúi đầu lại nhớ quê nhà.",
+  "translations": [
+   {
+    "translator": "Tương Như (Nam Trân)",
+    "translator_death_year": 1967,
+    "lines": [
+     "Đầu giường ánh trăng rọi,",
+     "Ngỡ mặt đất phủ sương.",
+     "Ngẩng đầu nhìn trăng sáng,",
+     "Cúi đầu nhớ cố hương."
+    ],
+    "source_url": "https://vi.wikisource.org/wiki/Tĩnh_dạ_tứ",
+    "note": "vi.wikisource ghi dịch giả \"Tương Như\" — bút danh của Nam Trân (Tác gia:Tương Như chuyển hướng tới Tác gia:Nam Trân; thivien ghi \"còn có bút danh Tương Như\"). Thivien.net ghi cùng bản này dưới tên Nam Trân, câu 2 khác: \"Mặt đất như phủ sương.\""
+   },
+   {
+    "translator": "Trần Trọng Kim",
+    "translator_death_year": 1953,
+    "lines": [
+     "Đầu giường chợt thấy bóng trăng",
+     "Mập mờ trên đất ngỡ rằng sương sa",
+     "Ngẩng đầu trông vẻ gương nga",
+     "Cúi đầu luống những nhớ nhà băn khoăn"
+    ],
+    "source_url": "https://www.thivien.net/L%C3%BD-B%E1%BA%A1ch/T%C4%A9nh-d%E1%BA%A1-t%E1%BB%A9/poem-LcnJKYyCSQXVWOfCdaW6uA?Page=5"
+   },
+   {
+    "translator": "Ngô Tất Tố",
+    "translator_death_year": 1954,
+    "lines": [
+     "Bên giường vừa lọt ánh trăng,",
+     "Trông ra mặt đất ngỡ rằng hơi sương.",
+     "Ngẩng đầu ngó bóng gương vàng,",
+     "Cúi đầu lại những mơ màng non quê."
+    ],
+    "source_url": "https://www.thivien.net/L%C3%BD-B%E1%BA%A1ch/T%C4%A9nh-d%E1%BA%A1-t%E1%BB%A9/poem-LcnJKYyCSQXVWOfCdaW6uA?Page=8"
+   },
+   {
+    "translator": "Trúc Khê",
+    "translator_death_year": 1947,
+    "lines": [
+     "Đầu giường ngó bóng trăng soi",
+     "Mơ màng ngỡ đám sương rơi mặt đường",
+     "Ngẩng đầu trăng sáng như gương",
+     "Cúi đầu sao nhớ quê hương ngàn trùng"
+    ],
+    "source_url": "https://www.thivien.net/L%C3%BD-B%E1%BA%A1ch/T%C4%A9nh-d%E1%BA%A1-t%E1%BB%A9/poem-LcnJKYyCSQXVWOfCdaW6uA",
+    "note": "Trúc Khê = Ngô Văn Triện (1901–1947)."
+   }
+  ],
+  "mood": "u-hoai",
+  "source_urls": [
+   "https://www.thivien.net/L%C3%BD-B%E1%BA%A1ch/T%C4%A9nh-d%E1%BA%A1-t%E1%BB%A9/poem-LcnJKYyCSQXVWOfCdaW6uA",
+   "https://vi.wikisource.org/wiki/Tĩnh_dạ_tứ",
+   "https://www.thivien.net/L%C3%BD-B%E1%BA%A1ch/T%C4%A9nh-d%E1%BA%A1-t%E1%BB%A9/poem-LcnJKYyCSQXVWOfCdaW6uA?Page=5",
+   "https://www.thivien.net/L%C3%BD-B%E1%BA%A1ch/T%C4%A9nh-d%E1%BA%A1-t%E1%BB%A9/poem-LcnJKYyCSQXVWOfCdaW6uA?Page=8",
+   "https://zh.wikisource.org/wiki/靜夜思"
+  ]
+ },
+ {
+  "id": "hoang-hac-lau",
+  "title_hv": "Hoàng Hạc lâu",
+  "title_han": "黃鶴樓",
+  "title_vi": "Lầu Hoàng Hạc",
+  "author_hv": "Thôi Hiệu",
+  "dynasty": "Đường",
+  "form": "that-ngon-bat-cu",
+  "han": [
+   "昔人已乘黃鶴去，",
+   "此地空餘黃鶴樓。",
+   "黃鶴一去不復返，",
+   "白雲千載空悠悠。",
+   "晴川歷歷漢陽樹，",
+   "芳草萋萋鸚鵡洲。",
+   "日暮鄉關何處是，",
+   "煙波江上使人愁。"
+  ],
+  "phien_am": [
+   "Tích nhân dĩ thừa hoàng hạc khứ,",
+   "Thử địa không dư Hoàng Hạc lâu.",
+   "Hoàng hạc nhất khứ bất phục phản,",
+   "Bạch vân thiên tải không du du.",
+   "Tình xuyên lịch lịch Hán Dương thụ,",
+   "Phương thảo thê thê Anh Vũ châu.",
+   "Nhật mộ hương quan hà xứ thị?",
+   "Yên ba giang thượng sử nhân sầu."
+  ],
+  "dich_nghia": "Người xưa đã cưỡi hạc vàng bay đi, nơi đây chỉ còn trơ lại lầu Hoàng Hạc; mây trắng nghìn năm vẫn lững lờ. Cây Hán Dương, cỏ bãi Anh Vũ hiện rõ bên sông; chiều tối tự hỏi quê nhà ở đâu, khói sóng trên sông khiến lòng người buồn.",
+  "translations": [
+   {
+    "translator": "Tản Đà",
+    "translator_death_year": 1939,
+    "lines": [
+     "Hạc vàng ai cưỡi đi đâu?",
+     "Mà đây Hoàng Hạc riêng lầu còn trơ!",
+     "Hạc vàng đi mất từ xưa,",
+     "Nghìn năm mây trắng bây giờ còn bay.",
+     "Hán Dương sông tạnh cây bày,",
+     "Bãi xa Anh Vũ xanh dày cỏ non.",
+     "Quê hương khuất bóng hoàng hôn,",
+     "Trên sông khói sóng cho buồn lòng ai?"
+    ],
+    "source_url": "https://vi.wikisource.org/wiki/Hoàng_Hạc_lâu_(Thôi_Hiệu,_Tản_Đà_dịch)",
+    "note": "Theo vi.wikisource: đăng Ngày Nay số 80, 10-10-1937. Bản trên thivien.net khác vài chữ: \"Mà nay Hoàng Hạc riêng lầu còn trơ.\", \"Bãi xưa Anh Vũ xanh dày cỏ non.\""
+   },
+   {
+    "translator": "Ngô Tất Tố",
+    "translator_death_year": 1954,
+    "lines": [
+     "Người xưa cưỡi hạc đã lên mây,",
+     "Lầu Hạc còn suông với chốn này.",
+     "Một vắng, hạc vàng xa lánh hẳn,",
+     "Nghìn năm, mây bạc vẩn vơ bay.",
+     "Vàng gieo bên Hán, ngàn cây hửng,",
+     "Xanh ngụt châu Anh, lớp cỏ dầy.",
+     "Trời tối, quê hương đâu tá nhỉ?",
+     "Đầy sông khói sóng gợi niềm tây!"
+    ],
+    "source_url": "https://www.thivien.net/Th%C3%B4i-Hi%E1%BB%87u/Ho%C3%A0ng-H%E1%BA%A1c-l%C3%A2u/poem-cj0RtocMDymMeqvbXC-SQQ",
+    "note": "Thivien.net còn đăng một bản khác cũng ghi tên Ngô Tất Tố (trang 12); ở đây dùng bản đăng đầu tiên."
+   },
+   {
+    "translator": "Trần Trọng Kim",
+    "translator_death_year": 1953,
+    "lines": [
+     "Người đi cưỡi hạc từ xưa,",
+     "Đất này Hoàng Hạc còn lưu một lầu.",
+     "Hạc vàng đi mất đã lâu,",
+     "Ngàn năm mây trắng một màu mênh mông.",
+     "Hán Dương cây bóng lòng sông,",
+     "Bãi kia Anh Vũ cỏ trông xanh rì.",
+     "Chiều hôm lai láng lòng quê,",
+     "Khói bay sóng vỗ ủ ê nỗi sầu."
+    ],
+    "source_url": "https://www.thivien.net/Th%C3%B4i-Hi%E1%BB%87u/Ho%C3%A0ng-H%E1%BA%A1c-l%C3%A2u/poem-cj0RtocMDymMeqvbXC-SQQ"
+   }
+  ],
+  "mood": "u-hoai",
+  "source_urls": [
+   "https://www.thivien.net/Th%C3%B4i-Hi%E1%BB%87u/Ho%C3%A0ng-H%E1%BA%A1c-l%C3%A2u/poem-cj0RtocMDymMeqvbXC-SQQ",
+   "https://vi.wikisource.org/wiki/Hoàng_Hạc_lâu_(Thôi_Hiệu,_Tản_Đà_dịch)",
+   "https://zh.wikisource.org/wiki/黃鶴樓_(崔顥)"
+  ]
+ },
+ {
+  "id": "phong-kieu-da-bac",
+  "title_hv": "Phong Kiều dạ bạc",
+  "title_han": "楓橋夜泊",
+  "title_vi": "Nửa đêm đậu bến Phong Kiều",
+  "author_hv": "Trương Kế",
+  "dynasty": "Đường",
+  "form": "that-ngon-tu-tuyet",
+  "han": [
+   "月落烏啼霜滿天，",
+   "江楓漁火對愁眠。",
+   "姑蘇城外寒山寺，",
+   "夜半鐘聲到客船。"
+  ],
+  "phien_am": [
+   "Nguyệt lạc ô đề sương mãn thiên,",
+   "Giang phong ngư hoả đối sầu miên.",
+   "Cô Tô thành ngoại Hàn San tự,",
+   "Dạ bán chung thanh đáo khách thuyền."
+  ],
+  "dich_nghia": "Trăng lặn, quạ kêu, sương phủ đầy trời; hàng phong bên sông và đèn thuyền chài đối diện người nằm ngủ trong nỗi buồn. Ngoài thành Cô Tô là chùa Hàn San, tiếng chuông nửa đêm vẳng đến thuyền khách.",
+  "translations": [
+   {
+    "translator": "Trần Trọng Kim",
+    "translator_death_year": 1953,
+    "lines": [
+     "Quạ kêu, trăng lặn, sương rơi",
+     "Lửa chài, cây bãi đối người nằm co",
+     "Con thuyền đậu bến Cô Tô",
+     "Nửa đêm nghe tiếng chuông chùa Hàn San"
+    ],
+    "source_url": "https://www.thivien.net/Tr%C6%B0%C6%A1ng-K%E1%BA%BF/Phong-Ki%E1%BB%81u-d%E1%BA%A1-b%E1%BA%A1c/poem-YJ1m_uGYnaxfjMJeLFnbMA",
+    "note": "TRANH CHẤP TÊN DỊCH GIẢ: thivien.net ghi Trần Trọng Kim; vi.wikisource (Phong Kiều dạ bạc (Tản Đà dịch)) ghi cùng bản này là của Tản Đà (d. 1939). Cả hai đều mất trước 1976."
+   }
+  ],
+  "mood": "u-hoai",
+  "source_urls": [
+   "https://www.thivien.net/Tr%C6%B0%C6%A1ng-K%E1%BA%BF/Phong-Ki%E1%BB%81u-d%E1%BA%A1-b%E1%BA%A1c/poem-YJ1m_uGYnaxfjMJeLFnbMA",
+   "https://vi.wikisource.org/wiki/Phong_Kiều_dạ_bạc_(Tản_Đà_dịch)",
+   "https://zh.wikisource.org/wiki/楓橋夜泊"
+  ]
+ },
+ {
+  "id": "hoi-huong-ngau-thu-ky-1",
+  "title_hv": "Hồi hương ngẫu thư kỳ 1",
+  "title_han": "回鄉偶書其一",
+  "title_vi": "Về quê tự dưng viết kỳ 1",
+  "author_hv": "Hạ Tri Chương",
+  "dynasty": "Đường",
+  "form": "that-ngon-tu-tuyet",
+  "han": [
+   "少小離家老大迴，",
+   "鄉音無改鬢毛摧。",
+   "兒童相見不相識，",
+   "笑問客從何處來。"
+  ],
+  "phien_am": [
+   "Thiếu tiểu ly gia, lão đại hồi,",
+   "Hương âm vô cải, mấn mao tồi.",
+   "Nhi đồng tương kiến, bất tương thức,",
+   "Tiếu vấn, khách tòng hà xứ lai?"
+  ],
+  "dich_nghia": "Rời nhà từ thuở nhỏ, đến lúc già mới trở về; giọng quê vẫn không đổi mà râu tóc đã rụng thưa. Trẻ con gặp mặt không nhận ra, cười hỏi khách từ phương nào đến.",
+  "translations": [
+   {
+    "translator": "Trần Trọng Kim",
+    "translator_death_year": 1953,
+    "lines": [
+     "Bé đi, già mới về nhà,",
+     "Tiếng quê vẫn thế, tóc đà rụng thưa.",
+     "Trẻ con trông thấy hững hờ,",
+     "Cười ồ, hỏi khách lại từ phương nao."
+    ],
+    "source_url": "https://vi.wikisource.org/wiki/Hồi_hương_ngẫu_thư_kỳ_I",
+    "note": "Lấy theo vi.wikisource. Thivien.net có cùng bản, câu 3 in \"Trẻ con trong thấy hững hờ,\" (lỗi chính tả \"trong\"/\"trông\")."
+   }
+  ],
+  "mood": "u-hoai",
+  "source_urls": [
+   "https://www.thivien.net/H%E1%BA%A1-Tri-Ch%C6%B0%C6%A1ng/H%E1%BB%93i-h%C6%B0%C6%A1ng-ng%E1%BA%ABu-th%C6%B0-k%E1%BB%B3-1/poem-qUeDhQkM3oaUwa-3OBCcqw",
+   "https://vi.wikisource.org/wiki/Hồi_hương_ngẫu_thư_kỳ_I",
+   "https://zh.wikisource.org/wiki/回鄉偶書_(少小離家老大回)"
+  ]
+ },
+ {
+  "id": "luong-chau-tu",
+  "title_hv": "Lương Châu từ (kỳ 1)",
+  "title_han": "涼州詞",
+  "title_vi": "Lương Châu từ kỳ 1",
+  "author_hv": "Vương Hàn",
+  "dynasty": "Đường",
+  "form": "that-ngon-tu-tuyet",
+  "han": [
+   "葡萄美酒夜光杯，",
+   "欲飲琵琶馬上催。",
+   "醉臥沙場君莫笑，",
+   "古來征戰幾人回。"
+  ],
+  "phien_am": [
+   "Bồ đào mỹ tửu dạ quang bôi,",
+   "Dục ẩm tỳ bà mã thượng thôi.",
+   "Tuý ngoạ sa trường quân mạc tiếu,",
+   "Cổ lai chinh chiến kỷ nhân hồi."
+  ],
+  "dich_nghia": "Rượu bồ đào ngon rót trong chén dạ quang, vừa muốn uống thì tiếng tỳ bà trên ngựa đã giục giã. Nếu say nằm giữa sa trường xin anh chớ cười, xưa nay chinh chiến mấy ai trở về.",
+  "translations": [],
+  "mood": "hung-trang",
+  "source_urls": [
+   "https://www.thivien.net/V%C6%B0%C6%A1ng-H%C3%A0n/L%C6%B0%C6%A1ng-Ch%C3%A2u-t%E1%BB%AB-k%E1%BB%B3-1/poem-DYGad0thHvgCxK3Szp1zVQ",
+   "https://vi.wikisource.org/wiki/Lương_Châu_từ",
+   "https://zh.wikisource.org/wiki/涼州詞_(葡萄美酒夜光杯)"
+  ]
+ },
+ {
+  "id": "dang-quan-tuoc-lau",
+  "title_hv": "Đăng Quán Tước lâu",
+  "title_han": "登鸛雀樓",
+  "title_vi": "Lên lầu Quán Tước",
+  "author_hv": "Vương Chi Hoán",
+  "dynasty": "Đường",
+  "form": "ngu-ngon-tu-tuyet",
+  "han": [
+   "白日依山盡，",
+   "黃河入海流。",
+   "欲窮千里目，",
+   "更上一層樓。"
+  ],
+  "phien_am": [
+   "Bạch nhật y sơn tận,",
+   "Hoàng Hà nhập hải lưu.",
+   "Dục cùng thiên lý mục,",
+   "Cánh thướng nhất tằng lâu."
+  ],
+  "dich_nghia": "Mặt trời tựa núi lặn dần, sông Hoàng Hà chảy mãi ra biển. Muốn phóng tầm mắt xa nghìn dặm, hãy bước lên thêm một tầng lầu.",
+  "translations": [],
+  "mood": "hung-trang",
+  "source_urls": [
+   "https://www.thivien.net/V%C6%B0%C6%A1ng-Chi-Ho%C3%A1n/%C4%90%C4%83ng-Qu%C3%A1n-T%C6%B0%E1%BB%9Bc-l%C3%A2u/poem-XUTPzgrzSJYzBSEv1yrhFw",
+   "https://zh.wikisource.org/wiki/登鸛雀樓_(王之渙)"
+  ]
+ },
+ {
+  "id": "xuan-hieu",
+  "title_hv": "Xuân hiểu",
+  "title_han": "春曉",
+  "title_vi": "Buổi sáng mùa xuân",
+  "author_hv": "Mạnh Hạo Nhiên",
+  "dynasty": "Đường",
+  "form": "ngu-ngon-tu-tuyet",
+  "han": [
+   "春眠不覺曉，",
+   "處處聞啼鳥。",
+   "夜來風雨聲，",
+   "花落知多少？"
+  ],
+  "phien_am": [
+   "Xuân miên bất giác hiểu,",
+   "Xứ xứ văn đề điểu.",
+   "Dạ lai phong vũ thanh,",
+   "Hoa lạc tri đa thiểu?"
+  ],
+  "dich_nghia": "Giấc ngủ mùa xuân say đến nỗi không biết trời đã sáng, khắp nơi vang tiếng chim hót. Đêm qua nghe tiếng gió mưa, chẳng biết hoa đã rụng bao nhiêu.",
+  "translations": [
+   {
+    "translator": "Nam Trân",
+    "translator_death_year": 1967,
+    "lines": [
+     "Giấc xuân, sáng chẳng biết,",
+     "Khắp nơi chim ríu rít.",
+     "Đêm nghe tiếng gió mưa,",
+     "Hoa rụng nhiều hay ít?"
+    ],
+    "source_url": "https://www.thivien.net/M%E1%BA%A1nh-H%E1%BA%A1o-Nhi%C3%AAn/Xu%C3%A2n-hi%E1%BB%83u/poem-Vd786kLqrV77-qVZaFEZ1Q"
+   }
+  ],
+  "mood": "tram-mac",
+  "source_urls": [
+   "https://www.thivien.net/M%E1%BA%A1nh-H%E1%BA%A1o-Nhi%C3%AAn/Xu%C3%A2n-hi%E1%BB%83u/poem-Vd786kLqrV77-qVZaFEZ1Q",
+   "https://vi.wikisource.org/wiki/Xuân_hiểu_(Mạnh_Hạo_Nhiên)",
+   "https://zh.wikisource.org/wiki/春曉_(孟浩然)"
+  ]
+ },
+ {
+  "id": "hoang-hac-lau-tong-manh-hao-nhien",
+  "title_hv": "Hoàng Hạc lâu tống Mạnh Hạo Nhiên chi Quảng Lăng",
+  "title_han": "黃鶴樓送孟浩然之廣陵",
+  "title_vi": "Lầu Hoàng Hạc tiễn Mạnh Hạo Nhiên đi Quảng Lăng",
+  "author_hv": "Lý Bạch",
+  "dynasty": "Đường",
+  "form": "that-ngon-tu-tuyet",
+  "han": [
+   "故人西辭黃鶴樓，",
+   "煙花三月下揚州。",
+   "孤帆遠影碧空盡，",
+   "惟見長江天際流。"
+  ],
+  "phien_am": [
+   "Cố nhân tây từ Hoàng Hạc lâu,",
+   "Yên hoa tam nguyệt há Dương Châu.",
+   "Cô phàm viễn ảnh bích không tận,",
+   "Duy kiến Trường Giang thiên tế lưu."
+  ],
+  "dich_nghia": "Bạn cũ từ biệt lầu Hoàng Hạc ở phía tây, giữa tháng ba mùa hoa khói xuôi dòng về Dương Châu. Bóng cánh buồm lẻ loi khuất dần vào nền trời xanh, chỉ còn thấy sông Trường Giang chảy về phía chân trời.",
+  "translations": [
+   {
+    "translator": "Ngô Tất Tố",
+    "translator_death_year": 1954,
+    "lines": [
+     "Bạn từ lầu Hạc lên đường,",
+     "Giữa mùa hoa khói, châu Dương xuôi dòng.",
+     "Bóng buồm đã khuất bầu không,",
+     "Trông theo chỉ thấy dòng sông bên trời."
+    ],
+    "source_url": "https://www.thivien.net/L%C3%BD-B%E1%BA%A1ch/Ho%C3%A0ng-H%E1%BA%A1c-l%C3%A2u-t%E1%BB%91ng-M%E1%BA%A1nh-H%E1%BA%A1o-Nhi%C3%AAn-chi-Qu%E1%BA%A3ng-L%C4%83ng/poem-aMN7s3bVCOu89mMWzbg_Kg",
+    "note": "Đối chiếu khớp với vi.wikisource (chỉ khác viết hoa \"Châu Dương\")."
+   },
+   {
+    "translator": "Trần Trọng Kim",
+    "translator_death_year": 1953,
+    "lines": [
+     "Phía tây bạn biệt Hạc lâu,",
+     "Tháng ba trẩy xuống Dương Châu thuận dòng.",
+     "Cánh buồm bóng hút màu không,",
+     "Trông xa trắng xoá nước sông bên trời."
+    ],
+    "source_url": "https://www.thivien.net/L%C3%BD-B%E1%BA%A1ch/Ho%C3%A0ng-H%E1%BA%A1c-l%C3%A2u-t%E1%BB%91ng-M%E1%BA%A1nh-H%E1%BA%A1o-Nhi%C3%AAn-chi-Qu%E1%BA%A3ng-L%C4%83ng/poem-aMN7s3bVCOu89mMWzbg_Kg"
+   }
+  ],
+  "mood": "u-hoai",
+  "source_urls": [
+   "https://www.thivien.net/L%C3%BD-B%E1%BA%A1ch/Ho%C3%A0ng-H%E1%BA%A1c-l%C3%A2u-t%E1%BB%91ng-M%E1%BA%A1nh-H%E1%BA%A1o-Nhi%C3%AAn-chi-Qu%E1%BA%A3ng-L%C4%83ng/poem-aMN7s3bVCOu89mMWzbg_Kg",
+   "https://vi.wikisource.org/wiki/Hoàng_Hạc_lâu_tống_Mạnh_Hạo_Nhiên_chi_Quảng_Lăng",
+   "https://zh.wikisource.org/wiki/黃鶴樓送孟浩然之廣陵"
+  ]
+ },
+ {
+  "id": "tao-phat-bach-de-thanh",
+  "title_hv": "Tảo phát Bạch Đế thành (Há Giang Lăng)",
+  "title_han": "早發白帝城",
+  "title_vi": "Tới Giang Lăng",
+  "author_hv": "Lý Bạch",
+  "dynasty": "Đường",
+  "form": "that-ngon-tu-tuyet",
+  "han": [
+   "朝辭白帝彩雲間，",
+   "千里江陵一日還。",
+   "兩岸猿聲啼不住，",
+   "輕舟已過萬重山。"
+  ],
+  "phien_am": [
+   "Triêu từ Bạch Đế thái vân gian,",
+   "Thiên lý Giang Lăng nhất nhật hoàn.",
+   "Lưỡng ngạn viên thanh đề bất trú,",
+   "Khinh chu dĩ quá vạn trùng san."
+  ],
+  "dich_nghia": "Sáng sớm từ biệt thành Bạch Đế giữa làn mây rực rỡ, nghìn dặm đường về Giang Lăng chỉ đi trong một ngày. Tiếng vượn hai bên bờ kêu mãi không thôi, chiếc thuyền nhẹ đã vượt qua muôn trùng núi.",
+  "translations": [
+   {
+    "translator": "Tản Đà",
+    "translator_death_year": 1939,
+    "lines": [
+     "Sớm ra Bạch Đế thành mây,",
+     "Giang Lăng nghìn dặm một ngày về luôn,",
+     "Hai bờ tiếng vượn véo von,",
+     "Thuyền lan đã vượt núi non vạn trùng."
+    ],
+    "source_url": "https://www.thivien.net/L%C3%BD-B%E1%BA%A1ch/H%C3%A1-Giang-L%C4%83ng/poem-BV5Qt58ZUK6yTC9_FIEtmA",
+    "note": "Đối chiếu khớp với vi.wikisource \"Há Giang Lăng (Tản Đà dịch)\"."
+   },
+   {
+    "translator": "Nam Trân",
+    "translator_death_year": 1967,
+    "lines": [
+     "Sáng rời Bạch đế rực ngàn mây",
+     "Nghìn dặm Giang Lăng, tới một ngày",
+     "Vượn hót bên sông nghe rỉ rả,",
+     "Thuyền qua muôn núi vượt như bay."
+    ],
+    "source_url": "https://www.thivien.net/L%C3%BD-B%E1%BA%A1ch/H%C3%A1-Giang-L%C4%83ng/poem-BV5Qt58ZUK6yTC9_FIEtmA"
+   }
+  ],
+  "mood": "hung-trang",
+  "source_urls": [
+   "https://www.thivien.net/L%C3%BD-B%E1%BA%A1ch/H%C3%A1-Giang-L%C4%83ng/poem-BV5Qt58ZUK6yTC9_FIEtmA",
+   "https://vi.wikisource.org/wiki/Há_Giang_Lăng_(Tản_Đà_dịch)",
+   "https://zh.wikisource.org/wiki/早發白帝城"
+  ]
+ },
+ {
+  "id": "vong-lu-son-boc-bo",
+  "title_hv": "Vọng Lư sơn bộc bố (kỳ 2)",
+  "title_han": "望廬山瀑布",
+  "title_vi": "Xa ngắm thác núi Lư kỳ 2",
+  "author_hv": "Lý Bạch",
+  "dynasty": "Đường",
+  "form": "that-ngon-tu-tuyet",
+  "han": [
+   "日照香爐生紫煙，",
+   "遙看瀑布掛前川。",
+   "飛流直下三千尺，",
+   "疑是銀河落九天。"
+  ],
+  "phien_am": [
+   "Nhật chiếu Hương Lô sinh tử yên,",
+   "Dao khan bộc bố quải tiền xuyên.",
+   "Phi lưu trực há tam thiên xích,",
+   "Nghi thị Ngân Hà lạc cửu thiên."
+  ],
+  "dich_nghia": "Mặt trời chiếu đỉnh Hương Lô làm bốc lên làn khói tía; từ xa nhìn thác nước như dòng sông treo trước mặt. Dòng nước bay thẳng xuống ba nghìn thước, ngỡ là sông Ngân rơi từ chín tầng trời.",
+  "translations": [
+   {
+    "translator": "Tương Như (Nam Trân)",
+    "translator_death_year": 1967,
+    "lines": [
+     "Nắng rọi Hương Lô khói tía bay,",
+     "Xa trông dòng thác trước sông này.",
+     "Nước bay thẳng xuống ba nghìn thước,",
+     "Tưởng dải Ngân Hà tuột khỏi mây."
+    ],
+    "source_url": "https://vi.wikisource.org/wiki/Vọng_Lư_sơn_bộc_bố",
+    "note": "vi.wikisource ghi \"Tương Như\" (bút danh của Nam Trân); thivien.net ghi cùng bản dưới tên Nam Trân."
+   }
+  ],
+  "mood": "hung-trang",
+  "source_urls": [
+   "https://www.thivien.net/L%C3%BD-B%E1%BA%A1ch/V%E1%BB%8Dng-L%C6%B0-s%C6%A1n-b%E1%BB%99c-b%E1%BB%91-k%E1%BB%B3-2/poem-4kRXqlIz-vUI7PD0-s3-Kw",
+   "https://vi.wikisource.org/wiki/Vọng_Lư_sơn_bộc_bố",
+   "https://zh.wikisource.org/wiki/望廬山瀑布"
+  ]
+ },
+ {
+  "id": "thanh-minh",
+  "title_hv": "Thanh minh",
+  "title_han": "清明",
+  "title_vi": "Tiết thanh minh",
+  "author_hv": "Đỗ Mục",
+  "dynasty": "Đường",
+  "form": "that-ngon-tu-tuyet",
+  "han": [
+   "清明時節雨紛紛，",
+   "路上行人欲斷魂。",
+   "借問酒家何處有？",
+   "牧童遙指杏花村。"
+  ],
+  "phien_am": [
+   "Thanh minh thời tiết vũ phân phân,",
+   "Lộ thượng hành nhân dục đoạn hồn.",
+   "Tá vấn tửu gia hà xứ hữu?",
+   "Mục đồng dao chỉ Hạnh Hoa thôn."
+  ],
+  "dich_nghia": "Tiết thanh minh mưa rơi lất phất, người đi đường buồn đứt ruột. Hỏi thăm nơi nào có quán rượu, trẻ chăn trâu chỉ tay về xóm Hạnh Hoa đằng xa.",
+  "translations": [
+   {
+    "translator": "Nam Trân",
+    "translator_death_year": 1967,
+    "lines": [
+     "Thanh minh lất phất mưa phùn",
+     "Khách đi đường thấm nỗi buồn xót xa",
+     "Hỏi thăm quán rượu đâu à?",
+     "Mục đồng chỉ lối Hạnh Hoa thôn ngoài."
+    ],
+    "source_url": "https://www.thivien.net/%C4%90%E1%BB%97-M%E1%BB%A5c/Thanh-minh/poem-8jB94Edezk5iWUk7_0RQsw"
+   }
+  ],
+  "mood": "u-hoai",
+  "source_urls": [
+   "https://www.thivien.net/%C4%90%E1%BB%97-M%E1%BB%A5c/Thanh-minh/poem-8jB94Edezk5iWUk7_0RQsw",
+   "https://zh.wikisource.org/wiki/清明_(杜牧)"
+  ]
+ },
+ {
+  "id": "giang-tuyet",
+  "title_hv": "Giang tuyết",
+  "title_han": "江雪",
+  "title_vi": "Tuyết trên sông",
+  "author_hv": "Liễu Tông Nguyên",
+  "dynasty": "Đường",
+  "form": "ngu-ngon-tu-tuyet",
+  "han": [
+   "千山鳥飛絕，",
+   "萬徑人蹤滅。",
+   "孤舟簑笠翁，",
+   "獨釣寒江雪。"
+  ],
+  "phien_am": [
+   "Thiên sơn điểu phi tuyệt,",
+   "Vạn kính nhân tung diệt.",
+   "Cô chu thoa lạp ông,",
+   "Độc điếu hàn giang tuyết."
+  ],
+  "dich_nghia": "Nghìn ngọn núi không còn bóng chim bay, muôn nẻo đường vắng dấu chân người. Trên chiếc thuyền lẻ, ông lão áo tơi nón lá một mình buông câu giữa tuyết trên sông lạnh.",
+  "translations": [
+   {
+    "translator": "Tản Đà",
+    "translator_death_year": 1939,
+    "lines": [
+     "Nghìn non mất bóng chim bay,",
+     "Muôn con đường tắt dấu giày tuyệt không.",
+     "Kìa ai câu tuyết bên sông,",
+     "Áo tơi, nón lá, một ông thuyền chài."
+    ],
+    "source_url": "https://www.thivien.net/Li%E1%BB%85u-T%C3%B4ng-Nguy%C3%AAn/Giang-tuy%E1%BA%BFt/poem-prdeDjQPjCYKiqLv4pSC3w"
+   },
+   {
+    "translator": "Trần Trọng Kim",
+    "translator_death_year": 1953,
+    "lines": [
+     "Nghìn non chim hết vẫy vùng",
+     "Vắng tanh muôn nẻo tuyệt không dấu người",
+     "Áo tơi nón lá ông chài",
+     "Con thuyền giữa tuyết ngồi hoài buông câu"
+    ],
+    "source_url": "https://www.thivien.net/Li%E1%BB%85u-T%C3%B4ng-Nguy%C3%AAn/Giang-tuy%E1%BA%BFt/poem-prdeDjQPjCYKiqLv4pSC3w"
+   },
+   {
+    "translator": "Nam Trân",
+    "translator_death_year": 1967,
+    "lines": [
+     "Ngìn non, bóng chim tắt",
+     "Muôn nẻo, dấu người không",
+     "Thuyền đơn, ông tơi nón",
+     "Một mình câu tuyết sông."
+    ],
+    "source_url": "https://www.thivien.net/Li%E1%BB%85u-T%C3%B4ng-Nguy%C3%AAn/Giang-tuy%E1%BA%BFt/poem-prdeDjQPjCYKiqLv4pSC3w",
+    "note": "Nguyên văn trên thivien.net câu 1 viết \"Ngìn non\" (có lẽ lỗi gõ của \"Nghìn\"); giữ nguyên như nguồn."
+   }
+  ],
+  "mood": "tram-mac",
+  "source_urls": [
+   "https://www.thivien.net/Li%E1%BB%85u-T%C3%B4ng-Nguy%C3%AAn/Giang-tuy%E1%BA%BFt/poem-prdeDjQPjCYKiqLv4pSC3w",
+   "https://zh.wikisource.org/wiki/江雪"
+  ]
+ },
+ {
+  "id": "nguyet-da",
+  "title_hv": "Nguyệt dạ",
+  "title_han": "月夜",
+  "title_vi": "Đêm trăng",
+  "author_hv": "Đỗ Phủ",
+  "dynasty": "Đường",
+  "form": "ngu-ngon-bat-cu",
+  "han": [
+   "今夜鄜州月，",
+   "閨中只獨看。",
+   "遙憐小兒女，",
+   "未解憶長安。",
+   "香霧雲鬟濕，",
+   "清輝玉臂寒。",
+   "何時倚虛幌，",
+   "雙照淚痕乾？"
+  ],
+  "phien_am": [
+   "Kim dạ Phu Châu nguyệt,",
+   "Khuê trung chỉ độc khan.",
+   "Dao liên tiểu nhi nữ,",
+   "Vị giải ức Trường An.",
+   "Hương vụ vân hoàn thấp,",
+   "Thanh huy ngọc tý hàn.",
+   "Hà thì ỷ hư hoảng,",
+   "Song chiếu lệ ngân can?"
+  ],
+  "dich_nghia": "Đêm nay ở Phu Châu, vợ chỉ một mình trong phòng khuê ngắm trăng; thương các con nhỏ còn chưa biết nhớ cha ở Trường An. Sương thơm làm ướt mái tóc, ánh trăng làm lạnh cánh tay ngọc; bao giờ mới được cùng tựa màn mỏng để trăng soi khô ngấn lệ cả hai người.",
+  "translations": [
+   {
+    "translator": "Tản Đà",
+    "translator_death_year": 1939,
+    "lines": [
+     "Châu Phu này lúc trăng soi,",
+     "Buồng the đêm vắng riêng coi một mình.",
+     "Đoái thương thơ dại đầu xanh,",
+     "Tràng An chưa biết mang tình nhớ nhau.",
+     "Sương sa thơm ướt mái đầu,",
+     "Cánh tay ngọc trắng lạnh màu sáng trong.",
+     "Bao giờ tựa bức màn không,",
+     "Gương soi chung bóng lệ dòng dòng khô."
+    ],
+    "source_url": "https://www.thivien.net/%C4%90%E1%BB%97-Ph%E1%BB%A7/Nguy%E1%BB%87t-d%E1%BA%A1/poem-T7ykhmCIqNvTZ_L2JmhFFw",
+    "note": "Đối chiếu khớp hoàn toàn với vi.wikisource \"Nguyệt dạ\"."
+   }
+  ],
+  "mood": "u-hoai",
+  "source_urls": [
+   "https://www.thivien.net/%C4%90%E1%BB%97-Ph%E1%BB%A7/Nguy%E1%BB%87t-d%E1%BA%A1/poem-T7ykhmCIqNvTZ_L2JmhFFw",
+   "https://vi.wikisource.org/wiki/Nguyệt_dạ",
+   "https://zh.wikisource.org/wiki/月夜_(杜甫)"
+  ]
+ }
+]

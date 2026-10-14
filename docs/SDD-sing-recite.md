@@ -157,9 +157,13 @@ per-syllable karaoke timed **from the melody**: exact, with no ASR. A title card
 
 ## 9. Poem catalogue (`sing/poems_catalog.json`)
 
-The catalogue holds Tang poems with chữ Hán, the Hán-Việt reading (public domain) and verse translations only
+The catalogue holds 13 Tang poems with chữ Hán, the Hán-Việt reading (public domain) and verse translations only
 where the translator died ≥ 50 years ago. Every text was copied from a fetched source page, recorded per poem
 in `source_urls`.
+
+- The chữ Hán was cross-checked against zh.wikisource, and the phiên âm against vi.wikisource where it exists.
+- Translators are Tản Đà (d. 1939), Trần Trọng Kim (1953), Ngô Tất Tố (1954), Trúc Khê (1947) and Nam Trân / Tương Như (1967).
+- Disputed attributions and source variants are kept in each translation's `note`, which the tab shows.
 
 ## 10. Limits and next steps
 
