@@ -69,7 +69,10 @@ DEFAULT_LEXICON = {
 
 
 def load_lexicon(voice_id: str | None = None) -> dict[str, dict[str, dict]]:
-    """Returns {lang: {term: {"say": str, "source": "manual"|"learned", "hits": int}}}."""
+    """Returns {lang: {term: {"say": str, "source": "manual"|"verified"|"learned"|"default", "hits": int}}}.
+
+    verified = the owner confirmed the term reads correctly as written (say == term); pre-scans skip it.
+    """
     p = _lexicon_path(voice_id)
     if not p.exists():
         if voice_id:
@@ -97,7 +100,7 @@ def merged_lexicon(voice_id: str | None, lang: str) -> dict[str, str]:
 def learn(voice_id: str | None, lang: str, term: str, say: str) -> None:
     data = load_lexicon(voice_id)
     entry = data[lang].get(term)
-    if entry and entry.get("source") == "manual":
+    if entry and entry.get("source") in ("manual", "verified"):
         return  # never overwrite a human decision
     data[lang][term] = {"say": say, "source": "learned", "hits": (entry or {}).get("hits", 0) + 1}
     save_lexicon(data, voice_id)

@@ -156,7 +156,8 @@ def run_subtitle(p: dict[str, Any], progress: Progress, job_id: str | None = Non
     result: dict[str, Any] = {"text": tr["text"], "language": tr["language"], "subtitles": files, "words": words}
     if p.get("translate_to") and p["translate_to"] != tr["language"]:
         progress(0.6, "translating")
-        cues = subtitles.build_cues(words)
+        layout = subtitles.Layout.for_frame(w, h)
+        cues = subtitles.build_cues(words, layout=layout)
         lines = [c.text.replace("\n", " ") for c in cues]
         data, _ = llm.complete_json(
             f"Translate each subtitle line into {LANG_NAME.get(p['translate_to'], p['translate_to'])}, keep meaning and "
@@ -164,7 +165,8 @@ def run_subtitle(p: dict[str, Any], progress: Progress, job_id: str | None = Non
         tl = data.get("lines", [])
         if len(tl) == len(cues):
             for c, t in zip(cues, tl):
-                c.lines = subtitles._wrap(str(t).split(), 42)
+                # A translation can be longer than the source: allow a third line rather than overflow.
+                c.lines = subtitles.wrap_words(str(t).split(), layout, max_lines=3) or [str(t)]
             result["translated"] = {"srt": str(subtitles.write_srt(cues, out / f"subtitles.{p['translate_to']}.srt"))}
     if is_video and p.get("burn"):
         progress(0.8, "burning subtitles")
@@ -180,23 +182,11 @@ def run_subtitle(p: dict[str, Any], progress: Progress, job_id: str | None = Non
     return result
 
 
-def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
-    """kind: narrated (16:9 AI visuals) | short (9:16 karaoke) | explainer (slides) | screen (recording + VO)."""
-    kind = p.get("kind", "narrated")
-    out = _out_dir("videos", job_id)
-    aspect = p.get("aspect") or ("9:16" if kind == "short" else "16:9")
-    seconds = int(p.get("seconds", 45 if kind == "short" else 75))
-    style = p.get("style", "cinematic")
-    voice = p.get("voice")
-    t0 = time.time()
-    music_file = music.resolve(p.get("music"))  # fail fast on a library track that is not downloaded
-    report: dict[str, Any] = {"kind": kind, "aspect": aspect}
-
-    # ---- 1. plan
-    progress(0.01, "planning")
+def make_plan(p: dict[str, Any], kind: str, *, style: str, seconds: int) -> tuple[dict[str, Any], str]:
+    """The script and visual prompts of a video: an earlier plan, slides, the owner's script, or the LLM."""
     lang = p.get("lang") or "auto"
     if p.get("plan_file") and Path(p["plan_file"]).exists():
-        # Re-render of an earlier job (e.g. one sentence re-recorded): keep the exact same script.
+        # Re-render of an earlier job, or a plan prepared (and pronunciation-checked) before rendering.
         plan_data = json.loads(Path(p["plan_file"]).read_text("utf-8"))
         if lang == "auto":
             lang = detect_lang(" ".join(sc["narration"] for sc in plan_data["scenes"]))
@@ -221,9 +211,83 @@ def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
         lang = lang if lang != "auto" else detect_lang(p["brief"])
         plan_data = plan(p["brief"], lang=lang, kind=kind if kind != "screen" else "narrated", seconds=seconds,
                          scenes=p.get("scenes"), style=style)
+    return plan_data, lang
+
+
+def build_visuals(p: dict[str, Any], plan_data: dict[str, Any], out: Path, durations: list[float], *, kind: str,
+                  aspect: str, style: str, report: dict[str, Any], progress: Progress,
+                  reuse: bool = False) -> list[compose.Scene]:
+    """One compose.Scene per plan scene. reuse=True takes the job's existing images/clips (re-subtitling)."""
+    W, H = compose.RESOLUTIONS[aspect]
+    scenes_in = plan_data["scenes"]
+    visuals: list[compose.Scene] = []
+    img_aspect = aspect if aspect in image.ASPECTS else "16:9"
+    media = p.get("media") or []
+    use_clips = bool(p.get("clips")) and clips.available()
+    if p.get("clips") and not use_clips:
+        report["warning"] = "clips requested but ltx-2-mlx is not installed; used Ken Burns stills"
+    for i, sc in enumerate(scenes_in):
+        progress(i / len(scenes_in), f"visual {i + 1}/{len(scenes_in)}")
+        if kind == "screen":
+            visuals.append(compose.Scene(str(p["recording"]), durations[i], kind="video"))
+            continue
+        if i < len(media) and media[i]:
+            m = str(media[i])
+            is_vid = Path(m).suffix.lower() in (".mp4", ".mov", ".webm", ".mkv", ".m4v")
+            visuals.append(compose.Scene(m, durations[i], kind="video" if is_vid else "image"))
+            continue
+        bg = None
+        img_path = out / "images" / f"scene_{i + 1:02d}.png"
+        clip_path = out / "clips" / f"scene_{i + 1:02d}.mp4"
+        if sc.get("visual_prompt") and not (kind == "explainer" and not p.get("slide_backgrounds", True)):
+            if reuse and img_path.exists():
+                bg = str(img_path)
+            else:
+                gen = image.generate(sc["visual_prompt"], out_path=img_path, aspect=img_aspect,
+                                     seed=int(p.get("seed", 1234)) + i, style=style if style in image.STYLE_PRESETS else "none",
+                                     quality=p.get("image_quality", "standard"))
+                bg = gen["image"]
+        if kind == "explainer":
+            sl = slides.render_slide(out / "slides" / f"slide_{i + 1:02d}.png", sc.get("slide_title") or plan_data["title"],
+                                     sc.get("bullets") or [], width=W, height=H, theme=p.get("theme", "midnight"), background=bg)
+            visuals.append(compose.Scene(str(sl), durations[i], motion="static" if not bg else "zoom_in"))
+        elif use_clips and bg:
+            clip = clip_path if reuse and clip_path.exists() else clips.image_to_video(
+                bg, sc["visual_prompt"], clip_path, seconds=min(durations[i], 6))
+            visuals.append(compose.Scene(str(clip), durations[i], kind="video"))
+        else:
+            visuals.append(compose.Scene(bg or str(slides.render_slide(out / "slides" / f"slide_{i + 1:02d}.png", sc["narration"][:80], [], width=W, height=H)),
+                                         durations[i]))
+    return visuals
+
+
+SCENE_GAP = 0.35  # silence between scene narrations
+
+
+def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
+    """kind: narrated (16:9 AI visuals) | short (9:16 karaoke) | explainer (slides) | screen (recording + VO)."""
+    from mediaforge.text import pronounce
+
+    kind = p.get("kind", "narrated")
+    out = _out_dir("videos", job_id)
+    aspect = p.get("aspect") or ("9:16" if kind == "short" else "16:9")
+    seconds = int(p.get("seconds", 45 if kind == "short" else 75))
+    style = p.get("style", "cinematic")
+    voice = p.get("voice")
+    t0 = time.time()
+    music_file = music.resolve(p.get("music"))  # fail fast on a library track that is not downloaded
+    report: dict[str, Any] = {"kind": kind, "aspect": aspect}
+
+    # ---- 1. plan
+    progress(0.01, "planning")
+    plan_data, lang = make_plan(p, kind, style=style, seconds=seconds)
     (out / "plan.json").write_text(json.dumps(plan_data, ensure_ascii=False, indent=2))
     scenes_in = plan_data["scenes"]
     report["llm"] = plan_data.get("llm")
+    if p.get("pronunciations") or p.get("verified_terms"):
+        # Readings the owner gave before rendering (pronunciation pre-scan): save them so this and later renders use them.
+        report["pronunciations"] = pronounce.remember(lang, p.get("pronunciations") or {}, p.get("verified_terms") or [],
+                                                      voice=p.get("lexicon_voice"))
 
     # ---- 2. narration per scene
     scene_audio, scene_reports = [], []
@@ -235,10 +299,9 @@ def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
                     overrides=p.get("overrides"), regen=p.get("regen"), takes=p.get("takes"))
         scene_audio.append(A.load(r["audio"]))
         scene_reports.append(r)
-    gap = 0.35
-    voice_track = A.crossfade_concat(scene_audio, [gap] * (len(scene_audio) - 1), fade=0.005)
+    voice_track = A.crossfade_concat(scene_audio, [SCENE_GAP] * (len(scene_audio) - 1), fade=0.005)
     voice_wav = A.save(out / "voice.wav", voice_track)
-    durations = [len(a) / A.SR + (gap if i < len(scene_audio) - 1 else 0) for i, a in enumerate(scene_audio)]
+    durations = [len(a) / A.SR + (SCENE_GAP if i < len(scene_audio) - 1 else 0) for i, a in enumerate(scene_audio)]
 
     # ---- 3. word timings → subtitles
     progress(0.42, "subtitle timing")
@@ -249,40 +312,8 @@ def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
     subs = subtitles.write_all(words, out / "subtitles", width=W, height=H, karaoke=p.get("karaoke"))
 
     # ---- 4. visuals
-    visuals: list[compose.Scene] = []
-    img_aspect = aspect if aspect in image.ASPECTS else "16:9"
-    iprog = _sub(progress, 0.45, 0.80)
-    media = p.get("media") or []
-    use_clips = bool(p.get("clips")) and clips.available()
-    if p.get("clips") and not use_clips:
-        report["warning"] = "clips requested but ltx-2-mlx is not installed; used Ken Burns stills"
-    for i, sc in enumerate(scenes_in):
-        iprog(i / len(scenes_in), f"visual {i + 1}/{len(scenes_in)}")
-        if kind == "screen":
-            visuals.append(compose.Scene(str(p["recording"]), durations[i], kind="video"))
-            continue
-        if i < len(media) and media[i]:
-            m = str(media[i])
-            is_vid = Path(m).suffix.lower() in (".mp4", ".mov", ".webm", ".mkv", ".m4v")
-            visuals.append(compose.Scene(m, durations[i], kind="video" if is_vid else "image"))
-            continue
-        bg = None
-        if sc.get("visual_prompt") and not (kind == "explainer" and not p.get("slide_backgrounds", True)):
-            gen = image.generate(sc["visual_prompt"], out_path=out / "images" / f"scene_{i + 1:02d}.png",
-                                 aspect=img_aspect, seed=int(p.get("seed", 1234)) + i, style=style if style in image.STYLE_PRESETS else "none",
-                                 quality=p.get("image_quality", "standard"))
-            bg = gen["image"]
-        if kind == "explainer":
-            sl = slides.render_slide(out / "slides" / f"slide_{i + 1:02d}.png", sc.get("slide_title") or plan_data["title"],
-                                     sc.get("bullets") or [], width=W, height=H, theme=p.get("theme", "midnight"), background=bg)
-            visuals.append(compose.Scene(str(sl), durations[i], motion="static" if not bg else "zoom_in"))
-        elif use_clips and bg:
-            clip = clips.image_to_video(bg, sc["visual_prompt"], out / "clips" / f"scene_{i + 1:02d}.mp4",
-                                        seconds=min(durations[i], 6))
-            visuals.append(compose.Scene(str(clip), durations[i], kind="video"))
-        else:
-            visuals.append(compose.Scene(bg or str(slides.render_slide(out / "slides" / f"slide_{i + 1:02d}.png", sc["narration"][:80], [], width=W, height=H)),
-                                         durations[i]))
+    visuals = build_visuals(p, plan_data, out, durations, kind=kind, aspect=aspect, style=style, report=report,
+                            progress=_sub(progress, 0.45, 0.80))
 
     # ---- 5. compose
     burn = p.get("burn_subtitles", True)
@@ -311,6 +342,97 @@ def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
     return result
 
 
+def run_prepare(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
+    """Write the video script first and scan it for terms the TTS may misread (SDD-subtitle-fit-pronunciation §5).
+
+    The owner answers in the dashboard, then renders with {plan_file, pronunciations}.
+    """
+    from mediaforge.text import pronounce
+
+    kind = p.get("kind", "narrated")
+    out = _out_dir("plans", job_id)
+    progress(0.05, "viết kịch bản")
+    plan_data, lang = make_plan(p, kind, style=p.get("style", "cinematic"),
+                                seconds=int(p.get("seconds", 45 if kind == "short" else 75)))
+    plan_file = out / "plan.json"
+    plan_file.write_text(json.dumps(plan_data, ensure_ascii=False, indent=2))
+    progress(0.6, "quét từ dễ đọc sai")
+    text = "\n".join(sc["narration"] for sc in plan_data["scenes"])
+    candidates = pronounce.scan(text, lang, voice=p.get("voice"), use_llm=p.get("use_llm", True))
+    progress(1.0, "done")
+    return {"plan_file": str(plan_file), "title": plan_data.get("title"), "lang": lang, "kind": kind,
+            "scenes": [sc["narration"] for sc in plan_data["scenes"]], "candidates": candidates}
+
+
+def run_resubtitle(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
+    """Rebuild a finished video's subtitles and re-compose it from its own voice track and images.
+
+    No TTS, no ASR, no image generation: the stored word timings, voice.wav and images/ are reused, so the
+    picture and the voice are exactly the original render (SDD-subtitle-fit-pronunciation §4).
+    """
+    from mediaforge import takes as T
+
+    src_id = p["job"]
+    job = T.load_done_job(src_id)
+    r, jp = job["result"], job["params"]
+    if not T.is_video(r) or not r.get("words") or not r.get("plan"):
+        raise ValueError(f"job {src_id} is not a finished video with word timings")
+    out = Path(r["video"]).parent
+    kind = r.get("report", {}).get("kind") or jp.get("kind") or job["type"]
+    kind = kind if kind in ("narrated", "short", "explainer", "screen") else "narrated"
+    aspect = r.get("report", {}).get("aspect") or jp.get("aspect") or ("9:16" if kind == "short" else "16:9")
+    W, H = compose.RESOLUTIONS[aspect]
+    plan_data = json.loads(Path(r["plan"]).read_text("utf-8"))
+    scene_wavs = sorted((out / "voice").glob("scene_*.wav"))
+    scene_wavs = [w for w in scene_wavs if w.stem.count("_") == 1]  # scene_01.wav, not scene_01_take…
+    if len(scene_wavs) != len(plan_data["scenes"]):
+        raise ValueError(f"job {src_id}: {len(scene_wavs)} scene voice files for {len(plan_data['scenes'])} scenes")
+    lens = [A.probe_duration(w) for w in scene_wavs]
+    durations = [d + (SCENE_GAP if i < len(lens) - 1 else 0) for i, d in enumerate(lens)]
+
+    progress(0.02, "dựng lại phụ đề")
+    karaoke = p.get("karaoke", jp.get("karaoke"))
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    work = out / f".resub-{stamp}"
+    work.mkdir()
+    try:
+        subs = subtitles.write_all(r["words"], work / "subtitles", width=W, height=H, karaoke=karaoke)
+        report: dict[str, Any] = {}
+        visuals = build_visuals(jp, plan_data, out, durations, kind=kind, aspect=aspect,
+                                style=jp.get("style", "cinematic"), report=report,
+                                progress=_sub(progress, 0.05, 0.15), reuse=True)
+        burn = jp.get("burn_subtitles", True)
+        final_new = compose.compose(
+            visuals, r["voice"], work / "final.mp4", aspect=aspect, music=music.resolve(jp.get("music")),
+            music_volume=float(jp.get("music_volume", 0.18)), subtitles_ass=subs["ass"] if burn else None,
+            soft_srt=None if burn else subs["srt"], transition=0.0 if kind == "screen" else 0.5,
+            progress=_sub(progress, 0.15, 0.95))
+        # Swap in: the old render and every export made from it (they carry the old burned subtitles) go to trash.
+        trash = settings.sub("trash", f"{src_id}-resub-{stamp}")
+        fresh = T.load_done_job(src_id)["result"]
+        for e in fresh.get("exports") or []:
+            if Path(e["file"]).exists():
+                shutil.move(e["file"], trash / Path(e["file"]).name)
+        shutil.move(str(out / "final.mp4"), trash / "final.mp4")
+        for ext in ("srt", "vtt", "ass"):
+            if (out / f"subtitles.{ext}").exists():
+                shutil.move(str(out / f"subtitles.{ext}"), trash / f"subtitles.{ext}")
+            shutil.move(subs[ext], out / f"subtitles.{ext}")
+        shutil.move(str(final_new), out / "final.mp4")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    final = out / "final.mp4"
+    compose.thumbnail(final, out / "thumbnail.jpg", at=min(1.5, sum(durations) / 2))
+    fresh["subtitles"] = {ext: str(out / f"subtitles.{ext}") for ext in ("srt", "vtt", "ass")}
+    fresh["duration"] = round(A.probe_duration(final), 2)
+    fresh["exports"] = []
+    fresh["resubtitled_at"] = time.time()
+    fresh.setdefault("report", {})["resubtitle"] = {"at": time.time(), "trash": str(trash), "karaoke": karaoke is not False}
+    T.save_result(src_id, fresh)
+    progress(1.0, "done")
+    return {"job": src_id, "video": str(final), "subtitles": fresh["subtitles"], "trash": str(trash)}
+
+
 def run_enrol(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
     """Add a recording to a voice profile (runs on the GPU worker because it uses ASR)."""
     from mediaforge.voice import profiles
@@ -337,7 +459,7 @@ def run_export(p: dict[str, Any], progress: Progress, job_id: str | None = None)
 
 RUNNERS: dict[str, Callable[..., dict[str, Any]]] = {
     "tts": run_tts, "image": run_image, "subtitle": run_subtitle, "video": run_video, "enrol": run_enrol,
-    "rerender": run_rerender, "export": run_export,
+    "rerender": run_rerender, "export": run_export, "prepare": run_prepare, "resubtitle": run_resubtitle,
 }
 
 

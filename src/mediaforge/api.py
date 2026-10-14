@@ -21,6 +21,7 @@ from mediaforge import __version__, db, models, music
 from mediaforge.config import settings
 from mediaforge.jobs import JOB_TYPES, runner
 from mediaforge.text import normalize as N
+from mediaforge.text import pronounce
 from mediaforge.voice import profiles
 
 log = logging.getLogger(__name__)
@@ -142,6 +143,15 @@ def create_app() -> FastAPI:
             raise HTTPException(400, "recording file not found")
         params = {"job": jid, "index": index, "file": body.get("file"), "lang": body.get("lang")}
         return {"job": _public_job(runner.submit("rerender", params, source="dashboard"))}
+
+    @app.post("/api/jobs/{jid}/resubtitle")
+    def resubtitle(jid: str, body: dict[str, Any] = Body(default={})):
+        """Rebuild a finished video's subtitles (fit-to-frame, karaoke) without re-rendering voice or images."""
+        job = db.get_job(jid)
+        if not job or job["status"] != "done" or not (job.get("result") or {}).get("video"):
+            raise HTTPException(400, "only a finished video can be re-subtitled")
+        params = {"job": jid, **({"karaoke": bool(body["karaoke"])} if "karaoke" in body else {})}
+        return {"job": _public_job(runner.submit("resubtitle", params, source="dashboard"))}
 
     @app.post("/api/jobs/{jid}/export")
     def export_job(jid: str, body: dict[str, Any] = Body(default={})):
@@ -284,6 +294,14 @@ def create_app() -> FastAPI:
                        for k, v in (body.get(lang) or {}).items()} for lang in ("vi", "en")}
         N.save_lexicon(data, voice)
         return data
+
+    @app.post("/api/lexicon/terms")
+    def add_terms(body: dict[str, Any] = Body(...), voice: str | None = None):
+        """Merge pre-scan answers: {lang, terms: {term: reading}, verified: [term]} (PUT replaces the whole file)."""
+        lang = body.get("lang", "vi")
+        if lang not in ("vi", "en"):
+            raise HTTPException(400, "lang must be vi or en")
+        return pronounce.remember(lang, body.get("terms") or {}, body.get("verified") or [], voice=voice or body.get("voice"))
 
     # ---------------------------------------------------------------- music library
     @app.get("/api/music")

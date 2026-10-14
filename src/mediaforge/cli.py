@@ -139,6 +139,12 @@ def screen(recording: Path, script: str, lang: str = "auto", voice: Optional[str
 
 
 @app.command()
+def resubtitle(job: str, karaoke: bool = typer.Option(True, help="highlight the spoken word"), local: bool = False) -> None:
+    """Rebuild a finished video's subtitles (fit the frame, karaoke) without re-rendering voice or images."""
+    _run("resubtitle", {"job": job, "karaoke": karaoke}, local)
+
+
+@app.command()
 def subtitle(media: Path, lang: Optional[str] = None, burn: bool = False, translate_to: Optional[str] = None,
              local: bool = False) -> None:
     """Transcribe audio/video to SRT/VTT/ASS (optionally burn in / translate)."""

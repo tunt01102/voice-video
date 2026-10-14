@@ -8,7 +8,8 @@ const api = async (path, opts = {}) => {
 };
 const toast = (msg) => { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 3500); };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const TYPE_LABEL = { tts: "Giọng nói", image: "Ảnh", subtitle: "Phụ đề", short: "Short", narrated: "Video", explainer: "Explainer", screen: "Screen", video: "Video", enrol: "Thu mẫu", rerender: "Đọc lại câu", export: "Xuất file" };
+const TYPE_LABEL = { tts: "Giọng nói", image: "Ảnh", subtitle: "Phụ đề", short: "Short", narrated: "Video", explainer: "Explainer", screen: "Screen", video: "Video", enrol: "Thu mẫu", rerender: "Đọc lại câu", export: "Xuất file", prepare: "Chuẩn bị kịch bản", resubtitle: "Dựng lại phụ đề" };
+const HIDDEN_TYPES = ["enrol", "rerender", "export", "prepare", "resubtitle"];
 
 // ------------------------------------------------------------------ tabs
 $$("#tabs button").forEach((b) => b.onclick = () => {
@@ -52,6 +53,10 @@ function applyKind() {
     : src === "slides" ? "# Tiêu đề slide\n- ý 1\n- ý 2\n> Lời thuyết minh cho slide này"
     : "Kịch bản lời đọc của bạn…";
   $("#create-hint").textContent = isVideo ? "Video mất vài phút — theo dõi ở tab Jobs." : "";
+  const sb = $("#submit-btn");
+  sb.textContent = isVideo ? "Dựng ngay (bỏ qua kiểm tra)" : "Tạo";
+  sb.className = isVideo ? "ghost" : "primary";
+  if (!isVideo) $("#prescan").hidden = true;
 }
 $$("#create-kind button").forEach((b) => b.onclick = () => {
   $$("#create-kind button").forEach((x) => x.classList.toggle("active", x === b));
@@ -87,11 +92,7 @@ async function upload(file) {
   return (await api("/api/uploads", { method: "POST", body: fd })).path;
 }
 
-$("#create-form").onsubmit = async (e) => {
-  e.preventDefault();
-  const f = e.target, btn = $("#submit-btn");
-  btn.disabled = true;
-  try {
+async function buildParams(f) {
     const fx = { pitch: +f.pitch.value, pace: +f.pace.value, warmth: +f.warmth.value, clarity: +f.clarity.value };
     let type = kind, params = {};
     if (kind === "tts") params = { text: f.text.value, voice: f.voice.value || null, lang: f.lang.value, engine: f.engine.value || null, fx };
@@ -107,12 +108,110 @@ $("#create-form").onsubmit = async (e) => {
       else if (f.music.value) params.music = f.music.value;
     }
     if ((params.text ?? params.prompt ?? params.brief ?? params.script ?? params.slides_markdown ?? params.media ?? "").length === 0) throw new Error("Thiếu nội dung");
-    const job = await api("/api/jobs", { method: "POST", body: JSON.stringify({ type, params, source: "dashboard" }) });
-    const box = $("#create-result"); box.innerHTML = "";
-    box.append(renderJob(job)); followJob(job.id);
-  } catch (err) { toast(err.message); }
+    return { type, params };
+}
+async function submitJob(type, params) {
+  const job = await api("/api/jobs", { method: "POST", body: JSON.stringify({ type, params, source: "dashboard" }) });
+  const box = $("#create-result"); box.innerHTML = "";
+  box.append(renderJob(job)); followJob(job.id);
+  return job;
+}
+$("#create-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const btn = $("#submit-btn");
+  btn.disabled = true;
+  try { const { type, params } = await buildParams(e.target); await submitJob(type, params); $("#prescan").hidden = true; }
+  catch (err) { toast(err.message); }
   finally { btn.disabled = false; }
 };
+
+// ------------------------------------------------------------------ pronunciation pre-scan (before rendering)
+// Step 1 writes the script and lists terms the TTS may misread; the owner writes how each is read; step 2 saves
+// the answers to the lexicon and renders exactly that script (plan_file). docs/SDD-subtitle-fit-pronunciation.md §5.
+$("#prepare-btn").onclick = async () => {
+  const f = $("#create-form"), btn = $("#prepare-btn"), box = $("#prescan");
+  btn.disabled = true;
+  try {
+    const { type, params } = await buildParams(f);
+    const job = await api("/api/jobs", { method: "POST", body: JSON.stringify({ type: "prepare", params: { ...params, kind: type }, source: "dashboard" }) });
+    box.hidden = false;
+    box.innerHTML = `<p class="muted">⏳ Đang viết kịch bản và quét các từ AI có thể đọc sai… <span class="ps-prog"></span></p>`;
+    followJob(job.id, {
+      onProgress: (j) => { const p = $(".ps-prog", box); if (p) p.textContent = j.status === "queued" ? "(đang chờ job khác xong)" : `${(j.progress * 100).toFixed(0)}% ${j.message || ""}`; },
+      onEnd: (j) => {
+        btn.disabled = false;
+        if (j?.status !== "done") { box.innerHTML = `<p class="qa-bad">Không chuẩn bị được kịch bản: ${esc(j?.error || j?.message || "")}</p>`; return; }
+        renderPrescan(j, type, params);
+      },
+    });
+  } catch (err) { btn.disabled = false; toast(err.message); }
+};
+
+function markTerms(text, terms) {
+  if (!terms.length) return esc(text);
+  const alt = [...terms].sort((a, b) => b.length - a.length).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const re = new RegExp(`(?<![\\p{L}\\p{N}])(?:${alt})(?![\\p{L}\\p{N}+])`, "gu");
+  let out = "", last = 0;
+  for (const m of text.matchAll(re)) { out += esc(text.slice(last, m.index)) + `<mark>${esc(m[0])}</mark>`; last = m.index + m[0].length; }
+  return out + esc(text.slice(last));
+}
+function renderPrescan(job, type, params) {
+  const r = job.result, box = $("#prescan"), cands = r.candidates || [];
+  const terms = cands.map((c) => c.term);
+  const fresh = cands.filter((c) => !c.known), known = cands.filter((c) => c.known);
+  const row = (c) => `<tr data-term="${esc(c.term)}">
+      <td><b>${esc(c.term)}</b>${c.known ? ` <span class="badge">đã lưu</span>` : ""}<br><small class="muted">${esc(c.reason_labels.join(", "))} · ${c.count}×</small></td>
+      <td class="ps-ctx">${markTerms(c.context, [c.term])}</td>
+      <td><input class="ps-say" value="${esc(c.say)}" placeholder="cách đọc, VD: Pi En Di"></td>
+      <td class="ps-okc"><label class="check"><input type="checkbox" class="ps-ok"> đúng</label></td>
+      <td><button class="ghost small ps-listen" title="Nghe thử câu này với cách đọc đã ghi">▶</button></td></tr>`;
+  const voiceName = params.voice ? ($("#voice-select").selectedOptions[0]?.textContent || params.voice) : "";
+  box.innerHTML = `<h3>Kiểm tra phát âm trước khi dựng</h3>
+    <p class="muted">“${esc(r.title || "")}” · ${r.scenes.length} cảnh. Ghi cách đọc cho từ có thể bị đọc sai (VD: <b>PNJ</b> → <i>Pi En Di</i>),
+      hoặc tick <b>đúng</b> nếu AI đọc đúng như viết. Bỏ trống = để AI tự đọc. Câu trả lời được lưu vào <b>Từ điển phát âm</b> để dùng cho các lần sau.</p>
+    <details><summary>Xem kịch bản (${r.scenes.length} cảnh)</summary><ol class="ps-scenes">${r.scenes.map((s) => `<li>${markTerms(s, terms)}</li>`).join("")}</ol></details>
+    ${fresh.length ? `<table class="lex prescan"><thead><tr><th>Từ</th><th>Ngữ cảnh</th><th>Đọc là</th><th></th><th></th></tr></thead><tbody>${fresh.map(row).join("")}</tbody></table>`
+      : `<p>✅ Không thấy từ mới nào dễ đọc sai.</p>`}
+    ${known.length ? `<details><summary>${known.length} từ đã có trong từ điển</summary><table class="lex prescan"><tbody>${known.map(row).join("")}</tbody></table></details>` : ""}
+    <div class="actions">
+      <label class="inline-label">Lưu vào <select class="ps-scope"><option value="">Từ điển chung</option>${params.voice ? `<option value="${esc(params.voice)}">Chỉ giọng ${esc(voiceName)}</option>` : ""}</select></label>
+      <button class="primary ps-go">2 · Lưu cách đọc &amp; dựng video</button><span class="muted ps-status"></span>
+    </div>`;
+  const byTerm = Object.fromEntries(cands.map((c) => [c.term, c]));
+  $$("tr[data-term]", box).forEach((tr) => {
+    const c = byTerm[tr.dataset.term], say = $(".ps-say", tr), ok = $(".ps-ok", tr);
+    ok.onchange = () => { say.disabled = ok.checked; };
+    $(".ps-listen", tr).onclick = async (ev) => {
+      const b = ev.currentTarget, reading = ok.checked ? c.term : say.value.trim();
+      const sentence = c.context.replace(/^…|…$/g, "");
+      const text = reading ? sentence.split(c.term).join(reading) : sentence;
+      b.disabled = true; b.textContent = "⏳";
+      try {
+        const j = await api("/api/jobs?wait=true&timeout=300", { method: "POST", body: JSON.stringify({ type: "tts", source: "dashboard", params: { text, voice: params.voice, lang: r.lang, fx: params.fx } }) });
+        const url = fileUrl(j.files?.mp3) || fileUrl(j.files?.audio);
+        if (url) new Audio(url).play(); else toast("Chưa nghe thử được: " + (j.message || j.status));
+      } catch (err) { toast(err.message); }
+      finally { b.disabled = false; b.textContent = "▶"; }
+    };
+  });
+  $(".ps-go", box).onclick = async (ev) => {
+    const b = ev.currentTarget, st = $(".ps-status", box);
+    const readings = {}, verified = [];
+    $$("tr[data-term]", box).forEach((tr) => {
+      const c = byTerm[tr.dataset.term], s = $(".ps-say", tr).value.trim();
+      if ($(".ps-ok", tr).checked) verified.push(c.term);
+      else if (s && (!c.known || s !== c.say)) readings[c.term] = s;
+    });
+    b.disabled = true; st.textContent = "Đang lưu…";
+    try {
+      const scope = $(".ps-scope", box).value;
+      if (Object.keys(readings).length || verified.length)
+        await api("/api/lexicon/terms" + (scope ? "?voice=" + encodeURIComponent(scope) : ""), { method: "POST", body: JSON.stringify({ lang: r.lang, terms: readings, verified }) });
+      await submitJob(type, { ...params, lang: r.lang, plan_file: r.plan_file });
+      st.textContent = `Đã lưu ${Object.keys(readings).length} cách đọc, ${verified.length} từ đúng — đang dựng video bên dưới.`;
+    } catch (err) { b.disabled = false; st.textContent = ""; toast(err.message); }
+  };
+}
 
 // ------------------------------------------------------------------ jobs
 const jobEls = new Map();
@@ -126,7 +225,8 @@ function renderOutputs(job, out) {
     return;
   }
   if (job.status !== "done") return;
-  if (fileUrl(f.video)) out.insertAdjacentHTML("beforeend", `<video controls preload="metadata" src="${fileUrl(f.video)}" poster="${fileUrl(f.thumbnail) || ""}"></video>`);
+  const bust = job.result?.resubtitled_at ? `?v=${Math.round(job.result.resubtitled_at)}` : "";
+  if (fileUrl(f.video)) out.insertAdjacentHTML("beforeend", `<video controls preload="metadata" src="${fileUrl(f.video)}${bust}" poster="${fileUrl(f.thumbnail) || ""}${bust}"></video>`);
   const credit = job.result?.report?.music_credit;
   if (credit) out.insertAdjacentHTML("beforeend", `<p class="muted">♪ Ghi công nhạc nền (bắt buộc khi đăng): ${esc(credit)}</p>`);
   if (Array.isArray(f.images)) f.images.forEach((i) => out.insertAdjacentHTML("beforeend", `<a href="${fileUrl(i)}" target="_blank"><img src="${fileUrl(i)}"></a>`));
@@ -138,9 +238,33 @@ function renderOutputs(job, out) {
   if (f.translated) add("SRT (dịch)", f.translated.srt);
   if (links.length) out.insertAdjacentHTML("beforeend", `<div class="links">${links.join("")}</div>`);
   const r = job.result || {};
+  if (fileUrl(f.video) && Array.isArray(r.words) && r.plan) out.append(renderResubtitle(job));
   if (fileUrl(f.video) || (fileUrl(f.audio) && Array.isArray(r.sentences))) out.append(renderExport(job));
   if (Array.isArray(r.sentences) && r.sentences.length) out.append(renderQA(job));
   if (r.text && job.type === "subtitle") out.insertAdjacentHTML("beforeend", `<pre>${esc(r.text)}</pre>`);
+}
+function renderResubtitle(job) {
+  const box = document.createElement("div");
+  box.className = "resub-row";
+  const at = job.result?.resubtitled_at;
+  box.innerHTML = `<button class="ghost small">🔤 Dựng lại phụ đề</button>
+    <small class="muted">${at ? "đã dựng lại " + new Date(at * 1000).toLocaleString() + " · " : ""}phụ đề luôn vừa khung hình, chữ đang đọc sáng lên (karaoke) — giữ nguyên giọng và hình</small>`;
+  $("button", box).onclick = async (ev) => {
+    const b = ev.currentTarget;
+    if (!confirm("Dựng lại phụ đề cho video này? Bản cũ và các file đã xuất sẽ chuyển vào thùng rác.")) return;
+    b.disabled = true; b.textContent = "⏳ Đang dựng lại phụ đề…";
+    try {
+      const r = await api(`/api/jobs/${job.id}/resubtitle`, { method: "POST", body: "{}" });
+      followJob(r.job.id, {
+        onProgress: (j) => { b.textContent = `⏳ ${(j.progress * 100).toFixed(0)}%`; },
+        onEnd: async (j) => {
+          if (j?.status !== "done") { b.disabled = false; b.textContent = "🔤 Dựng lại phụ đề"; toast("Lỗi: " + (j?.error || j?.message || "")); return; }
+          toast("Đã dựng lại phụ đề"); await refreshJob(job.id);
+        },
+      });
+    } catch (err) { b.disabled = false; b.textContent = "🔤 Dựng lại phụ đề"; toast(err.message); }
+  };
+  return box;
 }
 // ------------------------------------------------------------------ pronunciation QA panel
 const normTok = (t) => t.toLowerCase().replace(/[^\p{L}\p{N}']/gu, "");
@@ -356,7 +480,7 @@ async function loadJobs() {
   const status = $("#jobs-filter").value;
   const jobs = await api("/api/jobs?limit=60" + (status ? "&status=" + status : ""));
   const list = $("#jobs-list"); list.innerHTML = "";
-  jobs.filter((j) => !["enrol", "rerender", "export"].includes(j.type)).forEach((j) => { list.append(renderJob(j)); if (["queued", "running"].includes(j.status)) followJob(j.id); });
+  jobs.filter((j) => !HIDDEN_TYPES.includes(j.type)).forEach((j) => { list.append(renderJob(j)); if (["queued", "running"].includes(j.status)) followJob(j.id); });
   if (!list.children.length) list.innerHTML = `<p class="muted">Chưa có job nào.</p>`;
 }
 $("#jobs-filter").onchange = loadJobs; $("#jobs-refresh").onclick = loadJobs;

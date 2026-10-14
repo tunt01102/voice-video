@@ -64,6 +64,15 @@ tar -xzf data/backups/<snapshot>.tar.gz -C data/
 | Images | 🖼 Ảnh | `mediaforge image "a cozy café in Hanoi" --count 4` |
 | Subtitles for any media | 💬 Phụ đề | `mediaforge subtitle talk.mp4 --burn --translate-to en` |
 
+For videos, the dashboard has two buttons:
+
+- **1 · Viết kịch bản & kiểm tra phát âm** (recommended) writes the script first and lists the words the AI may
+  misread: acronyms (`PNJ`, `GRI`), letter+digit codes (`V1`, `CO2`), foreign names and words (`Carroll`,
+  `livestream`). Type how each is read (`PNJ` → `Pi En Di`), tick **đúng** if it already reads fine, or press ▶ to
+  hear the sentence first. **2 · Lưu cách đọc & dựng video** saves your answers to the pronunciation lexicon
+  (they are reused in every later video) and renders exactly the script you checked.
+- **Dựng ngay** skips the check.
+
 Notes on the inputs:
 
 - Pass `--script "@file.txt"` to read your own narration word for word. Without it, Claude writes the script from your brief.
@@ -80,7 +89,9 @@ Outputs are written to `data/outputs/<kind>/<job-id>/`:
 
 - `final.mp4`
 - `voice.wav` / `voice.mp3`
-- `subtitles.srt`, `.vtt` and `.ass` (karaoke for shorts)
+- `subtitles.srt`, `.vtt` and `.ass`. Burned-in subtitles always fit inside the frame (every line is measured in
+  pixels), and the word being spoken lights up in yellow and grows slightly (karaoke). Pass `"karaoke": false` for
+  static subtitles.
 - `plan.json`
 - `report.json` (pronunciation QA for each sentence)
 
@@ -96,7 +107,9 @@ claude mcp add -s user --transport http mediaforge http://127.0.0.1:8765/mcp
 |---|---|
 | `speak` | Text → cloned-voice audio, with pitch, pace, warmth and clarity controls. Returns wav, mp3, srt, vtt and ass. |
 | `generate_image` | Prompt → image(s) |
-| `create_video` | `kind`: `narrated`, `short` or `explainer`. Input is a brief, your own script, or slide markdown. Returns a `job_id`. |
+| `prepare_video` | Writes the script and lists terms the TTS may misread, before rendering. Returns `plan_file` + `candidates`. |
+| `create_video` | `kind`: `narrated`, `short` or `explainer`. Input is a brief, your own script, slide markdown, or a `plan_file` from `prepare_video` with `pronunciations` (`{"PNJ": "Pi En Di"}`). Returns a `job_id`. |
+| `resubtitle_video` | Rebuilds a finished video's subtitles (fit-to-frame, karaoke) without re-rendering voice or images |
 | `voiceover_recording` | Narration and subtitles over a screen recording |
 | `transcribe_subtitles` | Media → SRT/VTT/ASS, with optional burn-in and translation |
 | `job_status`, `list_jobs`, `list_voices` | Track jobs and list voices |
@@ -111,12 +124,17 @@ curl -s localhost:8765/api/jobs -H 'content-type: application/json' \
 curl -N localhost:8765/api/jobs/<id>/events          # live progress (SSE)
 ```
 
-Job types: `tts`, `image`, `subtitle`, `narrated`, `short`, `explainer`, `screen`, `enrol`.
+Job types: `tts`, `image`, `subtitle`, `narrated`, `short`, `explainer`, `screen`, `enrol`, `prepare`, `resubtitle`.
+
+To fix the subtitles of a video rendered before 2026-10-14 (lines could run off the screen), press
+**🔤 Dựng lại phụ đề** on its card, or run `mediaforge resubtitle <job-id>`. The voice and pictures stay exactly
+the same; the old file moves to `data/trash/`.
 
 ## How pronunciation is kept correct
 
 1. **Normalisation.** Numbers, dates, currency and units are written out as words (`vietnormalizer` for Vietnamese).
-2. **Pronunciation lexicon.** Applied next. Edit it in the dashboard under **Phát âm**.
+2. **Pronunciation lexicon.** Applied next. Filled before rendering by the pronunciation pre-scan (your answers are
+   `manual`; terms you confirmed read fine are `verified` and are not asked again), and editable under **Phát âm**.
 3. **Speech-recognition check.** Every sentence is synthesised and transcribed back with Whisper large-v3-turbo, then compared with the script:
    - Vietnamese is scored as the mean of syllable WER and CER.
    - English is scored as WER.

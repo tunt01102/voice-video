@@ -1,6 +1,6 @@
 # MediaForge — Software Design Document
 
-Status: v1.2 (implemented) · 2026-10-14 · Owner: tu.dev@block8.ai · Internal tool, localhost only
+Status: v1.3 (implemented) · 2026-10-14 · Owner: tu.dev@block8.ai · Internal tool, localhost only
 
 MediaForge is the single local service on this Mac that every other task (and every
 Claude Code session) calls to produce **voice, audio, subtitles, images and videos**.
@@ -226,10 +226,13 @@ to 48 kHz on exit; ASR always receives 16 kHz mono.
 - Because we **know the script**, cue text comes from the script, not from ASR.
   Whisper word timestamps on the final audio are mapped onto script tokens with
   `difflib.SequenceMatcher` (unmatched tokens interpolated). All-permissive licences.
-- Vietnamese "words" are syllables → line breaking by **character width**
-  (42 chars landscape, 26 chars vertical; ≤2 lines; ≤ 6 s per cue; break at punctuation
-  first).
-- Writers: SRT, VTT, ASS (styles per aspect; karaoke `\k` word highlight for shorts).
+- Vietnamese "words" are syllables → line breaking by **character count and measured pixel width**
+  (42 chars landscape, 26 chars vertical; ≤2 lines; ≤ 6 s per cue). Each sentence is split into cues by dynamic
+  programming (balanced, prefers punctuation, avoids splitting spoken numbers and orphan words); no line can exceed
+  the frame's safe width. Details: [SDD-subtitle-fit-pronunciation.md](SDD-subtitle-fit-pronunciation.md) §3.
+- Writers: SRT, VTT, ASS (styles per aspect; `WrapStyle: 0` safety net; karaoke word *pop* — spoken word turns
+  yellow and grows 8 % — on by default for every aspect).
+- `resubtitle` job rebuilds a finished video's subtitles from its stored word timings, voice track and images.
 - `subtitle` job also works on arbitrary user audio/video (transcribe → cues), with
   optional translation EN↔VI via the LLM.
 
@@ -281,8 +284,10 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 | `GET/POST /api/voices`, `GET/PATCH/DELETE /api/voices/{id}` | voice profiles |
 | `POST /api/voices/{id}/samples` | multipart upload/recording → processed sample |
 | `GET/PUT /api/voices/{id}/lexicon`, `GET/PUT /api/lexicon` | pronunciation lexicons |
-| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip` (+ internal `rerender`, `export`) |
+| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip, prepare` (+ internal `rerender`, `export`, `resubtitle`) |
 | `POST /api/jobs/{id}/sentences/{i}/rerender` | `{file?, lang?}` — AI re-renders sentence *i* as a take (recording = guide) |
+| `POST /api/jobs/{id}/resubtitle` | rebuild subtitles of a finished video (no TTS/image work) |
+| `POST /api/lexicon/terms` | `{lang, terms: {term: reading}, verified: [term]}` — merge pre-scan answers |
 | `POST /api/jobs/{id}/export` | `{selection: {i: take_id}, format}` — mp4 (default), mov, mkv, webm, mp3, wav, m4a |
 | `GET /api/export-formats`, `GET /api/voices/{id}/corrections` | format catalogue; a voice's sentence guides |
 | `GET /api/jobs`, `GET /api/jobs/{id}` | list / detail (status, progress, result, report) |
@@ -295,7 +300,7 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 `?wait=true` on `POST /api/jobs` blocks until completion (≤ 600 s) for simple clients.
 
 ### 9.2 MCP (streamable HTTP at `http://127.0.0.1:8765/mcp`)
-Tools: `speak`, `generate_image`, `create_video`, `create_short`, `create_explainer`,
+Tools: `speak`, `generate_image`, `prepare_video`, `create_video`, `resubtitle_video`, `create_short`, `create_explainer`,
 `transcribe_subtitles`, `job_status`, `list_voices`, `list_jobs`, `list_music`. Long jobs return a job id
 immediately plus a `wait_seconds` option; results return absolute file paths (sessions
 run on the same machine). Registered with
