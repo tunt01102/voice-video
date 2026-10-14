@@ -120,3 +120,17 @@ def test_ace_key_and_missing_sidecar(monkeypatch, tmp_path):
     assert not ace.available()
     with pytest.raises(RuntimeError, match="install_ace_step"):
         ace.bed(mood="hung-trang", style="hat", seconds=10, tonic_hz=110, scale="bac", bpm=76, seed=1)
+
+
+def test_every_catalogue_poem_and_version_can_be_chanted():
+    from mediaforge.sing import poems
+
+    assert len(poems.catalog()) >= 10
+    for p in poems.catalog():
+        assert len(p["han"]) == len(p["phien_am"]) and p["source_urls"]
+        for v in poems.versions(p):
+            lines = tones.parse(poems.text_for(p, v))
+            assert len(lines) == len(p["phien_am"]) or v != "phien-am"
+            mel = melody.plan(lines, style="ngam", mood=p["mood"])
+            assert len(mel.notes) == sum(len(l) for l in lines)
+    assert poems.text_for(poems.get("hoang-hac-lau")).startswith("Hạc vàng ai cưỡi đi đâu?")
