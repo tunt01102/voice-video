@@ -619,7 +619,7 @@ function collectLex() {
   const lang = $("#lex-lang").value; const out = {};
   $$("#lex-body tr").forEach((tr) => {
     const k = $("[data-k]", tr).value.trim(), s = $("[data-s]", tr).value.trim(), src = $(".badge", tr).textContent;
-    if (k && s) out[k] = { say: s, source: src === "learned" && lex[lang][k]?.say === s ? "learned" : "manual", hits: lex[lang][k]?.hits || 0 };
+    if (k && s) out[k] = { ...(lex[lang][k] || {}), say: s, source: ["learned", "verified"].includes(src) && lex[lang][k]?.say === s ? src : "manual", hits: lex[lang][k]?.hits || 0 };
   });
   lex[lang] = out;
 }
