@@ -1,0 +1,120 @@
+"""SQLite persistence for jobs. Voice profiles live on disk (see voice/profiles.py)."""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import threading
+import time
+import uuid
+from contextlib import contextmanager
+from typing import Any, Iterator
+
+from mediaforge.config import settings
+
+_lock = threading.Lock()
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    status TEXT NOT NULL,            -- queued | running | done | failed | cancelled
+    params TEXT NOT NULL,
+    progress REAL NOT NULL DEFAULT 0,
+    message TEXT NOT NULL DEFAULT '',
+    result TEXT,
+    error TEXT,
+    source TEXT NOT NULL DEFAULT 'api',
+    created_at REAL NOT NULL,
+    started_at REAL,
+    finished_at REAL
+);
+CREATE INDEX IF NOT EXISTS jobs_created ON jobs(created_at DESC);
+"""
+
+
+@contextmanager
+def connect() -> Iterator[sqlite3.Connection]:
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    with _lock:
+        conn = sqlite3.connect(settings.db_path, timeout=30)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def init() -> None:
+    with connect() as c:
+        c.executescript(SCHEMA)
+        # Anything that was running when the process died cannot be resumed mid-way.
+        c.execute(
+            "UPDATE jobs SET status='failed', error='interrupted by restart', finished_at=? WHERE status='running'",
+            (time.time(),),
+        )
+
+
+def _row(r: sqlite3.Row | None) -> dict[str, Any] | None:
+    if r is None:
+        return None
+    d = dict(r)
+    d["params"] = json.loads(d["params"])
+    d["result"] = json.loads(d["result"]) if d["result"] else None
+    return d
+
+
+def create_job(type_: str, params: dict[str, Any], source: str = "api") -> dict[str, Any]:
+    jid = uuid.uuid4().hex[:12]
+    with connect() as c:
+        c.execute(
+            "INSERT INTO jobs(id,type,status,params,source,created_at) VALUES(?,?,?,?,?,?)",
+            (jid, type_, "queued", json.dumps(params, ensure_ascii=False), source, time.time()),
+        )
+    return get_job(jid)  # type: ignore[return-value]
+
+
+def get_job(jid: str) -> dict[str, Any] | None:
+    with connect() as c:
+        return _row(c.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone())
+
+
+def list_jobs(limit: int = 50, status: str | None = None, type_: str | None = None) -> list[dict[str, Any]]:
+    q, args = "SELECT * FROM jobs WHERE 1=1", []
+    if status:
+        q += " AND status=?"
+        args.append(status)
+    if type_:
+        q += " AND type=?"
+        args.append(type_)
+    q += " ORDER BY created_at DESC LIMIT ?"
+    args.append(limit)
+    with connect() as c:
+        return [_row(r) for r in c.execute(q, args).fetchall()]  # type: ignore[misc]
+
+
+def queued_ids() -> list[str]:
+    with connect() as c:
+        return [r[0] for r in c.execute("SELECT id FROM jobs WHERE status='queued' ORDER BY created_at").fetchall()]
+
+
+def update_job(jid: str, **fields: Any) -> None:
+    if not fields:
+        return
+    for k in ("result", "params"):
+        if k in fields and not isinstance(fields[k], str):
+            fields[k] = json.dumps(fields[k], ensure_ascii=False)
+    cols = ", ".join(f"{k}=?" for k in fields)
+    with connect() as c:
+        c.execute(f"UPDATE jobs SET {cols} WHERE id=?", (*fields.values(), jid))
+
+
+def delete_job(jid: str) -> None:
+    with connect() as c:
+        c.execute("DELETE FROM jobs WHERE id=?", (jid,))
+
+
+def stats() -> dict[str, int]:
+    with connect() as c:
+        return {r[0]: r[1] for r in c.execute("SELECT status, COUNT(*) FROM jobs GROUP BY status").fetchall()}

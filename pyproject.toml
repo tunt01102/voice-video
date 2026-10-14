@@ -1,0 +1,36 @@
+[project]
+name = "mediaforge"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "tunt01102", email = "32449262+tunt01102@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.143.0",
+    "httpx>=0.28.1",
+    "jiwer>=4.0.0",
+    "mcp>=2.3.0",
+    "mflux>=0.22.0",
+    "mlx-audio>=0.5.9",
+    "mlx-whisper>=0.4.3",
+    "noisereduce>=3.0.3",
+    "numpy>=2.5.4",
+    "pedalboard>=0.9.26",
+    "pillow>=12.3.0",
+    "pysubs2>=1.9.0",
+    "python-multipart>=0.0.32",
+    "soundfile>=0.14.0",
+    "typer>=0.27.3",
+    "uvicorn>=0.54.0",
+    "vieneu>=3.8.3",
+    "vietnormalizer>=0.2.3",
+]
+
+[project.scripts]
+mediaforge = "mediaforge:main"
+
+[build-system]
+requires = ["uv_build>=0.11.2,<0.12.0"]
+build-backend = "uv_build"

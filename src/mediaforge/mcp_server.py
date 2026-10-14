@@ -1,0 +1,125 @@
+"""MCP tools so any Claude Code session on this Mac can generate media.
+
+Register once:  claude mcp add -s user --transport http mediaforge http://127.0.0.1:8765/mcp
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import anyio
+from mcp.server import MCPServer
+
+from mediaforge import db
+from mediaforge.jobs import runner
+from mediaforge.voice import profiles
+
+mcp = MCPServer(
+    "mediaforge",
+    instructions=(
+        "Local media generation on this Mac: cloned-voice speech (English/Vietnamese), subtitles, images and "
+        "videos. Long jobs return a job_id; poll job_status or pass wait_seconds. Output paths are absolute local "
+        "files. Use list_voices to find the owner's voice id (prefer it over 'demo')."
+    ),
+)
+
+
+def _summary(job: dict[str, Any] | None) -> dict[str, Any]:
+    if not job:
+        return {"error": "job not found"}
+    out = {k: job[k] for k in ("id", "type", "status", "progress", "message")}
+    if job.get("result"):
+        r = job["result"]
+        out["result"] = {k: r[k] for k in r if k not in ("words", "sentences")}
+        if "sentences" in r:
+            out["result"]["qa_failed_sentences"] = r.get("qa_failed_sentences", [])
+    if job.get("error"):
+        out["error"] = job["error"].splitlines()[0]
+    return out
+
+
+async def _submit(job_type: str, params: dict[str, Any], wait_seconds: float) -> dict[str, Any]:
+    job = runner.submit(job_type, {k: v for k, v in params.items() if v is not None}, source="mcp")
+    if wait_seconds > 0:
+        job = await anyio.to_thread.run_sync(runner.wait, job["id"], wait_seconds)
+    return _summary(job)
+
+
+@mcp.tool()
+async def speak(text: str, voice: str | None = None, lang: str = "auto", pitch: float = 0.0, pace: float = 1.0,
+                warmth: float = 0.0, clarity: float = 0.5, engine: str | None = None,
+                wait_seconds: float = 300) -> dict[str, Any]:
+    """Synthesise speech in a cloned voice (English 'en', Vietnamese 'vi', or 'auto' per sentence).
+
+    pitch: semitones -6..+6 (negative = deeper). pace: 0.7..1.4. warmth/clarity: 0..1.
+    engine: None (voice default), 'vieneu', 'voxcpm' or 'best'. Every sentence is checked by speech
+    recognition and automatically regenerated/respelled if mispronounced. Returns wav/mp3 + SRT/VTT/ASS paths.
+    """
+    return await _submit("tts", {"text": text, "voice": voice, "lang": lang, "engine": engine,
+                                 "fx": {"pitch": pitch, "pace": pace, "warmth": warmth, "clarity": clarity}}, wait_seconds)
+
+
+@mcp.tool()
+async def generate_image(prompt: str, aspect: str = "16:9", count: int = 1, style: str = "none",
+                         seed: int | None = None, wait_seconds: float = 240) -> dict[str, Any]:
+    """Generate image(s) locally (Z-Image-Turbo). aspect: 16:9, 9:16, 1:1, 4:3, 3:4.
+    style: none, cinematic, photo, illustration, 3d, minimal, tech. Prompt in English works best."""
+    return await _submit("image", {"prompt": prompt, "aspect": aspect, "count": count, "style": style, "seed": seed},
+                         wait_seconds)
+
+
+@mcp.tool()
+async def create_video(brief: str | None = None, script: str | None = None, kind: str = "narrated",
+                       lang: str = "auto", voice: str | None = None, seconds: int = 60, style: str = "cinematic",
+                       aspect: str | None = None, music: str | None = None, pitch: float = 0.0,
+                       slides_markdown: str | None = None, media: list[str] | None = None,
+                       burn_subtitles: bool = True, wait_seconds: float = 0) -> dict[str, Any]:
+    """Create a narrated video with cloned voice, generated visuals and subtitles.
+
+    kind: 'narrated' (16:9 AI visuals), 'short' (9:16 with karaoke subtitles), 'explainer' (slides).
+    Give either a brief (Claude writes the script) or your own script (used verbatim), or slides_markdown for
+    explainers ('# Title', '- bullet', '> narration'). media: optional per-scene image/video paths.
+    music: optional local audio path (ducked under the voice). Videos take minutes; by default this returns
+    a job_id immediately — poll job_status.
+    """
+    return await _submit(kind, {"brief": brief, "script": script, "lang": lang, "voice": voice, "seconds": seconds,
+                                "style": style, "aspect": aspect, "music": music, "fx": {"pitch": pitch},
+                                "slides_markdown": slides_markdown, "media": media,
+                                "burn_subtitles": burn_subtitles}, wait_seconds)
+
+
+@mcp.tool()
+async def voiceover_recording(recording: str, script: str, lang: str = "auto", voice: str | None = None,
+                              wait_seconds: float = 0) -> dict[str, Any]:
+    """Add a cloned-voice narration and burned subtitles to an existing screen recording (local video path)."""
+    return await _submit("screen", {"recording": recording, "script": script, "lang": lang, "voice": voice}, wait_seconds)
+
+
+@mcp.tool()
+async def transcribe_subtitles(media: str, lang: str | None = None, burn: bool = False,
+                               translate_to: str | None = None, wait_seconds: float = 300) -> dict[str, Any]:
+    """Create SRT/VTT/ASS subtitles for a local audio/video file (Whisper large-v3-turbo, word timings).
+    burn: also render a subtitled MP4. translate_to: 'en' or 'vi' for a translated SRT."""
+    return await _submit("subtitle", {"media": media, "lang": lang, "burn": burn, "translate_to": translate_to},
+                         wait_seconds)
+
+
+@mcp.tool()
+async def job_status(job_id: str, wait_seconds: float = 0) -> dict[str, Any]:
+    """Get a job's status/result. wait_seconds > 0 blocks until it finishes or the time elapses."""
+    if wait_seconds > 0:
+        return _summary(await anyio.to_thread.run_sync(runner.wait, job_id, wait_seconds))
+    return _summary(db.get_job(job_id))
+
+
+@mcp.tool()
+def list_jobs(limit: int = 10) -> list[dict[str, Any]]:
+    """Most recent jobs with status."""
+    return [_summary(j) for j in db.list_jobs(limit)]
+
+
+@mcp.tool()
+def list_voices() -> list[dict[str, Any]]:
+    """Available cloned voices (id, name, languages with references, default voice settings)."""
+    return [{"id": v["id"], "name": v["name"], "languages": sorted(v.get("refs", {})), "fx": v.get("fx"),
+             "samples": len(v.get("samples", []))} for v in profiles.list_voices()]

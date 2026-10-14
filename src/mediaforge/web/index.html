@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MediaForge</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath d=%22M8 1l7 7-7 7-7-7z%22 fill=%22%235b5bf0%22/%3E%3C/svg%3E">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">◆</span> MediaForge <small id="health-dot" class="dot"></small></div>
+  <nav id="tabs">
+    <button data-tab="create" class="active">Tạo mới</button>
+    <button data-tab="jobs">Jobs</button>
+    <button data-tab="voices">Giọng nói</button>
+    <button data-tab="lexicon">Phát âm</button>
+    <button data-tab="system">Hệ thống</button>
+  </nav>
+</header>
+
+<main>
+<!-- ============================== CREATE -->
+<section id="tab-create" class="tab active">
+  <div class="seg" id="create-kind">
+    <button data-kind="tts" class="active">🎙 Giọng nói</button>
+    <button data-kind="short">📱 Short 9:16</button>
+    <button data-kind="narrated">🎬 Video 16:9</button>
+    <button data-kind="explainer">🧑‍🏫 Explainer</button>
+    <button data-kind="image">🖼 Ảnh</button>
+    <button data-kind="subtitle">💬 Phụ đề</button>
+  </div>
+
+  <form id="create-form" class="card" autocomplete="off">
+    <div class="grid2">
+      <label class="f-video">Nguồn nội dung
+        <select name="source">
+          <option value="brief">Ý tưởng → Claude viết kịch bản</option>
+          <option value="script">Kịch bản của tôi (đọc nguyên văn)</option>
+          <option value="slides" class="only-explainer">Slide markdown</option>
+        </select>
+      </label>
+      <label class="f-voice">Giọng
+        <select name="voice" id="voice-select"></select>
+      </label>
+    </div>
+
+    <label class="f-text">Nội dung
+      <textarea name="text" rows="7" placeholder="Nhập văn bản (Tiếng Việt / English / trộn lẫn)…"></textarea>
+    </label>
+
+    <label class="f-image">Mô tả ảnh (tiếng Anh cho kết quả tốt nhất)
+      <textarea name="prompt" rows="3" placeholder="A cozy café in Hanoi at dawn, cinematic…"></textarea>
+    </label>
+
+    <label class="f-subtitle">File audio/video
+      <input type="file" name="media_file" accept="audio/*,video/*">
+    </label>
+
+    <div class="grid4">
+      <label class="f-lang">Ngôn ngữ
+        <select name="lang"><option value="auto">Tự nhận diện</option><option value="vi">Tiếng Việt</option><option value="en">English</option></select>
+      </label>
+      <label class="f-video">Thời lượng (giây)
+        <input type="number" name="seconds" value="45" min="10" max="600">
+      </label>
+      <label class="f-video f-image">Phong cách hình
+        <select name="style">
+          <option>cinematic</option><option>photo</option><option>illustration</option><option>3d</option><option>minimal</option><option>tech</option><option>none</option>
+        </select>
+      </label>
+      <label class="f-image">Tỉ lệ
+        <select name="aspect"><option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option><option>3:4</option></select>
+      </label>
+      <label class="f-image">Số ảnh <input type="number" name="count" value="1" min="1" max="8"></label>
+      <label class="only-explainer">Theme slide
+        <select name="theme"><option>midnight</option><option>ocean</option><option>paper</option><option>block8</option></select>
+      </label>
+      <label class="f-video">Nhạc nền (tuỳ chọn)
+        <input type="file" name="music_file" accept="audio/*">
+      </label>
+      <label class="f-tts">Engine
+        <select name="engine"><option value="">Mặc định của giọng</option><option value="vieneu">VieNeu</option><option value="voxcpm">VoxCPM2</option><option value="best">Tốt nhất (thử cả hai)</option></select>
+      </label>
+      <label class="f-subtitle">Dịch sang
+        <select name="translate_to"><option value="">Không</option><option value="vi">Tiếng Việt</option><option value="en">English</option></select>
+      </label>
+      <label class="f-subtitle check"><input type="checkbox" name="burn"> Ghi cứng phụ đề vào video</label>
+    </div>
+
+    <details class="f-voicefx" open>
+      <summary>Chất giọng</summary>
+      <div class="grid4">
+        <label>Độ trầm <output id="o-pitch">0</output>
+          <input type="range" name="pitch" min="-6" max="6" step="0.5" value="0" data-out="o-pitch"><small>← trầm hơn · cao hơn →</small></label>
+        <label>Tốc độ <output id="o-pace">1.00</output>
+          <input type="range" name="pace" min="0.7" max="1.4" step="0.05" value="1" data-out="o-pace"></label>
+        <label>Độ ấm <output id="o-warmth">0.0</output>
+          <input type="range" name="warmth" min="0" max="1" step="0.1" value="0" data-out="o-warmth"></label>
+        <label>Độ rõ <output id="o-clarity">0.5</output>
+          <input type="range" name="clarity" min="0" max="1" step="0.1" value="0.5" data-out="o-clarity"></label>
+      </div>
+    </details>
+
+    <div class="actions">
+      <button type="submit" class="primary" id="submit-btn">Tạo</button>
+      <span class="hint" id="create-hint"></span>
+    </div>
+  </form>
+
+  <div id="create-result"></div>
+</section>
+
+<!-- ============================== JOBS -->
+<section id="tab-jobs" class="tab">
+  <div class="toolbar">
+    <select id="jobs-filter"><option value="">Tất cả</option><option>queued</option><option>running</option><option>done</option><option>failed</option></select>
+    <button id="jobs-refresh" class="ghost">↻ Làm mới</button>
+  </div>
+  <div id="jobs-list" class="jobs"></div>
+</section>
+
+<!-- ============================== VOICES -->
+<section id="tab-voices" class="tab">
+  <div class="grid-voices">
+    <div class="card">
+      <h3>Giọng của bạn</h3>
+      <div id="voices-list"></div>
+      <form id="voice-create" class="inline">
+        <input name="name" placeholder="Tên giọng, ví dụ: Tú" required>
+        <button class="primary">Tạo giọng</button>
+      </form>
+      <button id="demo-voice" class="ghost small">Tạo giọng demo (macOS say)</button>
+    </div>
+    <div class="card" id="voice-detail">
+      <p class="muted">Chọn hoặc tạo một giọng để thu âm mẫu.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== LEXICON -->
+<section id="tab-lexicon" class="tab">
+  <div class="card">
+    <h3>Từ điển phát âm</h3>
+    <p class="muted">Từ/viết tắt → cách đọc. Mục <b>learned</b> do hệ thống tự học khi sửa lỗi phát âm; mục <b>manual</b> do bạn đặt sẽ không bị ghi đè.</p>
+    <div class="toolbar">
+      <select id="lex-scope"></select>
+      <select id="lex-lang"><option value="vi">Tiếng Việt</option><option value="en">English</option></select>
+      <button id="lex-add" class="ghost">+ Thêm</button>
+      <button id="lex-save" class="primary">Lưu</button>
+    </div>
+    <table class="lex"><thead><tr><th>Từ</th><th>Đọc là</th><th>Nguồn</th><th></th></tr></thead><tbody id="lex-body"></tbody></table>
+  </div>
+</section>
+
+<!-- ============================== SYSTEM -->
+<section id="tab-system" class="tab">
+  <div class="grid2">
+    <div class="card"><h3>Trạng thái</h3><pre id="health"></pre>
+      <button id="unload" class="ghost small">Giải phóng model khỏi bộ nhớ</button></div>
+    <div class="card">
+      <h3>Dùng từ session Claude khác</h3>
+      <p>MCP (đăng ký một lần):</p>
+      <pre>claude mcp add -s user --transport http mediaforge http://127.0.0.1:8765/mcp</pre>
+      <p>REST:</p>
+      <pre>curl -s localhost:8765/api/jobs?wait=true -H 'content-type: application/json' \
+  -d '{"type":"tts","params":{"text":"Xin chào","lang":"vi"}}'</pre>
+      <p>API docs: <a href="/docs" target="_blank">/docs</a></p>
+    </div>
+  </div>
+</section>
+</main>
+
+<template id="tpl-job">
+  <div class="job card">
+    <div class="job-head">
+      <span class="badge"></span><b class="job-type"></b><span class="job-title"></span>
+      <span class="spacer"></span><small class="job-time muted"></small>
+      <button class="ghost small job-cancel">Huỷ</button><button class="ghost small job-del">Xoá</button>
+    </div>
+    <div class="progress"><div></div></div>
+    <small class="job-msg muted"></small>
+    <div class="job-out"></div>
+  </div>
+</template>
+
+<script src="/app.js"></script>
+</body>
+</html>
