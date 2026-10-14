@@ -122,6 +122,26 @@ melody ignores Vietnamese tones. Clarity is the mean of syllables-right and syll
 Line 2's speech is the weak point before any singing: both engines tend to read "sương" as "xương". Takes per
 line went from 4 to 6 so the selector can pick past it.
 
+### 5.2 Against an existing AI singer: ACE-Step 1.5 singing the same lyrics (2026-10-15)
+
+ACE-Step 1.5 was given the owner's two lines as Vietnamese lyrics (`vocal_language="vi"`, 76 BPM, A# major,
+4 seeds). Its voice is a generic singer, not the owner's. Scoring used Whisper on the full mix, in 8 s windows
+with a 4 s hop and known hallucinations removed, counting syllables right out of 14.
+
+| Output | Syllables right | With tones |
+|---|---|---|
+| ACE-Step, seeds 1 / 2 / 3 / 4 | 7 / 0 / 4 / 12 | 7 / 0 / 4 / 11 |
+| MediaForge ngâm (ace+traditional mix) | 10 | 10 |
+| MediaForge hát (ace+traditional mix) | 4 (8 when scored whole) | 2 |
+
+Findings:
+- ACE-Step sings real melodies, but its Vietnamese intelligibility is a lottery across seeds.
+- MediaForge is consistent and in the owner's voice.
+- MediaForge's *mixed* hát loses clarity under the ACE bed.
+
+Upgrade path: generate ACE-Step vocals, keep the clearest of N, and convert the timbre to the owner's voice with
+a permissive pitch-preserving converter (candidate: OpenVoice v2 tone-colour converter, MIT; needs evaluation).
+
 ## 6. Accompaniment (`sing/accompany.py`)
 
 The accompaniment is synthesised additively: no samples, no licence questions, always in the voice's key, and
