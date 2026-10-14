@@ -130,3 +130,19 @@ table.prescan label.check { margin: 0; font-size: 13px; }
 .song-out .spirit { font-style: italic; font-size: 16px; border-left: 3px solid var(--accent); padding-left: 10px; }
 .poem-meta { font-size: 13px; margin: -6px 0 12px; }
 .song-form textarea[readonly] { opacity: .85; }
+
+/* document import + voice preview (SDD-doc-import-preview-chibi) */
+.doc-import { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: -4px 0 12px; }
+.btn-file { flex-direction: row; cursor: pointer; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; color: var(--text); }
+.btn-file:hover { border-color: var(--accent); }
+.doc-images { display: flex; flex-wrap: wrap; gap: 10px; width: 100%; }
+.doc-images:empty { display: none; }
+.doc-images figure { margin: 0; width: 120px; }
+.doc-images figure img { width: 120px; height: 84px; object-fit: contain; background: var(--line); border-radius: 6px; display: block; }
+.doc-images figure.off img { opacity: .25; }
+.doc-images figcaption { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); }
+.doc-images p { width: 100%; margin: 0; font-size: 12px; }
+.preview-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 4px; }
+.preview-row #pv-text { flex: 1 1 260px; min-width: 0; }
+.preview-row audio { height: 32px; flex: 1 1 100%; }
+.preview-row select, .preview-row button { width: auto; flex: 0 0 auto; }

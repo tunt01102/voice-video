@@ -50,6 +50,12 @@
     <label class="f-text">Nội dung
       <textarea name="text" rows="7" placeholder="Nhập văn bản (Tiếng Việt / English / trộn lẫn)…"></textarea>
     </label>
+    <div class="f-text doc-import">
+      <label class="btn-file">📄 Nhập từ Word/PDF<input type="file" id="doc-file" accept=".docx,.pdf,.doc,.rtf,.odt" hidden></label>
+      <span class="muted" id="doc-status">.docx · .pdf · .doc/.rtf/.odt — chữ và hình ảnh trong file được giữ lại</span>
+      <button type="button" class="ghost small" id="doc-clear" hidden>✕ Bỏ tài liệu</button>
+      <div id="doc-images" class="doc-images"></div>
+    </div>
 
     <label class="f-image">Mô tả ảnh (tiếng Anh cho kết quả tốt nhất)
       <textarea name="prompt" rows="3" placeholder="A cozy café in Hanoi at dawn, cinematic…"></textarea>
@@ -68,7 +74,7 @@
       </label>
       <label class="f-video f-image">Phong cách hình
         <select name="style">
-          <option>cinematic</option><option>photo</option><option>illustration</option><option>3d</option><option>minimal</option><option>tech</option><option>none</option>
+          <option>cinematic</option><option>photo</option><option>illustration</option><option>3d</option><option>minimal</option><option>tech</option><option value="chibi">chibi (hoạt hình dễ thương)</option><option>none</option>
         </select>
       </label>
       <label class="f-image">Tỉ lệ
@@ -94,7 +100,7 @@
     </div>
 
     <details class="f-voicefx" open>
-      <summary>Chất giọng</summary>
+      <summary>Chất giọng <small class="muted" id="fx-saved"></small></summary>
       <div class="grid4">
         <label>Độ trầm <output id="o-pitch">0</output>
           <input type="range" name="pitch" min="-6" max="6" step="0.5" value="0" data-out="o-pitch"><small>← trầm hơn · cao hơn →</small></label>
@@ -105,6 +111,15 @@
         <label>Độ rõ <output id="o-clarity">0.5</output>
           <input type="range" name="clarity" min="0" max="1" step="0.1" value="0.5" data-out="o-clarity"></label>
       </div>
+      <div class="preview-row">
+        <button type="button" class="ghost small" id="fx-reset" title="Đưa 4 thanh về mức trung tính và lưu">↺ Mặc định</button>
+        <select id="pv-lang" title="Ngôn ngữ câu nghe thử"><option value="vi">🇻🇳 Tiếng Việt</option><option value="en">🇬🇧 English</option></select>
+        <input id="pv-text" title="Câu nghe thử (sửa được, được ghi nhớ)">
+        <button type="button" class="primary small" id="pv-btn">▶ Nghe thử</button>
+        <small class="muted" id="pv-status"></small>
+        <audio id="pv-audio" controls hidden></audio>
+      </div>
+      <small class="muted">Chất giọng được lưu theo giọng đã chọn và tự nạp lại lần sau (cũng áp dụng khi gọi qua MCP/API mà không truyền tham số).</small>
     </details>
 
     <div class="actions">

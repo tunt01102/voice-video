@@ -13,6 +13,7 @@ from typing import Any, Callable
 from mediaforge import asr, image, llm, music, subtitles
 from mediaforge import audio as A
 from mediaforge.config import settings
+from mediaforge.text import documents as D
 from mediaforge.text.normalize import detect_lang, split_sentences
 from mediaforge.video import clips, compose, slides
 from mediaforge.voice import speak as S
@@ -35,8 +36,17 @@ def _out_dir(kind: str, job_id: str | None) -> Path:
 
 # ------------------------------------------------------------------ planning
 
+CHIBI_HINT = ("Draw every scene in chibi style: one or two small, cute chibi cartoon characters (oversized heads, "
+              "tiny bodies, big sparkling eyes) acting out the scene's idea, e.g. a chibi hacker locking a giant padlock; "
+              "always cartoon characters, never photoreal people")
+
+
+def style_hint(style: str) -> str:
+    return f"style: {style}" + (f". {CHIBI_HINT}" if style == "chibi" else "")
+
+
 def plan(brief: str, *, lang: str, kind: str = "narrated", seconds: int = 60, scenes: int | None = None,
-         style: str = "cinematic") -> dict[str, Any]:
+         style: str = "cinematic", n_images: int = 0) -> dict[str, Any]:
     n_units = int(seconds * UNITS_PER_SEC.get(lang, 3))
     n_scenes = scenes or max(3, min(14, round(seconds / (5 if kind == "short" else 8))))
     unit = "syllables" if lang == "vi" else "words"
@@ -47,6 +57,11 @@ def plan(brief: str, *, lang: str, kind: str = "narrated", seconds: int = 60, sc
                      "narration explains the slide conversationally.",
         "narrated": "This is a narrated documentary-style video: clear structure (intro, body, conclusion).",
     }[kind]
+    images_note = (
+        f"The brief is a document with {n_images} pictures; a line [ảnh N] marks where picture N appears. When a scene "
+        f"covers the text around picture N, add \"image\": N to that scene so the video shows the original picture "
+        f"(each picture at most once, in document order; leave it out otherwise). Never write the markers in "
+        f"narration.\n" if n_images else "")
     prompt = f"""Write a video plan in {LANG_NAME[lang]} for this brief:
 \"\"\"{brief}\"\"\"
 
@@ -55,11 +70,11 @@ Total narration ≈ {n_units} {unit} (≈{seconds} seconds spoken), split across
 Narration must be natural spoken {LANG_NAME[lang]}, no stage directions, no emojis, no markdown.
 Write numbers the way they should be read if ambiguous.
 For each scene also write an English image-generation prompt ("visual_prompt"): concrete subject, setting,
-composition, lighting; style hint: {style}; never ask for text, letters, logos or watermarks in the image.
-
+composition, lighting; {style_hint(style)}; never ask for text, letters, logos or watermarks in the image.
+{images_note}
 Return JSON:
 {{"title": "...", "description": "one-sentence summary in {LANG_NAME[lang]}",
-  "scenes": [{{"narration": "...", "visual_prompt": "...", "slide_title": "...", "bullets": ["..."]}}],
+  "scenes": [{{"narration": "...", "visual_prompt": "...", "slide_title": "...", "bullets": ["..."]{', "image": 1' if n_images else ''}}}],
   "hashtags": ["..."]}}
 (slide_title and bullets are required only for explainers.)"""
     data, provider = llm.complete_json(prompt, timeout=300)
@@ -72,7 +87,7 @@ Return JSON:
 def visual_prompts_for(narrations: list[str], *, style: str) -> list[str]:
     numbered = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(narrations))
     prompt = (f"For each narration line below, write one English image-generation prompt that illustrates it "
-              f"(concrete subject, setting, composition, lighting; style: {style}; no text/letters/logos in the image).\n"
+              f"(concrete subject, setting, composition, lighting; {style_hint(style)}; no text/letters/logos in the image).\n"
               f"{numbered}\n\nReturn JSON: {{\"prompts\": [\"...\", ...]}} with exactly {len(narrations)} items.")
     try:
         data, _ = llm.complete_json(prompt, timeout=240)
@@ -88,6 +103,49 @@ def scenes_from_script(script: str, *, target_scene_seconds: float, lang: str) -
     sents = split_sentences(script)
     per_scene = max(1, round(target_scene_seconds * UNITS_PER_SEC.get(lang, 3) / 14))
     return [" ".join(sents[i : i + per_scene]) for i in range(0, len(sents), per_scene)]
+
+
+def script_scenes(script: str, *, target_scene_seconds: float, lang: str) -> list[tuple[str, int | None]]:
+    """(narration, image number) per scene. Image N goes on the first scene after its [ảnh N] marker, so a picture
+    never lands mid-scene; a marker with no text after it goes on the previous scene if that has no picture."""
+    out: list[tuple[str, int | None]] = []
+    pending: int | None = None
+
+    def park(n: int) -> None:
+        if out and out[-1][1] is None:
+            out[-1] = (out[-1][0], n)
+
+    for n, chunk in D.split_markers(script):
+        if n is not None:
+            if pending is not None:
+                park(pending)
+            pending = n
+        for k, t in enumerate(scenes_from_script(chunk, target_scene_seconds=target_scene_seconds, lang=lang)):
+            out.append((t, pending if k == 0 else None))
+            pending = None
+    if pending is not None:
+        park(pending)
+    return out
+
+
+def doc_image(p: dict[str, Any], n: Any) -> str | None:
+    """Path of imported document picture number n (1-based), if it exists."""
+    imgs = p.get("doc_images") or []
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return None
+    return imgs[n - 1] if 1 <= n <= len(imgs) and Path(imgs[n - 1]).is_file() else None
+
+
+def apply_document(p: dict[str, Any]) -> dict[str, Any]:
+    """`document` (MCP/CLI): import a Word/PDF server-side into brief/script (+ doc_images) unless text is given."""
+    if not p.get("document") or p.get("brief") or p.get("script") or p.get("slides_markdown"):
+        return p
+    doc = D.import_file(p["document"], settings.data_dir)
+    key = "script" if p.get("document_as") == "script" else "brief"
+    return {**p, key: doc["text"], "doc_images": [im["path"] for im in doc["images"]],
+            "title": p.get("title") or doc["title"], "document_warnings": doc["warnings"]}
 
 
 def sentence_spans(sentences: list[str], words: list[dict]) -> list[list[float]] | None:
@@ -109,11 +167,12 @@ def sentence_spans(sentences: list[str], words: list[dict]) -> list[list[float]]
 
 def run_tts(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
     out = _out_dir("tts", job_id)
-    r = S.speak(p["text"], voice=p.get("voice"), lang=p.get("lang", "auto"), engine=p.get("engine"),
+    preview = bool(p.get("preview"))  # "Nghe thử": nobody reads timings or subtitles of a preview
+    r = S.speak(D.strip_markers(p["text"]), voice=p.get("voice"), lang=p.get("lang", "auto"), engine=p.get("engine"),
                 fx=p.get("fx"), out_dir=out, name="voice", seed=int(p.get("seed", 1234)), progress=progress,
-                overrides=p.get("overrides"), regen=p.get("regen"), takes=p.get("takes"))
+                overrides=p.get("overrides"), regen=p.get("regen"), takes=p.get("takes"), timings=not preview)
     r["sentence_spans"] = sentence_spans([x["text"] for x in r["sentences"]], r["words"])
-    if p.get("subtitles", True) and r["words"]:
+    if p.get("subtitles", not preview) and r["words"]:
         r["subtitles"] = subtitles.write_all(r["words"], out / "voice")
     return r
 
@@ -184,6 +243,7 @@ def run_subtitle(p: dict[str, Any], progress: Progress, job_id: str | None = Non
 
 def make_plan(p: dict[str, Any], kind: str, *, style: str, seconds: int) -> tuple[dict[str, Any], str]:
     """The script and visual prompts of a video: an earlier plan, slides, the owner's script, or the LLM."""
+    p = apply_document(p)
     lang = p.get("lang") or "auto"
     if p.get("plan_file") and Path(p["plan_file"]).exists():
         # Re-render of an earlier job, or a plan prepared (and pronunciation-checked) before rendering.
@@ -195,22 +255,36 @@ def make_plan(p: dict[str, Any], kind: str, *, style: str, seconds: int) -> tupl
         lang = lang if lang != "auto" else detect_lang(" ".join(s["narration"] for s in md_slides))
         plan_data = {"title": md_slides[0]["title"] if md_slides else "Explainer",
                      "scenes": [{"narration": s["narration"], "slide_title": s["title"], "bullets": s["bullets"],
-                                 "visual_prompt": ""} for s in md_slides]}
+                                 "visual_prompt": "", "image": doc_image(p, s.get("image"))} for s in md_slides]}
     elif p.get("script"):
-        lang = lang if lang != "auto" else detect_lang(p["script"])
+        lang = lang if lang != "auto" else detect_lang(D.strip_markers(p["script"]))
         if kind == "screen":
-            parts = [p["script"]]
+            pairs: list[tuple[str, int | None]] = [(D.strip_markers(p["script"]), None)]
         else:
-            parts = scenes_from_script(p["script"], target_scene_seconds=5 if kind == "short" else 8, lang=lang)
+            pairs = script_scenes(p["script"], target_scene_seconds=5 if kind == "short" else 8, lang=lang)
+        parts = [t for t, _ in pairs]
+        if not parts:
+            raise ValueError("the script has no text to read")
         prompts = [""] * len(parts) if kind in ("screen",) else visual_prompts_for(parts, style=style)
         plan_data = {"title": p.get("title") or parts[0][:60], "scenes": [
-            {"narration": t, "visual_prompt": vp, "slide_title": "", "bullets": []} for t, vp in zip(parts, prompts)]}
+            {"narration": t, "visual_prompt": vp, "slide_title": "", "bullets": [], "image": doc_image(p, n)}
+            for (t, n), vp in zip(pairs, prompts)]}
     else:
         if not p.get("brief"):
             raise ValueError("provide one of: brief, script, slides_markdown")
-        lang = lang if lang != "auto" else detect_lang(p["brief"])
+        lang = lang if lang != "auto" else detect_lang(D.strip_markers(p["brief"]))
+        n_images = len(p.get("doc_images") or []) if D.has_markers(p["brief"]) else 0
         plan_data = plan(p["brief"], lang=lang, kind=kind if kind != "screen" else "narrated", seconds=seconds,
-                         scenes=p.get("scenes"), style=style)
+                         scenes=p.get("scenes"), style=style, n_images=n_images)
+        used: set[str] = set()
+        for sc in plan_data["scenes"]:
+            sc["narration"] = D.strip_markers(str(sc.get("narration", "")))
+            path = doc_image(p, sc.pop("image", None)) if n_images else None
+            sc["image"] = path if path and path not in used else None
+            used.add(sc["image"] or "")
+        plan_data["scenes"] = [sc for sc in plan_data["scenes"] if sc["narration"]]
+    if p.get("document_warnings"):
+        plan_data["document_warnings"] = p["document_warnings"]
     return plan_data, lang
 
 
@@ -235,6 +309,13 @@ def build_visuals(p: dict[str, Any], plan_data: dict[str, Any], out: Path, durat
             m = str(media[i])
             is_vid = Path(m).suffix.lower() in (".mp4", ".mov", ".webm", ".mkv", ".m4v")
             visuals.append(compose.Scene(m, durations[i], kind="video" if is_vid else "image"))
+            continue
+        if sc.get("image") and Path(sc["image"]).is_file():  # a picture from the imported document, shown whole
+            fig = slides.figure_frame(sc["image"], out / "figures" / f"scene_{i + 1:02d}.png", width=W, height=H,
+                                      title=(sc.get("slide_title") or None) if kind == "explainer" else None,
+                                      theme=p.get("theme", "midnight"))
+            # zoom_in crops ~7 % per side by the end: fine for the padded figure, not for an explainer's title
+            visuals.append(compose.Scene(str(fig), durations[i], motion="static" if kind == "explainer" else "zoom_in"))
             continue
         bg = None
         img_path = out / "images" / f"scene_{i + 1:02d}.png"

@@ -45,25 +45,33 @@ async def _submit(job_type: str, params: dict[str, Any], wait_seconds: float) ->
     return _summary(job)
 
 
+def _fx(**kw: float | None) -> dict[str, float] | None:
+    """Only the settings given: the rest come from the voice profile's saved fx."""
+    return {k: v for k, v in kw.items() if v is not None} or None
+
+
 @mcp.tool()
-async def speak(text: str, voice: str | None = None, lang: str = "auto", pitch: float = 0.0, pace: float = 1.0,
-                warmth: float = 0.0, clarity: float = 0.5, engine: str | None = None,
+async def speak(text: str, voice: str | None = None, lang: str = "auto", pitch: float | None = None,
+                pace: float | None = None, warmth: float | None = None, clarity: float | None = None,
+                engine: str | None = None,
                 wait_seconds: float = 300) -> dict[str, Any]:
     """Synthesise speech in a cloned voice (English 'en', Vietnamese 'vi', or 'auto' per sentence).
 
-    pitch: semitones -6..+6 (negative = deeper). pace: 0.7..1.4. warmth/clarity: 0..1.
+    pitch: semitones -6..+6 (negative = deeper). pace: 0.7..1.4. warmth/clarity: 0..1. Leave them unset to use
+    the voice's saved settings (the owner's last setup in the dashboard).
     engine: None (voice default), 'vieneu', 'voxcpm' or 'best'. Every sentence is checked by speech
     recognition and automatically regenerated/respelled if mispronounced. Returns wav/mp3 + SRT/VTT/ASS paths.
     """
     return await _submit("tts", {"text": text, "voice": voice, "lang": lang, "engine": engine,
-                                 "fx": {"pitch": pitch, "pace": pace, "warmth": warmth, "clarity": clarity}}, wait_seconds)
+                                 "fx": _fx(pitch=pitch, pace=pace, warmth=warmth, clarity=clarity)}, wait_seconds)
 
 
 @mcp.tool()
 async def generate_image(prompt: str, aspect: str = "16:9", count: int = 1, style: str = "none",
                          seed: int | None = None, wait_seconds: float = 240) -> dict[str, Any]:
     """Generate image(s) locally (Z-Image-Turbo). aspect: 16:9, 9:16, 1:1, 4:3, 3:4.
-    style: none, cinematic, photo, illustration, 3d, minimal, tech. Prompt in English works best."""
+    style: none, cinematic, photo, illustration, 3d, minimal, tech, chibi (cute small cartoon characters).
+    Prompt in English works best."""
     return await _submit("image", {"prompt": prompt, "aspect": aspect, "count": count, "style": style, "seed": seed},
                          wait_seconds)
 
@@ -71,7 +79,8 @@ async def generate_image(prompt: str, aspect: str = "16:9", count: int = 1, styl
 @mcp.tool()
 async def prepare_video(brief: str | None = None, script: str | None = None, kind: str = "narrated",
                         lang: str = "auto", voice: str | None = None, seconds: int = 60, style: str = "cinematic",
-                        slides_markdown: str | None = None, wait_seconds: float = 300) -> dict[str, Any]:
+                        slides_markdown: str | None = None, document: str | None = None,
+                        document_as: str = "brief", wait_seconds: float = 300) -> dict[str, Any]:
     """Step 1 of a video: write the script and scan it for terms the TTS may misread (acronyms, foreign names,
     codes, symbols) BEFORE rendering.
 
@@ -79,20 +88,23 @@ async def prepare_video(brief: str | None = None, script: str | None = None, kin
     Decide a reading for each unknown term (ask the user when unsure, e.g. PNJ -> 'Pi En Di'), then call
     create_video(plan_file=..., pronunciations={term: reading}, verified_terms=[terms that read fine as written]).
     The answers are saved to the pronunciation lexicon for every later render.
+    document / document_as / style: as in create_video.
     """
     return await _submit("prepare", {"brief": brief, "script": script, "kind": kind, "lang": lang, "voice": voice,
-                                     "seconds": seconds, "style": style, "slides_markdown": slides_markdown},
+                                     "seconds": seconds, "style": style, "slides_markdown": slides_markdown,
+                                     "document": document, "document_as": document_as},
                          wait_seconds)
 
 
 @mcp.tool()
 async def create_video(brief: str | None = None, script: str | None = None, kind: str = "narrated",
                        lang: str = "auto", voice: str | None = None, seconds: int = 60, style: str = "cinematic",
-                       aspect: str | None = None, music: str | None = None, pitch: float = 0.0,
+                       aspect: str | None = None, music: str | None = None, pitch: float | None = None,
                        slides_markdown: str | None = None, media: list[str] | None = None,
                        burn_subtitles: bool = True, plan_file: str | None = None,
                        pronunciations: dict[str, str] | None = None, verified_terms: list[str] | None = None,
-                       karaoke: bool = True, wait_seconds: float = 0) -> dict[str, Any]:
+                       karaoke: bool = True, document: str | None = None, document_as: str = "brief",
+                       wait_seconds: float = 0) -> dict[str, Any]:
     """Create a narrated video with cloned voice, generated visuals and subtitles.
 
     kind: 'narrated' (16:9 AI visuals), 'short' (9:16 with karaoke subtitles), 'explainer' (slides).
@@ -102,13 +114,18 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
     a job_id immediately — poll job_status.
     plan_file / pronunciations / verified_terms: from prepare_video (recommended: avoids mispronounced audio).
     karaoke: highlight the word being spoken (default on).
+    style: cinematic, photo, illustration, 3d, minimal, tech, chibi (scenes acted out by cute chibi characters).
+    document: local .docx/.pdf (.doc/.rtf/.odt) path used as the content instead of brief/script; its pictures are
+    shown on the scenes where they appear. document_as: 'brief' (Claude writes the script from it) or 'script'
+    (read verbatim). pitch: omit to use the voice's saved settings.
     """
     return await _submit(kind, {"brief": brief, "script": script, "lang": lang, "voice": voice, "seconds": seconds,
-                                "style": style, "aspect": aspect, "music": music, "fx": {"pitch": pitch},
+                                "style": style, "aspect": aspect, "music": music, "fx": _fx(pitch=pitch),
                                 "slides_markdown": slides_markdown, "media": media,
                                 "burn_subtitles": burn_subtitles, "plan_file": plan_file,
                                 "pronunciations": pronunciations, "verified_terms": verified_terms,
-                                "karaoke": karaoke}, wait_seconds)
+                                "karaoke": karaoke, "document": document, "document_as": document_as},
+                         wait_seconds)
 
 
 @mcp.tool()
