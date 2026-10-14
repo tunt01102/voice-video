@@ -1,6 +1,6 @@
 # MediaForge — Software Design Document
 
-Status: v1.0 · 2026-10-14 · Owner: tu.dev@block8.ai · Internal tool, localhost only
+Status: v1.1 (implemented) · 2026-10-14 · Owner: tu.dev@block8.ai · Internal tool, localhost only
 
 MediaForge is the single local service on this Mac that every other task (and every
 Claude Code session) calls to produce **voice, audio, subtitles, images and videos**.
@@ -55,8 +55,16 @@ Measured on this machine (spine test, 2026-10-14, warm models):
 | VoxCPM2 8-bit (MLX) | EN | 2.2 s / 4.2 s | WER 0 % |
 | Whisper large-v3-turbo (MLX) | both | ~0.5 s per 5 s clip | — |
 
-Note: VieNeu's ONNX/CPU backend fails with HF-cache symlinks (onnxruntime external-data
-path check); we use `backend="pytorch", device="mps"`.
+| Z-Image-Turbo q8 (mflux/MLX) 1344×768, 9 steps | — | ~55 s / image | — |
+| Z-Image-Turbo q8, 1024×576, 7 steps ("standard", used for video) | — | ~23 s / image | — |
+| Ollama `x/z-image-turbo` 768×1344 | — | ~56 s / image | — |
+| End-to-end: 35 s 16:9 video, 5 scenes, Claude-planned | EN | 168 s | all sentences pass |
+| End-to-end: 20 s 9:16 short, 3 scenes (Ollama images) | VI | 218 s | all sentences pass |
+
+Notes: VieNeu's ONNX/CPU backend fails with HF-cache symlinks (onnxruntime external-data
+path check); we use `backend="pytorch", device="mps"`. bf16 vs q8 vs q4 made no material
+difference to Z-Image speed on this machine (52–63 s at 1344×768), so q8 is kept; resolution
+and step count are the effective levers (`image.QUALITY`).
 
 ### Adopted stack
 
@@ -169,8 +177,12 @@ Routing default: `vi → vieneu`, `en → voxcpm`, configurable per voice and pe
    then the **pronunciation lexicon** (global + per-voice JSON, e.g. `API → ây-pi-ai`).
 2. **Split** into sentences/clauses ≤ 220 chars.
 3. **Synthesise** each sentence with the routed engine (fixed seed for reproducibility).
-4. **QA**: resample to 16 kHz → Whisper → normalised CER (VI) / WER (EN) vs. the
-   normalised input. Also check duration sanity (chars/sec) to catch babble/truncation.
+4. **QA**: resample to 16 kHz → Whisper → compare with the normalised input.
+   Score = mean(syllable WER, CER) for VI (CER alone let "Hà Nội → Hà Lội" pass at 3.6 %),
+   WER for EN. Lexicon terms and brand-like tokens (MediaForge, Block8, API) are passed to
+   Whisper as an `initial_prompt` hint and diff blocks made only of them are excluded, because
+   ASR cannot spell back a correctly spoken brand name ("Media4"). Duration sanity
+   (tokens/sec) catches babble/truncation.
 5. **Self-repair** on failure (max 4 attempts per sentence, keep best):
    a. new seed + lower temperature; b. switch engine; c. ask the LLM to propose
    phonetic respellings for the mismatched words (diff of expected vs. heard), apply
@@ -208,7 +220,8 @@ to 48 kHz on exit; ASR always receives 16 kHz mono.
    duration_hint}]}` in the target language; visual prompts always English.
 2. **Voice**: `speak` per scene → per-scene WAV + timings (scene length = audio length
    + 0.3 s tail).
-3. **Visuals** per scene: image (mflux Z-Image-Turbo, 9 steps, seeded, style preset)
+3. **Visuals** per scene: image (mflux Z-Image-Turbo, "standard" 1024×576 / 7 steps, seeded,
+   style preset; falls back to Ollama while the MLX weights are not fully cached)
    or AI clip (LTX-2 i2v from that image, when `clips=true`), or user-supplied media.
 4. **Compose** (FFmpeg): Ken Burns (`zoompan` on pre-upscaled stills, alternating
    zoom/pan directions), `xfade` transitions, voice track, optional music with
@@ -263,11 +276,11 @@ CLI talks to the running server when available, otherwise runs in-process.
 ## 10. Phases
 | Phase | Deliverable | Status |
 |---|---|---|
-| P0 Spine | TTS adapters, ASR QA, FX, CLI `speak` | |
-| P1 Video | subtitles, images, composer, narrated/short/explainer pipelines | |
-| P2 Service | FastAPI + jobs + SSE, MCP, `claude mcp add` | |
-| P3 Dashboard | record/enrol voice, lexicon editor, job launcher, gallery | |
-| P4 Later | LTX-2 clips by default when fast enough; OmniVoice adapter; music generation (ACE-Step, Apache-2.0 — evaluate); speaker-similarity score (WavLM-SV); React upgrade | |
+| P0 Spine | TTS adapters, ASR QA, FX, CLI `speak` | Done 2026-10-14 |
+| P1 Video | subtitles, images, composer, narrated/short/explainer/screen pipelines | Done 2026-10-14 |
+| P2 Service | FastAPI + jobs + SSE, MCP, `claude mcp add`, launchd | Done 2026-10-14 |
+| P3 Dashboard | record/enrol voice, lexicon editor, job launcher, gallery | Done 2026-10-14 |
+| P4 Later | install ltx-2-mlx and enable clips; OmniVoice adapter; music generation (ACE-Step, Apache-2.0 — evaluate); speaker-similarity score (WavLM-SV) to auto-pick the best reference; automated tests; React upgrade | Open |
 
 **Owner action required:** record real samples (dashboard → Voices → Record). Until then
 a placeholder voice (macOS `say`) proves the pipeline; "sounds like me" can only be
@@ -278,6 +291,12 @@ judged after enrolment.
   data — stored only under `data/` (git-ignored), never sent to Claude/LLM (only text is),
   deletable from the dashboard. Generated audio carries VieNeu's inaudible watermark by
   default. File serving is confined to `data/`.
+- **Service**: launchd user agent `ai.block8.mediaforge` (`scripts/service.sh`). macOS TCC
+  blocks background agents from reading `~/Documents`, so the agent runs a non-editable copy
+  from `uv tool install` (pinned to `uv.lock`) and keeps data in `~/.local/share/mediaforge`;
+  the project's `data/` is a symlink to it. Code changes go live with `scripts/service.sh update`.
+- **Job scheduling**: priority queue — enrolment > tts/image > subtitle > video — so the
+  dashboard's recording and preview stay responsive during long renders.
 - **Reliability**: jobs persisted; on restart `running` → `failed (interrupted)`,
   `queued` resumes. Every job writes `report.json` (timings, QA per sentence, engine).
 - **Performance targets** (warm): 60 s narration < 60 s TTS incl. QA; 1024² image ≲ 15 s;

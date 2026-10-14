@@ -129,6 +129,7 @@ Job types: `tts`, `image`, `subtitle`, `narrated`, `short`, `explainer`, `screen
 
 ```bash
 scripts/service.sh status | restart | logs | uninstall
+scripts/service.sh update                                 # after changing code: reinstall + restart
 uv run mediaforge doctor
 curl -X POST localhost:8765/api/models/unload            # free GPU memory
 ```
@@ -145,5 +146,7 @@ Configuration uses environment variables:
 | `MEDIAFORGE_QA_MAX_WER_EN` | 0.10 |
 
 See `src/mediaforge/config.py` for the rest.
+
+The background service runs an installed copy of the code (`uv tool install`) and keeps its data in `~/.local/share/mediaforge`. This is because macOS doesn't let background services read `~/Documents`. The project's `data/` folder is a symlink to that location, so outputs still appear in the project.
 
 The server binds to 127.0.0.1 only and has no authentication. Don't expose it to a network.
