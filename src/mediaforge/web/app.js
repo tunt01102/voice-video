@@ -239,10 +239,11 @@ function renderOutputs(job, out) {
   if (links.length) out.insertAdjacentHTML("beforeend", `<div class="links">${links.join("")}</div>`);
   const r = job.result || {};
   if (fileUrl(f.video) && Array.isArray(r.words) && r.plan) out.append(renderResubtitle(job));
-  if (fileUrl(f.video) || (fileUrl(f.audio) && Array.isArray(r.sentences))) out.append(renderExport(job));
+  const isSong = ["sing", "recite"].includes(job.type);
+  if (!isSong && (fileUrl(f.video) || (fileUrl(f.audio) && Array.isArray(r.sentences)))) out.append(renderExport(job));
   if (Array.isArray(r.sentences) && r.sentences.length) out.append(renderRepronounce(job));
   if (Array.isArray(r.sentences) && r.sentences.length) out.append(renderQA(job));
-  if (["sing", "recite"].includes(job.type)) out.append(renderSong(job));
+  if (isSong) out.append(renderSong(job));
   if (r.text && job.type === "subtitle") out.insertAdjacentHTML("beforeend", `<pre>${esc(r.text)}</pre>`);
 }
 function renderResubtitle(job) {
@@ -743,6 +744,7 @@ async function songForm(section) {
   form.text.placeholder = isRecite ? "Mình ta với cả trời sao sáng,\nNâng chén sương đêm cạn hết sầu" : "Mỗi câu một dòng…";
   $("button[type=submit]", form).textContent = isRecite ? "🪷 Ngâm" : "🎵 Hát";
   syncSongForms();
+  form.key_shift.oninput = () => { form.key_shift.dataset.touched = "1"; $(".o-key", form).textContent = (+form.key_shift.value > 0 ? "+" : "") + form.key_shift.value; };
   if (form.tempo) form.tempo.oninput = () => { $(".o-tempo", form).textContent = (+form.tempo.value).toFixed(2); };
   if (isRecite) {
     try { poemList = await api("/api/poems"); } catch { poemList = []; }
@@ -773,6 +775,7 @@ async function songForm(section) {
       const params = { text: form.text.value, voice: form.voice.value || null, mood: form.mood.value,
         spirit: form.spirit.value || null, title: form.title.value || null, author: form.author.value || null,
         accompaniment: form.accompaniment.value, video: form.video.checked, aspect: form.aspect.value };
+      if (form.key_shift.dataset.touched) params.key_shift = +form.key_shift.value;  // else: the voice's own pitch setting
       if (isRecite) { params.tempo = +form.tempo.value; if (form.poem.value) { params.poem_id = form.poem.value; params.version = form.version.value; } }
       else if (form.bpm.value) params.bpm = +form.bpm.value;
       const job = await api("/api/jobs", { method: "POST", body: JSON.stringify({ type: kind, params, source: "dashboard" }) });
