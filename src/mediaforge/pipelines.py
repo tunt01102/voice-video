@@ -95,7 +95,8 @@ def scenes_from_script(script: str, *, target_scene_seconds: float, lang: str) -
 def run_tts(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
     out = _out_dir("tts", job_id)
     r = S.speak(p["text"], voice=p.get("voice"), lang=p.get("lang", "auto"), engine=p.get("engine"),
-                fx=p.get("fx"), out_dir=out, name="voice", seed=int(p.get("seed", 1234)), progress=progress)
+                fx=p.get("fx"), out_dir=out, name="voice", seed=int(p.get("seed", 1234)), progress=progress,
+                overrides=p.get("overrides"), regen=p.get("regen"))
     if p.get("subtitles", True) and r["words"]:
         r["subtitles"] = subtitles.write_all(r["words"], out / "voice")
     return r
@@ -177,7 +178,12 @@ def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
     # ---- 1. plan
     progress(0.01, "planning")
     lang = p.get("lang") or "auto"
-    if kind == "explainer" and p.get("slides_markdown"):
+    if p.get("plan_file") and Path(p["plan_file"]).exists():
+        # Re-render of an earlier job (e.g. one sentence re-recorded): keep the exact same script.
+        plan_data = json.loads(Path(p["plan_file"]).read_text("utf-8"))
+        if lang == "auto":
+            lang = detect_lang(" ".join(sc["narration"] for sc in plan_data["scenes"]))
+    elif kind == "explainer" and p.get("slides_markdown"):
         md_slides = slides.parse_markdown_slides(p["slides_markdown"])
         lang = lang if lang != "auto" else detect_lang(" ".join(s["narration"] for s in md_slides))
         plan_data = {"title": md_slides[0]["title"] if md_slides else "Explainer",
@@ -208,7 +214,8 @@ def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
     for i, sc in enumerate(scenes_in):
         vprog(i / len(scenes_in), f"voice {i + 1}/{len(scenes_in)}")
         r = S.speak(sc["narration"], voice=voice, lang=lang, engine=p.get("engine"), fx=p.get("fx"),
-                    out_dir=out / "voice", name=f"scene_{i + 1:02d}", seed=int(p.get("seed", 1234)) + 100 * i, timings=False)
+                    out_dir=out / "voice", name=f"scene_{i + 1:02d}", seed=int(p.get("seed", 1234)) + 100 * i, timings=False,
+                    overrides=p.get("overrides"), regen=p.get("regen"))
         scene_audio.append(A.load(r["audio"]))
         scene_reports.append(r)
     gap = 0.35
@@ -273,7 +280,11 @@ def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
         "elapsed": round(time.time() - t0, 1), "scenes": len(scenes_in),
         "qa_failed_sentences": [s for r in scene_reports for s in r["qa_failed_sentences"]],
     })
+    sentences = [{**sen, "scene": si, "index": k} for k, (si, sen) in enumerate(
+        (si, sen) for si, r in enumerate(scene_reports) for sen in r["sentences"])]
     result = {"video": str(final), "thumbnail": str(thumb), "title": plan_data.get("title"),
+              "sentences": sentences, "voice_id": scene_reports[0]["voice"] if scene_reports else voice,
+              "qa_failed_sentences": report["qa_failed_sentences"],
               "duration": round(A.probe_duration(final), 2), "subtitles": subs, "voice": str(voice_wav),
               "plan": str(out / "plan.json"), "lang": lang, "report": report}
     (out / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2))

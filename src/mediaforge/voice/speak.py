@@ -156,7 +156,8 @@ def synth_sentence(
             N.learn(voice_id, lang, term, say)
     report = {
         "text": sentence, "lang": lang, "engine": chosen.engine, "score": chosen.score, "passed": chosen.score <= thr,
-        "heard": chosen.heard, "respell": chosen.respell, "attempts": [
+        "heard": chosen.heard, "respell": chosen.respell, "source": "tts",
+        "missing": chosen.qa.get("missing", []), "extra": chosen.qa.get("extra", []), "attempts": [
             {"engine": a.engine, "seed": a.seed, "temperature": a.temperature, "score": a.score, "heard": a.heard,
              "respell": a.respell, "seconds": a.seconds} for a in attempts
         ],
@@ -166,12 +167,26 @@ def synth_sentence(
     return chosen.audio, report  # type: ignore[return-value]
 
 
+def _key(sentence: str) -> str:
+    """Stable identity for a sentence across re-renders (whitespace/case-insensitive)."""
+    import unicodedata
+
+    return " ".join(unicodedata.normalize("NFC", sentence).lower().split())
+
+
 def speak(
     text: str, *, voice: str | None = None, lang: str = "auto", engine: str | None = None,
     fx: dict | None = None, out_dir: str | Path | None = None, name: str = "voice", seed: int = 1234,
     progress: Progress | None = None, timings: bool = True,
+    overrides: dict[str, str] | None = None, regen: dict[str, int] | None = None,
 ) -> dict[str, Any]:
-    """Text → finished voice track (wav + mp3) with QA report and word timings."""
+    """Text → finished voice track (wav + mp3) with QA report and word timings.
+
+    overrides: {sentence text: recording path} — the owner's own recording replaces that sentence.
+    regen:     {sentence text: n} — re-synthesise that sentence with a fresh seed (n-th retry).
+    """
+    overrides = {_key(k): v for k, v in (overrides or {}).items()}
+    regen = {_key(k): int(v) for k, v in (regen or {}).items()}
     progress = progress or (lambda p, m: None)
     out_dir = Path(out_dir or settings.sub("outputs", "tts", time.strftime("%Y%m%d-%H%M%S")))
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -186,7 +201,13 @@ def speak(
     for i, s in enumerate(sentences):
         s_lang = N.detect_lang(s) if lang == "auto" else lang
         progress(i / len(sentences) * 0.85, f"sentence {i + 1}/{len(sentences)}")
-        audio, rep = synth_sentence(s, s_lang, voice, engine=engine, seed=seed + i)
+        if _key(s) in overrides and Path(overrides[_key(s)]).exists():
+            audio = profiles.clean_recording(overrides[_key(s)])
+            rep = {"text": s, "lang": s_lang, "engine": "recording", "score": 0.0, "passed": True, "source": "recording",
+                   "heard": "", "respell": {}, "missing": [], "extra": [], "attempts": []}
+        else:
+            audio, rep = synth_sentence(s, s_lang, voice, engine=engine, seed=seed + i + 7919 * regen.get(_key(s), 0))
+        rep = {"source": "tts", "missing": [], "extra": [], **rep, "index": i}  # older cache entries lack these
         chunks.append(audio)
         reports.append(rep)
         gaps.append(0.32 if s.rstrip()[-1:] in ".!?…" else 0.16)
@@ -204,7 +225,7 @@ def speak(
         words = [w.as_dict() for w in asr.align_script(" ".join(sentences), tr["words"], duration)]
     result = {
         "audio": str(wav), "mp3": str(mp3), "duration": round(duration, 2), "voice": voice,
-        "fx": fxp.as_dict(), "sentences": reports, "words": words,
+        "fx": fxp.as_dict(), "sentences": reports, "words": words, "voice_id": voice,
         "qa_passed": all(r["passed"] for r in reports),
         "qa_failed_sentences": [r["text"] for r in reports if not r["passed"]],
         "elapsed": round(time.time() - t0, 1),

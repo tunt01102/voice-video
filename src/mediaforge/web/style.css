@@ -68,3 +68,20 @@ table.lex { width: 100%; border-collapse: collapse; }
 table.lex td, table.lex th { border-bottom: 1px solid var(--line); padding: 6px; text-align: left; font-size: 14px; }
 table.lex input { padding: 6px 8px; }
 .toast { position: fixed; bottom: 20px; right: 20px; background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 10px; z-index: 10; }
+
+.qa { width: 100%; border-top: 1px solid var(--line); padding-top: 10px; }
+.qa-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.qa-ok { color: var(--accent-2); font-size: 14px; }
+.qa-list { margin: 10px 0 0; padding-left: 22px; }
+.qa-list.collapsed { display: none; }
+.qa-list li { padding: 8px 10px; border-radius: 9px; margin-bottom: 6px; }
+.qa-list li.bad { background: color-mix(in srgb, var(--err) 13%, transparent); border-left: 3px solid var(--err); }
+.qa-list li.bad .qa-text { color: var(--err); font-weight: 600; }
+.qa-list li.rec-ok { background: color-mix(in srgb, var(--accent-2) 10%, transparent); }
+.qa-list li.only-hover .qa-actions { display: none; }
+.qa-list li.only-hover:hover .qa-actions { display: flex; }
+.qa-meta { font-size: 12.5px; color: var(--muted); margin: 2px 0 6px; }
+.qa-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+mark.miss { background: transparent; color: var(--err); text-decoration: underline wavy var(--err); text-underline-offset: 3px; }
+button.rec.small { padding: 4px 12px; font-size: 13px; }
+.warn-box { background: color-mix(in srgb, var(--warn) 14%, transparent); border-left: 3px solid var(--warn); padding: 8px 12px; border-radius: 8px; margin: 8px 0; font-size: 14px; }

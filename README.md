@@ -40,6 +40,18 @@ uv run mediaforge voice set tu --pitch -1.5 --warmth 0.4 --clarity 0.7
 
 Recordings stay in `data/voices/` on this machine (git-ignored) and are never sent to any LLM.
 
+Nothing you record is ever destroyed by the app:
+
+- **Backups:** every change to a voice writes a snapshot to `data/backups/voices-*.tar.gz` (the last 30 are kept).
+- **Trash, not deletion:** deleting a sample, a voice or a job's files moves it to `data/trash/`.
+- **Raw recordings:** the originals are always kept in `data/voices/<id>/raw/`.
+
+To restore a snapshot:
+
+```bash
+tar -xzf data/backups/<snapshot>.tar.gz -C data/
+```
+
 ## 2. Make things
 
 | Want | Dashboard | CLI |
@@ -110,7 +122,11 @@ Job types: `tts`, `image`, `subtitle`, `narrated`, `short`, `explainer`, `screen
    2. The other engine
    3. Claude proposing phonetic respellings for the misheard words
 5. **Learning.** A respelling that fixes a sentence is saved to the lexicon as `learned`.
-6. **Reporting.** Sentences that still fail are listed in the job report and shown in the dashboard.
+6. **Reporting.** Sentences that still fail are **highlighted in red** in the job's result panel, with the misheard words underlined. Each one has two buttons:
+   - **🎙 Ghi âm câu này** records you reading the sentence. The recording replaces that sentence in a new render, and it's saved as a voice sample.
+   - **🔁 Tạo lại** synthesises the sentence again with a new seed.
+
+   Either way, the other sentences come from cache. A video re-render keeps the same script and images.
 
 ## Engines (all local, on Apple Silicon)
 

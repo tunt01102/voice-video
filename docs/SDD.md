@@ -197,7 +197,12 @@ Routing default: `vi → vieneu`, `en → voxcpm`, configurable per voice and pe
      FFmpeg `deesser`; `warmth` (0…1) — low-shelf 150–250 Hz for a fuller, "trầm" timbre.
    - Final loudness `loudnorm I=-16 TP=-1.5 LRA=11`, 48 kHz.
 8. **Cache** by `sha256(normalised_text, voice, engine, params)` so re-renders are free.
-9. Output: WAV (+ MP3), word timings, QA report JSON.
+9. Output: WAV (+ MP3), word timings, QA report JSON (per sentence: score, heard, missing/extra words).
+10. **Human-in-the-loop repair**: `POST /api/jobs/{id}/patch` re-renders a finished job with
+    `record` (the owner's recording of one sentence replaces the synthesis and is enrolled as a
+    voice sample) or `regen` (new seed for that sentence). Unchanged sentences hit the TTS cache.
+    Videos reuse `plan.json` and the content-addressed image cache, so only the voice track and
+    final mux are redone. The dashboard shows failed sentences in red with misheard words underlined.
 
 Sample-rate contract: engines 48 kHz (VoxCPM2/VieNeu) or 24 kHz (OmniVoice) → resampled
 to 48 kHz on exit; ASR always receives 16 kHz mono.
@@ -297,6 +302,9 @@ judged after enrolment.
   the project's `data/` is a symlink to it. Code changes go live with `scripts/service.sh update`.
 - **Job scheduling**: priority queue — enrolment > tts/image > subtitle > video — so the
   dashboard's recording and preview stay responsive during long renders.
+- **Data safety**: recordings are never deleted by the app. Every voice mutation writes a
+  `data/backups/voices-*.tar.gz` snapshot (keep 30); deletes move to `data/trash/`; raw uploads
+  stay in `voices/<id>/raw/`. `service.sh update` waits for the running job before restarting.
 - **Reliability**: jobs persisted; on restart `running` → `failed (interrupted)`,
   `queued` resumes. Every job writes `report.json` (timings, QA per sentence, engine).
 - **Performance targets** (warm): 60 s narration < 60 s TTS incl. QA; 1024² image ≲ 15 s;

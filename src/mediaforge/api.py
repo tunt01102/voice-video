@@ -91,6 +91,40 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "job not found")
         return _public_job(job)
 
+    @app.post("/api/jobs/{jid}/patch")
+    def patch_job(jid: str, body: dict[str, Any] = Body(...)):
+        """Re-render a finished job with some sentences replaced or regenerated.
+
+        body: {"record": {"text", "file", "lang"}, "regen": [text, ...], "add_sample": true}
+        The owner's recording replaces that sentence and (by default) is also saved as a voice sample.
+        Unchanged sentences come from cache, and videos keep the same script and images.
+        """
+        job = db.get_job(jid)
+        if not job or job["status"] != "done":
+            raise HTTPException(409, "job must be finished")
+        params = dict(job["params"])
+        result = job.get("result") or {}
+        overrides = dict(params.get("overrides") or {})
+        regen = dict(params.get("regen") or {})
+        enrol = None
+        rec = body.get("record")
+        if rec:
+            if not Path(rec["file"]).is_file():
+                raise HTTPException(400, "recording file not found")
+            overrides[rec["text"]] = rec["file"]
+            voice_id = result.get("voice_id") or params.get("voice") or profiles.default_voice()
+            if voice_id and body.get("add_sample", True):
+                enrol = runner.submit("enrol", {"voice": voice_id, "file": rec["file"], "lang": rec.get("lang"),
+                                                "text": rec["text"]}, source="dashboard")
+        for t in body.get("regen") or []:
+            regen[t] = int(regen.get(t, 0)) + 1
+            overrides.pop(t, None)
+        params.update({"overrides": overrides, "regen": regen, "patched_from": jid})
+        if result.get("plan"):
+            params["plan_file"] = result["plan"]
+        new = runner.submit(job["type"], params, source="dashboard")
+        return {"job": _public_job(new), "enrol": enrol}
+
     @app.get("/api/jobs/{jid}/events")
     async def job_events(jid: str):
         if not db.get_job(jid):
@@ -122,9 +156,11 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "job not found")
         if job["status"] in ("queued", "running"):
             raise HTTPException(409, "cancel the job first")
-        if files:
+        if files:  # moved to data/trash, never destroyed outright
             for kind in ("tts", "images", "videos", "subtitles"):
-                shutil.rmtree(settings.data_dir / "outputs" / kind / jid, ignore_errors=True)
+                src = settings.data_dir / "outputs" / kind / jid
+                if src.exists():
+                    shutil.move(str(src), settings.sub("trash") / f"{time.strftime('%Y%m%d-%H%M%S')}-{kind}-{jid}")
         db.delete_job(jid)
         return {"deleted": jid}
 

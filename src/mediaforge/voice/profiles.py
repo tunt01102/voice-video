@@ -51,8 +51,44 @@ def _dir(voice_id: str) -> Path:
 
 
 def _slug(name: str) -> str:
-    s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    import unicodedata
+
+    ascii_name = unicodedata.normalize("NFKD", name.replace("đ", "d").replace("Đ", "D"))
+    ascii_name = "".join(c for c in ascii_name if not unicodedata.combining(c))
+    s = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")
     return (s or "voice")[:30]
+
+
+BACKUP_KEEP = 30
+
+
+def backup_voices(reason: str = "auto") -> Path | None:
+    """Snapshot every voice (recordings + profiles + lexicons) to data/backups/*.tar.gz.
+
+    Called after every change to voice data so recordings can always be restored.
+    """
+    import tarfile
+
+    root = settings.data_dir / "voices"
+    if not root.exists() or not any(root.iterdir()):
+        return None
+    bdir = settings.sub("backups")
+    out = bdir / f"voices-{time.strftime('%Y%m%d-%H%M%S')}-{re.sub(r'[^a-z0-9]+', '-', reason.lower())[:30]}.tar.gz"
+    with tarfile.open(out, "w:gz") as tar:
+        tar.add(root, arcname="voices")
+    snaps = sorted(bdir.glob("voices-*.tar.gz"))
+    for old in snaps[:-BACKUP_KEEP]:
+        old.unlink(missing_ok=True)
+    return out
+
+
+def _trash(path: Path, label: str) -> Path | None:
+    """Move instead of delete: nothing the owner recorded is ever destroyed by the app."""
+    if not path.exists():
+        return None
+    dest = settings.sub("trash") / f"{time.strftime('%Y%m%d-%H%M%S')}-{label}"
+    shutil.move(str(path), dest)
+    return dest
 
 
 def list_voices() -> list[dict[str, Any]]:
@@ -98,7 +134,8 @@ def update_voice(voice_id: str, patch: dict[str, Any]) -> dict[str, Any]:
 
 
 def delete_voice(voice_id: str) -> None:
-    shutil.rmtree(_dir(voice_id), ignore_errors=True)
+    backup_voices(f"before-delete-{voice_id}")
+    _trash(_dir(voice_id), f"voice-{voice_id}")
 
 
 def _snr_db(x: np.ndarray, sr: int) -> float:
@@ -121,14 +158,7 @@ def add_sample(voice_id: str, src: str | Path, *, lang: str | None = None, text:
     raw = d / "raw" / f"{sid}{Path(src).suffix or '.wav'}"
     raw.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(src, raw)
-    wav = A.to_wav(raw, d / "raw" / f"{sid}.48k.wav")
-    x = A.trim_silence(A.load(wav))
-    if denoise:
-        import noisereduce as nr
-
-        x = nr.reduce_noise(y=x, sr=A.SR, stationary=False, prop_decrease=0.75).astype(np.float32)
-    peak = float(np.max(np.abs(x)) or 1.0)
-    x = x / peak * 0.89
+    x = clean_recording(raw, denoise=denoise, wav_out=d / "raw" / f"{sid}.48k.wav")
     tr = asr.transcribe(x, lang=lang)
     lang = lang or tr["language"] or detect_lang(tr["text"])
     words = tr["words"]
@@ -149,20 +179,41 @@ def add_sample(voice_id: str, src: str | Path, *, lang: str | None = None, text:
     profile["samples"].append(sample)
     profile["refs"] = pick_refs(profile["samples"])
     save_voice(profile)
+    backup_voices(f"add-sample-{voice_id}")
     return sample
+
+
+def clean_recording(src: str | Path, *, denoise: bool = True, wav_out: str | Path | None = None) -> np.ndarray:
+    """Any recording → 48 kHz mono float32, silence-trimmed, denoised, peak-normalised."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        wav = A.to_wav(src, wav_out or Path(td) / "rec.wav")
+        x = A.trim_silence(A.load(wav))
+    if denoise and x.size:
+        import noisereduce as nr
+
+        x = nr.reduce_noise(y=x, sr=A.SR, stationary=False, prop_decrease=0.75).astype(np.float32)
+    peak = float(np.max(np.abs(x)) or 1.0)
+    return (x / peak * 0.89).astype(np.float32)
 
 
 def remove_sample(voice_id: str, sample_id: str) -> dict[str, Any]:
     p = get_voice(voice_id)
     keep = []
+    removed = []
     for s in p["samples"]:
-        if s["id"] == sample_id:
-            (settings.data_dir / s["file"]).unlink(missing_ok=True)
-        else:
-            keep.append(s)
+        (removed if s["id"] == sample_id else keep).append(s)
+    for s in removed:
+        # Raw recordings stay in raw/; the cleaned clip goes to trash with its metadata.
+        dest = _trash(settings.data_dir / s["file"], f"{voice_id}-sample-{s['id']}.wav")
+        if dest:
+            dest.with_suffix(".json").write_text(json.dumps(s, ensure_ascii=False, indent=2), "utf-8")
     p["samples"] = keep
     p["refs"] = pick_refs(keep)
-    return save_voice(p)
+    out = save_voice(p)
+    backup_voices(f"remove-sample-{voice_id}")
+    return out
 
 
 def _quality(s: dict[str, Any]) -> float:

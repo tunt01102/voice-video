@@ -110,10 +110,84 @@ function renderOutputs(job, out) {
   if (f.translated) add("SRT (dịch)", f.translated.srt);
   if (links.length) out.insertAdjacentHTML("beforeend", `<div class="links">${links.join("")}</div>`);
   const r = job.result || {};
-  const failed = r.qa_failed_sentences || r.report?.qa_failed_sentences || [];
-  if (failed.length) out.insertAdjacentHTML("beforeend", `<div class="qa-bad">⚠ ${failed.length} câu chưa đạt kiểm tra phát âm: ${esc(failed.join(" | "))}</div>`);
+  if (Array.isArray(r.sentences) && r.sentences.length) out.append(renderQA(job));
   if (r.text && job.type === "subtitle") out.insertAdjacentHTML("beforeend", `<pre>${esc(r.text)}</pre>`);
 }
+// ------------------------------------------------------------------ pronunciation QA panel
+const normTok = (t) => t.toLowerCase().replace(/[^\p{L}\p{N}']/gu, "");
+function markMissing(text, missing, heard) {
+  // Underline the words the recogniser did not hear correctly. Older reports have no `missing`
+  // list, so fall back to words of the sentence that are absent from what was heard.
+  let words = (missing || []).join(" ").toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length && heard) {
+    const h = new Set(heard.split(/\s+/).map(normTok));
+    words = text.split(/\s+/).map(normTok).filter((k) => k && !h.has(k));
+  }
+  const bad = new Set(words.map(normTok));
+  return text.split(/(\s+)/).map((tok) => {
+    const k = normTok(tok);
+    return k && bad.has(k) ? `<mark class="miss">${esc(tok)}</mark>` : esc(tok);
+  }).join("");
+}
+function renderQA(job) {
+  const r = job.result, sents = r.sentences;
+  const failed = sents.filter((s) => !s.passed);
+  const box = document.createElement("div");
+  box.className = "qa";
+  box.innerHTML = `<div class="qa-head">${failed.length
+      ? `<span class="qa-bad">⚠ ${failed.length}/${sents.length} câu chưa đạt kiểm tra phát âm — bôi đỏ bên dưới. Bấm 🎙 để tự ghi âm câu đó (bản ghi thay vào kết quả và được lưu làm mẫu giọng) hoặc 🔁 để tạo lại.</span>`
+      : `<span class="qa-ok">✓ ${sents.length}/${sents.length} câu đạt kiểm tra phát âm</span>`}
+    <button class="ghost small qa-toggle">${failed.length ? "Ẩn/hiện tất cả câu" : "Xem từng câu"}</button></div>
+    <ol class="qa-list ${failed.length ? "" : "collapsed"}"></ol>`;
+  const list = $(".qa-list", box);
+  sents.forEach((s) => {
+    const li = document.createElement("li");
+    li.className = s.passed ? (s.source === "recording" ? "rec-ok" : "ok") : "bad";
+    li.innerHTML = `<div class="qa-text">${s.passed ? esc(s.text) : markMissing(s.text, s.missing, s.heard)}</div>
+      <div class="qa-meta">${s.source === "recording" ? "🎙 giọng ghi âm của bạn" :
+        `${s.lang} · ${s.engine} · lỗi ${(s.score * 100).toFixed(0)}%${s.passed ? "" : ` · nghe thành: “${esc(s.heard)}”`}`}</div>
+      <div class="qa-actions">
+        <button class="rec small" data-act="rec">🎙 Ghi âm câu này</button>
+        <button class="ghost small" data-act="regen">🔁 Tạo lại</button>
+        <span class="muted qa-status"></span></div>`;
+    if (s.passed) li.classList.add("only-hover");
+    $("[data-act=rec]", li).onclick = (e) => recordSentence(job, s, e.currentTarget, li);
+    $("[data-act=regen]", li).onclick = () => patchJob(job, { regen: [s.text] }, li);
+    list.append(li);
+  });
+  $(".qa-toggle", box).onclick = () => list.classList.toggle("collapsed");
+  return box;
+}
+async function patchJob(job, body, li) {
+  $(".qa-status", li).textContent = "Đang tạo bản mới…";
+  try {
+    const r = await api(`/api/jobs/${job.id}/patch`, { method: "POST", body: JSON.stringify(body) });
+    const el = renderJob(r.job);
+    jobEls.get(job.id)?.after(el); followJob(r.job.id);
+    $(".qa-status", li).textContent = "→ bản mới đang render ngay bên dưới";
+    if (r.enrol) toast("Đã lưu bản ghi làm mẫu giọng");
+  } catch (err) { $(".qa-status", li).textContent = ""; toast(err.message); }
+}
+let sentRec = null;
+async function recordSentence(job, s, btn, li) {
+  if (sentRec && sentRec.state === "recording") { sentRec.stop(); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+    const parts = []; sentRec = new MediaRecorder(stream);
+    sentRec.ondataavailable = (e) => e.data.size && parts.push(e.data);
+    sentRec.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop()); btn.classList.remove("on"); btn.textContent = "🎙 Ghi âm câu này";
+      const blob = new Blob(parts, { type: sentRec.mimeType || "audio/webm" });
+      const ext = (sentRec.mimeType || "").includes("mp4") ? "m4a" : "webm";
+      $(".qa-status", li).textContent = "Đang tải bản ghi…";
+      const file = await upload(new File([blob], `sentence.${ext}`, { type: blob.type }));
+      await patchJob(job, { record: { text: s.text, file, lang: s.lang } }, li);
+    };
+    sentRec.start(); btn.classList.add("on"); btn.textContent = "■ Dừng";
+    $(".qa-status", li).textContent = "Đang ghi — đọc câu trên rồi bấm Dừng";
+  } catch (err) { toast("Không truy cập được micro: " + err.message); }
+}
+
 function renderJob(job) {
   const el = $("#tpl-job").content.firstElementChild.cloneNode(true);
   el.dataset.id = job.id;
@@ -185,6 +259,8 @@ function renderVoice(v) {
     <div class="job-head"><h3 style="margin:0">${esc(v.name)}</h3><span class="spacer"></span>
       ${v.default ? `<span class="badge done">mặc định</span>` : `<button class="ghost small" id="v-default">Đặt mặc định</button>`}
       <button class="ghost small" id="v-delete">Xoá giọng</button></div>
+    ${["vi", "en"].filter((l) => !(v.samples || []).some((x) => x.lang === l)).map((l) =>
+      `<div class="warn-box">⚠ Chưa có mẫu ${l === "vi" ? "tiếng Việt" : "tiếng Anh"} — giọng ${l === "vi" ? "tiếng Việt" : "tiếng Anh"} đang mượn mẫu của ngôn ngữ kia nên dễ đọc sai (ví dụ nuốt âm cuối). Hãy thu ít nhất 3 câu.</div>`).join("")}
     <h4>1. Thu âm mẫu</h4>
     <p class="muted">Đọc tự nhiên, phòng yên tĩnh, micro cách 15–20 cm. Nên có ≥3 câu tiếng Việt và ≥3 câu tiếng Anh. Mỗi mẫu 5–12 giây.</p>
     <div class="toolbar">
@@ -223,7 +299,7 @@ function renderVoice(v) {
   $("#rec-file").onchange = (e) => e.target.files[0] && sendSample(v, e.target.files[0], null);
   $$("[data-del]").forEach((b) => b.onclick = async () => { if (confirm("Xoá mẫu này?")) { await api(`/api/voices/${v.id}/samples/${b.dataset.del}`, { method: "DELETE" }); loadVoices(); } });
   $("#v-default") && ($("#v-default").onclick = async () => { await api(`/api/voices/${v.id}/default`, { method: "POST" }); loadVoices(); });
-  $("#v-delete").onclick = async () => { if (confirm(`Xoá giọng ${v.name} và toàn bộ bản ghi?`)) { await api(`/api/voices/${v.id}`, { method: "DELETE" }); selVoice = null; $("#voice-detail").innerHTML = ""; loadVoices(); } };
+  $("#v-delete").onclick = async () => { if (confirm(`Xoá giọng ${v.name}? (Bản ghi được chuyển vào thùng rác data/trash và có bản sao lưu trong data/backups.)`)) { await api(`/api/voices/${v.id}`, { method: "DELETE" }); selVoice = null; $("#voice-detail").innerHTML = ""; loadVoices(); } };
   const readFx = () => ({ pitch: +$("#vf-pitch").value, pace: +$("#vf-pace").value, warmth: +$("#vf-warmth").value, clarity: +$("#vf-clarity").value });
   $("#v-save").onclick = async () => { await api(`/api/voices/${v.id}`, { method: "PATCH", body: JSON.stringify({ fx: readFx(), engines: { vi: $("#ve-vi").value, en: $("#ve-en").value } }) }); toast("Đã lưu"); loadVoices(); };
   $("#v-test").onclick = async () => {
@@ -257,7 +333,9 @@ async function sendSample(v, file, text) {
     const s = job.result.sample;
     toast(`Đã lưu mẫu ${s.duration}s — nghe được: “${s.asr_text.slice(0, 60)}”`);
     recIdx = Math.min(recIdx + 1, (prompts[recLang] || []).length - 1);
-    loadVoices().then(() => { const t = location.hash.slice(1); if (t) $(`#tabs button[data-tab="${t}"]`)?.click(); });
+    const openHashTab = () => { const t = location.hash.slice(1); const b = t && $(`#tabs button[data-tab="${t}"]`); if (b && !b.classList.contains("active")) b.click(); };
+window.addEventListener("hashchange", openHashTab);
+loadVoices().then(openHashTab);
   } catch (err) { $("#rec-status").textContent = ""; toast(err.message); }
 }
 
@@ -294,4 +372,6 @@ $("#lex-save").onclick = async () => {
   renderLex(); toast("Đã lưu từ điển");
 };
 
-loadVoices().then(() => { const t = location.hash.slice(1); if (t) $(`#tabs button[data-tab="${t}"]`)?.click(); });
+const openHashTab = () => { const t = location.hash.slice(1); const b = t && $(`#tabs button[data-tab="${t}"]`); if (b && !b.classList.contains("active")) b.click(); };
+window.addEventListener("hashchange", openHashTab);
+loadVoices().then(openHashTab);

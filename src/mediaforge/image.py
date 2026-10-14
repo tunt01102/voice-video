@@ -76,6 +76,16 @@ def generate(
     if backend == "auto":
         backend = "mflux" if mflux_ready() else "ollama"
     used = backend
+    # Deterministic cache: re-rendering a video (e.g. after re-recording one sentence) reuses its images.
+    import hashlib
+    import shutil
+
+    ckey = hashlib.sha256(f"{full_prompt}|{seed}|{w}x{h}|{steps}|{negative_prompt}".encode()).hexdigest()[:24]
+    cached = settings.sub("cache", "images") / f"{ckey}.png"
+    if cached.exists():
+        shutil.copy(cached, out_path)
+        return {"image": str(out_path), "width": w, "height": h, "seed": seed, "prompt": full_prompt,
+                "backend": "cache", "seconds": 0.0}
     try:
         if backend != "mflux":
             raise RuntimeError("ollama selected")
@@ -107,5 +117,6 @@ def generate(
         if not b64:
             raise RuntimeError(f"Ollama returned no image: {str(data)[:200]}") from e
         out_path.write_bytes(base64.b64decode(b64))
+    shutil.copy(out_path, cached)
     return {"image": str(out_path), "width": w, "height": h, "seed": seed, "prompt": full_prompt,
             "backend": used, "seconds": round(time.time() - t, 1)}
