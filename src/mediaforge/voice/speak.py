@@ -213,6 +213,7 @@ def synth_sentence(
     p_phrases, p_pauses = punct_phrases(sentence)
     # 1) first pass
     first: list[Attempt] = []
+    learned = None
     if guide:
         g_phrases, g_pauses = guide.get("phrases") or [], guide.get("pauses") or []
         if len(g_phrases) < 2:
@@ -238,8 +239,8 @@ def synth_sentence(
             first.append(make(plan_engines[0], seed + 29, 0.7, phrases=p_phrases, pauses=p_pauses, strategy="phrases"))
     for att in first:
         attempts.append(run(att))
-        if guide and attempts[-1].score <= thr and attempts[-1].prompt is None:
-            break  # a guided candidate with the canonical timbre already passes
+        if guide and attempts[-1].score <= thr and (attempts[-1].prompt is None or attempts[-1].strategy == learned):
+            break  # a guided candidate with the canonical timbre (or the strategy that worked before) passes
     budget = max_attempts + len(attempts) - 1
     # 2) repair loop
     step = 0

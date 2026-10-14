@@ -359,7 +359,7 @@ def guide_pauses(script: str, words: list, min_pause: float = GUIDE_MIN_PAUSE) -
 
 
 def add_correction(voice_id: str, src: str | Path, *, text: str, lang: str, job: str | None = None,
-                   index: int | None = None) -> dict[str, Any]:
+                   index: int | None = None, backup: bool = True) -> dict[str, Any]:
     """Store the owner's recording of `text` as a guide: raw + cleaned clip, ASR, and the owner's phrasing."""
     from mediaforge import asr
 
@@ -382,7 +382,8 @@ def add_correction(voice_id: str, src: str | Path, *, text: str, lang: str, job:
     data = corrections(voice_id)
     data.setdefault(sentence_key(text), []).append(entry)
     _save_corrections(voice_id, data)
-    backup_voices(f"correction-{voice_id}")
+    if backup:
+        backup_voices(f"correction-{voice_id}")
     return entry
 
 

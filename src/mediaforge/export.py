@@ -154,7 +154,10 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
             params = {**job["params"], "plan_file": r.get("plan"),
                       "takes": {sents[i]["text"]: t["file"] for i, t in chosen.items()}}
             rebuilt = pipelines.run_video(params, pipelines._sub(progress, 0.1, 0.85), job_id=f"{job_id or stamp}-export")
-            base, path = Path(rebuilt["video"]), "recompose"
+            # Keep the rebuilt render with the source job (deleting the job trashes it too).
+            render_dir = exp_dir / f"{stamp}-{key}-render"
+            shutil.move(str(Path(rebuilt["video"]).parent), render_dir)
+            base, path = render_dir / Path(rebuilt["video"]).name, "recompose"
     elif fmt == "mp4" and video:
         progress(0.5, "sao chép")
         shutil.copy(base, out)

@@ -235,7 +235,8 @@ def rerender(p: dict[str, Any], progress: Progress, job_id: str | None = None) -
         if not voice_id:
             raise ValueError("no voice profile to store the recording under")
         progress(0.05, "lưu bản ghi làm mẫu hướng dẫn")
-        guide = profiles.add_correction(voice_id, p["file"], text=text, lang=lang, job=src_id, index=idx)
+        # The backup is taken once the clip is also enrolled as a sample (below), not twice per recording.
+        guide = profiles.add_correction(voice_id, p["file"], text=text, lang=lang, job=src_id, index=idx, backup=False)
 
     progress(0.15, "AI đang đọc lại câu")
     n_prev = len(sent.get("takes") or [])
@@ -250,6 +251,7 @@ def rerender(p: dict[str, Any], progress: Progress, job_id: str | None = None) -
                                 source="correction")
         except Exception as e:  # noqa: BLE001
             log.warning("could not enrol correction %s as a sample: %s", guide["id"], e)
+            profiles.backup_voices(f"correction-{voice_id}")
 
     progress(0.8, "khớp giọng với các câu xung quanh")
     spans = ensure_spans(job)
