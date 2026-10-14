@@ -26,6 +26,7 @@ class Analysis:
     sp: np.ndarray
     ap: np.ndarray
     sr: int
+    x: np.ndarray | None = None   # the spoken waveform (unvoiced consonants are copied from it verbatim)
 
     @property
     def frames(self) -> int:
@@ -45,7 +46,7 @@ def analyse(audio: np.ndarray, sr: int = A.SR) -> Analysis:
     hz = np.arange(sp.shape[1]) * sr / 2 / (sp.shape[1] - 1)
     ap_low = ap[:, (hz > 100) & (hz < 3000)].mean(axis=1)
     f0 = np.where(ap_low < 0.5, f0, 0.0)
-    return Analysis(f0, sp, ap, sr)
+    return Analysis(f0, sp, ap, sr, audio.astype(np.float32))
 
 
 def median_f0(an: Analysis) -> float:
@@ -158,17 +159,21 @@ def _timeline(an: Analysis, a: int, b: int, voiced: np.ndarray, n_out: int) -> n
 
 
 def sing_line(an: Analysis, bounds: list[tuple[int, int]], notes: list[Note], tonic_hz: float,
-              seed: int = 7) -> np.ndarray:
+              seed: int = 7, prosody: float = 0.0) -> np.ndarray:
     """One line: syllable frame ranges + notes → sung audio starting at notes[0].start (time 0 = that start)."""
     import pyworld as pw
 
     rng = np.random.default_rng(seed)
     f0_out, sp_out, ap_out, semis_out, vib_out = [], [], [], [], []
     quiet = int(np.argmin(_frame_energy(an)))
+    lf0 = _log_f0(an)
+    passthrough: list[tuple[int, int, int]] = []   # (output frame, source frame, frames) of natural-speed unvoiced runs
+    pos = 0
     for (a, b), note in zip(bounds, notes):
         n_out = max(4, int(round(note.dur * 1000 / FP)))
         voiced = np.arange(a, b)[an.f0[a:b] > 0]
         idx = _timeline(an, a, b, voiced, n_out)
+        passthrough += [(pos + o, s, n) for o, s, n in _unvoiced_runs(an, idx)]
         i0 = np.clip(np.floor(idx).astype(int), 0, an.frames - 1)
         i1 = np.clip(i0 + 1, 0, an.frames - 1)
         w = (idx - np.floor(idx))[:, None]
@@ -181,6 +186,13 @@ def sing_line(an: Analysis, bounds: list[tuple[int, int]], notes: list[Note], to
             g = (0.82 + 0.3 * np.sin(np.pi * frac ** 0.8)) * np.clip((1 - frac) / 0.1, 0.35, 1)
             sp = sp * (g ** 2)[:, None]
         semis = _contour_at(note, frac)
+        if prosody > 0:
+            # Keep the spoken tone's own micro-contour (nặng's drop, ngã's break, sắc's rise) on top of the note:
+            # it is what Vietnamese ears use to tell the tones apart. Deviation from the syllable's median pitch.
+            seg = lf0[int(a):int(b)]
+            ref = float(np.median(seg)) if seg.size else 0.0
+            dev = np.clip(12 * ((1 - w[:, 0]) * lf0[i0] + w[:, 0] * lf0[i1] - ref), -4, 4)
+            semis = semis + prosody * dev
         # Vibrato: rises in after the first 35 % of a held note, 5.3 Hz with a little rate wobble.
         vib = np.zeros(len(idx))
         if note.vibrato > 0 and len(idx) * FP / 1000 > 0.45:
@@ -193,8 +205,10 @@ def sing_line(an: Analysis, bounds: list[tuple[int, int]], notes: list[Note], to
         ap_out.append(ap)
         semis_out.append(semis)
         vib_out.append(vib)
+        pos += len(idx)
         if note.rest_after > 0 and note is not notes[-1]:
             k = int(round(note.rest_after * 1000 / FP))
+            pos += k
             f0_out.append(np.zeros(k))
             sp_out.append(np.repeat(an.sp[quiet:quiet + 1] * 1e-3, k, axis=0))
             ap_out.append(np.repeat(an.ap[quiet:quiet + 1], k, axis=0))
@@ -209,8 +223,54 @@ def sing_line(an: Analysis, bounds: list[tuple[int, int]], notes: list[Note], to
     ap = np.ascontiguousarray(np.concatenate(ap_out))
     # Slightly less breath noise on sung vowels: sustained notes read as singing, not stretched speech.
     ap = np.where(vmask[:, None], ap * 0.75, ap)
-    y = pw.synthesize(np.ascontiguousarray(f0), sp, ap, an.sr, frame_period=FP)
-    return y.astype(np.float32)
+    y = pw.synthesize(np.ascontiguousarray(f0), sp, ap, an.sr, frame_period=FP).astype(np.float32)
+    if an.x is not None:
+        y = _paste_consonants(y, an, passthrough)
+    return y
+
+
+def _log_f0(an: Analysis) -> np.ndarray:
+    """log2 f0 with unvoiced gaps interpolated (a continuous intonation curve)."""
+    v = an.f0 > 0
+    if not v.any():
+        return np.zeros(an.frames)
+    t = np.arange(an.frames)
+    return np.interp(t, t[v], np.log2(an.f0[v]))
+
+
+def _unvoiced_runs(an: Analysis, idx: np.ndarray) -> list[tuple[int, int, int]]:
+    """Runs of output frames that play an unvoiced source stretch at natural speed (s, x, ch, h, stop bursts)."""
+    runs, k, n = [], 0, len(idx)
+    while k < n:
+        src = idx[k]
+        if src == int(src) and an.f0[int(src)] == 0:
+            j = k + 1
+            while j < n and idx[j] == idx[j - 1] + 1 and an.f0[int(idx[j])] == 0:
+                j += 1
+            if j - k >= 3:   # ≥ 15 ms
+                runs.append((k, int(src), j - k))
+            k = j
+        else:
+            k += 1
+    return runs
+
+
+def _paste_consonants(y: np.ndarray, an: Analysis, runs: list[tuple[int, int, int]]) -> np.ndarray:
+    """WORLD renders fricatives as hiss without their spectral detail ('sương' turns into 'xương'), so unvoiced
+    consonants are copied from the spoken waveform, crossfaded over 4 ms. They carry no pitch, so nothing is lost."""
+    hop = int(an.sr * FP / 1000)
+    fade = int(0.004 * an.sr)
+    out = y.copy()
+    for o, s, n in runs:
+        a, b = o * hop, min(len(out), (o + n) * hop)
+        src = an.x[s * hop: s * hop + (b - a)]
+        if src.size < b - a or b - a <= 2 * fade:
+            continue
+        w = np.ones(b - a, dtype=np.float32)
+        w[:fade] = np.linspace(0, 1, fade)
+        w[-fade:] = np.linspace(1, 0, fade)
+        out[a:b] = out[a:b] * (1 - w) + src * w
+    return out
 
 
 def place(lines_audio: list[tuple[float, np.ndarray]], total: float, sr: int = A.SR) -> np.ndarray:
