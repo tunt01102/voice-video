@@ -13,9 +13,9 @@ from mediaforge import db
 
 log = logging.getLogger(__name__)
 
-JOB_TYPES = {"tts", "image", "subtitle", "video", "short", "explainer", "narrated", "screen", "enrol"}
+JOB_TYPES = {"tts", "image", "subtitle", "video", "short", "explainer", "narrated", "screen", "enrol", "rerender", "export"}
 # Small interactive jobs jump ahead of long renders.
-PRIORITY = {"enrol": 0, "tts": 1, "image": 1, "subtitle": 2}
+PRIORITY = {"enrol": 0, "tts": 1, "image": 1, "rerender": 1, "subtitle": 2, "export": 2}
 
 
 class Cancelled(Exception):

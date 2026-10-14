@@ -24,14 +24,19 @@ class VoxCPMEngine:
         self.sample_rate = int(getattr(self.model, "sample_rate", 48_000))
         self._params = set(inspect.signature(self.model.generate).parameters)
 
-    def synth(self, text: str, lang: str, ref: VoiceRef | None, *, seed: int, temperature: float) -> np.ndarray:
+    def synth(self, text: str, lang: str, ref: VoiceRef | None, *, seed: int, temperature: float,
+              prompt: VoiceRef | None = None) -> np.ndarray:
         import mlx.core as mx
 
         mx.random.seed(seed)
         kwargs: dict = {"text": text}
         if ref is not None:
             kwargs["ref_audio"] = ref.audio_path
-            if ref.text:
+            if prompt is not None and prompt.text:
+                # Guided repair: timbre from the canonical clip, prosody continued from the owner's guide.
+                kwargs["prompt_audio"] = prompt.audio_path
+                kwargs["prompt_text"] = prompt.text
+            elif ref.text:
                 # "Combined" mode (reference + continuation prompt) gives the closest timbre.
                 kwargs["prompt_audio"] = ref.audio_path
                 kwargs["prompt_text"] = ref.text

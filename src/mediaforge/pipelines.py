@@ -90,13 +90,29 @@ def scenes_from_script(script: str, *, target_scene_seconds: float, lang: str) -
     return [" ".join(sents[i : i + per_scene]) for i in range(0, len(sents), per_scene)]
 
 
+def sentence_spans(sentences: list[str], words: list[dict]) -> list[list[float]] | None:
+    """[start, end] of each sentence in the track, from word timings aligned to " ".join(sentences)."""
+    counts = [len(t.split()) for t in sentences]
+    if not words or sum(counts) != len(words):
+        return None
+    spans, k = [], 0
+    for n in counts:
+        if n == 0:
+            spans.append([words[max(k - 1, 0)]["end"]] * 2)
+            continue
+        spans.append([round(words[k]["start"], 3), round(words[k + n - 1]["end"], 3)])
+        k += n
+    return spans
+
+
 # ------------------------------------------------------------------ jobs
 
 def run_tts(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
     out = _out_dir("tts", job_id)
     r = S.speak(p["text"], voice=p.get("voice"), lang=p.get("lang", "auto"), engine=p.get("engine"),
                 fx=p.get("fx"), out_dir=out, name="voice", seed=int(p.get("seed", 1234)), progress=progress,
-                overrides=p.get("overrides"), regen=p.get("regen"))
+                overrides=p.get("overrides"), regen=p.get("regen"), takes=p.get("takes"))
+    r["sentence_spans"] = sentence_spans([x["text"] for x in r["sentences"]], r["words"])
     if p.get("subtitles", True) and r["words"]:
         r["subtitles"] = subtitles.write_all(r["words"], out / "voice")
     return r
@@ -216,7 +232,7 @@ def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
         vprog(i / len(scenes_in), f"voice {i + 1}/{len(scenes_in)}")
         r = S.speak(sc["narration"], voice=voice, lang=lang, engine=p.get("engine"), fx=p.get("fx"),
                     out_dir=out / "voice", name=f"scene_{i + 1:02d}", seed=int(p.get("seed", 1234)) + 100 * i, timings=False,
-                    overrides=p.get("overrides"), regen=p.get("regen"))
+                    overrides=p.get("overrides"), regen=p.get("regen"), takes=p.get("takes"))
         scene_audio.append(A.load(r["audio"]))
         scene_reports.append(r)
     gap = 0.35
@@ -287,7 +303,9 @@ def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
               "sentences": sentences, "voice_id": scene_reports[0]["voice"] if scene_reports else voice,
               "qa_failed_sentences": report["qa_failed_sentences"],
               "duration": round(A.probe_duration(final), 2), "subtitles": subs, "voice": str(voice_wav),
-              "plan": str(out / "plan.json"), "lang": lang, "report": report}
+              "plan": str(out / "plan.json"), "lang": lang, "report": report,
+              "fx": scene_reports[0]["fx"] if scene_reports else None, "words": words,
+              "sentence_spans": sentence_spans([s["text"] for s in sentences], words)}
     (out / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2))
     progress(1.0, "done")
     return result
@@ -305,8 +323,21 @@ def run_enrol(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
     return {"sample": sample, "voice": profiles.get_voice(p["voice"])}
 
 
+def run_rerender(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
+    from mediaforge import takes
+
+    return takes.rerender(p, progress, job_id)
+
+
+def run_export(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
+    from mediaforge import export
+
+    return export.run(p, progress, job_id)
+
+
 RUNNERS: dict[str, Callable[..., dict[str, Any]]] = {
     "tts": run_tts, "image": run_image, "subtitle": run_subtitle, "video": run_video, "enrol": run_enrol,
+    "rerender": run_rerender, "export": run_export,
 }
 
 
