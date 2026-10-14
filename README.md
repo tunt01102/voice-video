@@ -72,6 +72,9 @@ Notes on the inputs:
   - `- bullet` lines are bullet points
   - `> narration` lines are what the voice says
 - Add `--music bg.mp3` for background music. It's automatically ducked under the voice.
+- Or pick from the built-in library of calm, free tracks: `mediaforge music sync` downloads them once,
+  `mediaforge music list` shows their ids, then pass `--music <id>` (or choose in the dashboard's
+  "Nhạc nền" dropdown). Tracks licensed CC BY show the credit line you must include when publishing.
 
 Outputs are written to `data/outputs/<kind>/<job-id>/`:
 

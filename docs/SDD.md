@@ -142,6 +142,7 @@ src/mediaforge/
   video/slides.py    slide rendering (Pillow)
   video/clips.py     optional LTX-2 clips
   pipelines.py       narrated / short / explainer orchestrations
+  music.py           background-music library (music_catalog.json metadata; audio in data/music/)
   api.py             FastAPI app (+ dashboard static, + MCP mount)
   mcp_server.py      MCP tools (thin wrappers over the job layer)
   cli.py             Typer CLI
@@ -234,6 +235,13 @@ to 48 kHz on exit; ASR always receives 16 kHz mono.
    attached as soft track; H.264 (default, compatibility) or HEVC VideoToolbox.
 5. Outputs: `final.mp4`, `subs.srt/.vtt/.ass`, `voice.wav`, `plan.json`, thumbnail.
 
+**Music library.** `music` is either a local path or an id from `music_catalog.json`, a curated
+list of calm instrumental tracks that are CC0 / public domain or CC BY (recording licence checked,
+not just the composition; NC/ND/SA and platform-licensed sites such as Pixabay are excluded).
+`mediaforge music sync` downloads them once into `data/music/`; ids are resolved before any
+rendering so a missing file fails fast. CC BY tracks carry an `attribution` line that the job
+result exposes as `report.music_credit` and the dashboard shows under the video.
+
 ### 7.2 Variants
 - **Short (9:16)**: 1080×1920, ≤ 60 s narration target, punchy hook-first script, large
   centred karaoke subtitles.
@@ -264,18 +272,19 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 | `POST /api/jobs/{id}/cancel`, `DELETE /api/jobs/{id}` | control |
 | `GET /files/{path}` | download outputs (path-confined to `data/`) |
 | `POST /api/uploads` | upload media for later jobs |
+| `GET /api/music`, `GET /api/music/{id}/audio` | background-music library / preview |
 
 `?wait=true` on `POST /api/jobs` blocks until completion (≤ 600 s) for simple clients.
 
 ### 9.2 MCP (streamable HTTP at `http://127.0.0.1:8765/mcp`)
 Tools: `speak`, `generate_image`, `create_video`, `create_short`, `create_explainer`,
-`transcribe_subtitles`, `job_status`, `list_voices`, `list_jobs`. Long jobs return a job id
+`transcribe_subtitles`, `job_status`, `list_voices`, `list_jobs`, `list_music`. Long jobs return a job id
 immediately plus a `wait_seconds` option; results return absolute file paths (sessions
 run on the same machine). Registered with
 `claude mcp add -s user --transport http mediaforge http://127.0.0.1:8765/mcp`.
 
 ### 9.3 CLI
-`mediaforge serve | speak | image | video | short | explainer | subtitle | voice … | doctor`.
+`mediaforge serve | speak | image | video | short | explainer | subtitle | voice … | music list|sync | doctor`.
 CLI talks to the running server when available, otherwise runs in-process.
 
 ## 10. Phases

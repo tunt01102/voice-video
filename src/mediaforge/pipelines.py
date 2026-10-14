@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from mediaforge import asr, image, llm, subtitles
+from mediaforge import asr, image, llm, music, subtitles
 from mediaforge import audio as A
 from mediaforge.config import settings
 from mediaforge.text.normalize import detect_lang, split_sentences
@@ -173,6 +173,7 @@ def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
     style = p.get("style", "cinematic")
     voice = p.get("voice")
     t0 = time.time()
+    music_file = music.resolve(p.get("music"))  # fail fast on a library track that is not downloaded
     report: dict[str, Any] = {"kind": kind, "aspect": aspect}
 
     # ---- 1. plan
@@ -270,14 +271,14 @@ def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
     # ---- 5. compose
     burn = p.get("burn_subtitles", True)
     final = compose.compose(
-        visuals, voice_wav, out / "final.mp4", aspect=aspect, music=p.get("music"),
+        visuals, voice_wav, out / "final.mp4", aspect=aspect, music=music_file,
         music_volume=float(p.get("music_volume", 0.18)), subtitles_ass=subs["ass"] if burn else None,
         soft_srt=None if burn else subs["srt"], transition=0.0 if kind == "screen" else 0.5,
         progress=_sub(progress, 0.80, 0.98),
     )
     thumb = compose.thumbnail(final, out / "thumbnail.jpg", at=min(1.5, sum(durations) / 2))
     report.update({
-        "elapsed": round(time.time() - t0, 1), "scenes": len(scenes_in),
+        "elapsed": round(time.time() - t0, 1), "scenes": len(scenes_in), "music_credit": music.credit(p.get("music")),
         "qa_failed_sentences": [s for r in scene_reports for s in r["qa_failed_sentences"]],
     })
     sentences = [{**sen, "scene": si, "index": k} for k, (si, sen) in enumerate(

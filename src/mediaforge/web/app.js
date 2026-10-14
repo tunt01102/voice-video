@@ -61,6 +61,27 @@ $("#create-form").source.onchange = applyKind;
 $$("input[type=range][data-out]").forEach((r) => { const o = document.getElementById(r.dataset.out); const u = () => o.textContent = (+r.value).toFixed(r.step < 0.1 ? 2 : 1); r.oninput = u; u(); });
 applyKind();
 
+// Background-music library: calm, free tracks (see `mediaforge music sync`), plus "upload my own".
+const MOOD_LABEL = { piano: "Piano", ambient: "Ambient", acoustic: "Acoustic", classical: "Cổ điển", lofi: "Lo-fi", strings: "Dây", other: "Khác" };
+let musicTracks = [];
+async function loadMusic() {
+  try { musicTracks = (await api("/api/music")).filter((t) => t.available); } catch { musicTracks = []; }
+  const sel = $("#create-form").music, groups = {};
+  for (const t of musicTracks) (groups[t.mood] ||= []).push(t);
+  for (const [mood, ts] of Object.entries(groups)) {
+    const og = document.createElement("optgroup"); og.label = MOOD_LABEL[mood] || mood;
+    for (const t of ts) og.append(new Option(`${t.title} — ${t.artist}${t.duration_s ? ` (${Math.floor(t.duration_s / 60)}:${String(Math.round(t.duration_s % 60)).padStart(2, "0")})` : ""}`, t.id));
+    sel.insertBefore(og, sel.querySelector("option[value=__upload]"));
+  }
+}
+$("#create-form").music.onchange = (e) => {
+  const v = e.target.value, t = musicTracks.find((x) => x.id === v), pv = $("#music-preview"), info = $("#music-info");
+  $("#create-form").music_file.hidden = v !== "__upload";
+  pv.hidden = !t; if (t) pv.src = t.url; else pv.removeAttribute("src");
+  info.textContent = t ? `${t.licence}${t.attribution ? " — cần ghi công: " + t.attribution : " — không cần ghi công"}` : "";
+};
+loadMusic();
+
 async function upload(file) {
   const fd = new FormData(); fd.append("file", file);
   return (await api("/api/uploads", { method: "POST", body: fd })).path;
@@ -82,7 +103,8 @@ $("#create-form").onsubmit = async (e) => {
       params = { lang: f.lang.value, voice: f.voice.value || null, seconds: +f.seconds.value, style: f.style.value, fx, theme: f.theme.value };
       const src = f.source.value;
       if (src === "brief") params.brief = f.text.value; else if (src === "slides") params.slides_markdown = f.text.value; else params.script = f.text.value;
-      if (f.music_file.files[0]) params.music = await upload(f.music_file.files[0]);
+      if (f.music.value === "__upload") { if (f.music_file.files[0]) params.music = await upload(f.music_file.files[0]); }
+      else if (f.music.value) params.music = f.music.value;
     }
     if ((params.text ?? params.prompt ?? params.brief ?? params.script ?? params.slides_markdown ?? params.media ?? "").length === 0) throw new Error("Thiếu nội dung");
     const job = await api("/api/jobs", { method: "POST", body: JSON.stringify({ type, params, source: "dashboard" }) });
@@ -105,6 +127,8 @@ function renderOutputs(job, out) {
   }
   if (job.status !== "done") return;
   if (fileUrl(f.video)) out.insertAdjacentHTML("beforeend", `<video controls preload="metadata" src="${fileUrl(f.video)}" poster="${fileUrl(f.thumbnail) || ""}"></video>`);
+  const credit = job.result?.report?.music_credit;
+  if (credit) out.insertAdjacentHTML("beforeend", `<p class="muted">♪ Ghi công nhạc nền (bắt buộc khi đăng): ${esc(credit)}</p>`);
   if (Array.isArray(f.images)) f.images.forEach((i) => out.insertAdjacentHTML("beforeend", `<a href="${fileUrl(i)}" target="_blank"><img src="${fileUrl(i)}"></a>`));
   if (fileUrl(f.audio)) out.insertAdjacentHTML("beforeend", `<audio controls src="${fileUrl(f.audio)}"></audio>`);
   const links = [];

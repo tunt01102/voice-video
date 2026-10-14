@@ -17,7 +17,7 @@ from fastapi import Body, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from mediaforge import __version__, db, models
+from mediaforge import __version__, db, models, music
 from mediaforge.config import settings
 from mediaforge.jobs import JOB_TYPES, runner
 from mediaforge.text import normalize as N
@@ -241,6 +241,18 @@ def create_app() -> FastAPI:
                        for k, v in (body.get(lang) or {}).items()} for lang in ("vi", "en")}
         N.save_lexicon(data, voice)
         return data
+
+    # ---------------------------------------------------------------- music library
+    @app.get("/api/music")
+    def list_music():
+        return [{**t, "url": f"/api/music/{t['id']}/audio" if t["available"] else None} for t in music.list_tracks()]
+
+    @app.get("/api/music/{tid}/audio")
+    def music_audio(tid: str):
+        t = next((t for t in music.list_tracks() if t["id"] == tid and t["available"]), None)
+        if not t:
+            raise HTTPException(404, "track not found")
+        return FileResponse(music.track_path(t))
 
     # ---------------------------------------------------------------- uploads & files
     @app.post("/api/uploads")

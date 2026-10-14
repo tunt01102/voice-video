@@ -10,7 +10,7 @@ from typing import Any
 import anyio
 from mcp.server import MCPServer
 
-from mediaforge import db
+from mediaforge import db, music
 from mediaforge.jobs import runner
 from mediaforge.voice import profiles
 
@@ -79,7 +79,7 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
     kind: 'narrated' (16:9 AI visuals), 'short' (9:16 with karaoke subtitles), 'explainer' (slides).
     Give either a brief (Claude writes the script) or your own script (used verbatim), or slides_markdown for
     explainers ('# Title', '- bullet', '> narration'). media: optional per-scene image/video paths.
-    music: optional local audio path (ducked under the voice). Videos take minutes; by default this returns
+    music: optional background track (ducked under the voice): a library id from list_music, or a local audio path. Videos take minutes; by default this returns
     a job_id immediately — poll job_status.
     """
     return await _submit(kind, {"brief": brief, "script": script, "lang": lang, "voice": voice, "seconds": seconds,
@@ -123,3 +123,11 @@ def list_voices() -> list[dict[str, Any]]:
     """Available cloned voices (id, name, languages with references, default voice settings)."""
     return [{"id": v["id"], "name": v["name"], "languages": sorted(v.get("refs", {})), "fx": v.get("fx"),
              "samples": len(v.get("samples", []))} for v in profiles.list_voices()]
+
+
+@mcp.tool()
+def list_music() -> list[dict[str, Any]]:
+    """Background-music library (calm, free tracks). Pass a track's id as create_video(music=...).
+    Tracks with an 'attribution' need that credit line in the video description."""
+    return [{k: t.get(k) for k in ("id", "title", "artist", "mood", "duration_s", "licence", "attribution")}
+            for t in music.list_tracks() if t["available"]]

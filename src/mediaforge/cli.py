@@ -18,6 +18,8 @@ from mediaforge.config import settings
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="MediaForge — local voice/subtitle/image/video generation")
 voice_app = typer.Typer(no_args_is_help=True, help="Manage cloned voices")
 app.add_typer(voice_app, name="voice")
+music_app = typer.Typer(no_args_is_help=True, help="Background-music library")
+app.add_typer(music_app, name="music")
 
 BASE = f"http://{settings.host}:{settings.port}"
 
@@ -222,6 +224,26 @@ def voice_set(voice_id: str, pitch: Optional[float] = None, pace: Optional[float
 
 
 # ------------------------------------------------------------------ ops
+
+@music_app.command("list")
+def music_list() -> None:
+    """Library tracks: id, mood, licence, downloaded or not."""
+    from mediaforge import music
+
+    for t in music.list_tracks():
+        typer.echo(f"{'✓' if t['available'] else '·'} {t['id']:<32} {t['mood']:<10} {t['licence']:<14} {t['title']} — {t['artist']}")
+
+
+@music_app.command("sync")
+def music_sync() -> None:
+    """Download any library tracks that are missing (into data/music)."""
+    from mediaforge import music
+
+    r = music.sync(typer.echo)
+    typer.echo(f"{len(r['downloaded'])} downloaded, {len(r['present'])} already present, {len(r['failed'])} failed")
+    if r["failed"]:
+        raise typer.Exit(1)
+
 
 @app.command("mcp-register")
 def mcp_register() -> None:

@@ -77,7 +77,10 @@
         <select name="theme"><option>midnight</option><option>ocean</option><option>paper</option><option>block8</option></select>
       </label>
       <label class="f-video">Nhạc nền (tuỳ chọn)
-        <input type="file" name="music_file" accept="audio/*">
+        <select name="music"><option value="">Không dùng nhạc</option><option value="__upload">Tải file của tôi lên…</option></select>
+        <input type="file" name="music_file" accept="audio/*" hidden>
+        <audio id="music-preview" controls preload="none" hidden></audio>
+        <small id="music-info" class="muted"></small>
       </label>
       <label class="f-tts">Engine
         <select name="engine"><option value="">Mặc định của giọng</option><option value="vieneu">VieNeu</option><option value="voxcpm">VoxCPM2</option><option value="best">Tốt nhất (thử cả hai)</option></select>
