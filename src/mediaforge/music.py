@@ -65,16 +65,24 @@ class RateLimited(Exception):
 
 
 def _fetch(client: httpx.Client, url: str, dest: Path) -> None:
-    with client.stream("GET", url) as r:
-        if r.status_code == 429:  # Wikimedia throttles bursts for ~10 min: skip the host, re-run sync later
-            raise RateLimited(f"rate-limited by {urlsplit(url).hostname} (retry after {r.headers.get('retry-after', '?')}s)")
-        r.raise_for_status()
-        ctype = r.headers.get("content-type", "")
-        if not (ctype.startswith("audio/") or ctype in ("application/ogg", "application/octet-stream")):
-            raise ValueError(f"not audio ({ctype})")
-        with dest.open("wb") as f:
-            for chunk in r.iter_bytes(1 << 16):
-                f.write(chunk)
+    for _ in range(5):
+        with client.stream("GET", url) as r:
+            if r.status_code == 429:
+                # Wikimedia throttles bursts: wait out short pauses, give up on the host for long ones (re-run later).
+                wait = int(r.headers.get("retry-after", "600") or 600)
+                if wait > 60:
+                    raise RateLimited(f"rate-limited by {urlsplit(url).hostname} (retry after {wait}s)")
+                time.sleep(wait + 1)
+                continue
+            r.raise_for_status()
+            ctype = r.headers.get("content-type", "")
+            if not (ctype.startswith("audio/") or ctype in ("application/ogg", "application/octet-stream")):
+                raise ValueError(f"not audio ({ctype})")
+            with dest.open("wb") as f:
+                for chunk in r.iter_bytes(1 << 16):
+                    f.write(chunk)
+            return
+    raise RateLimited(f"still rate-limited by {urlsplit(url).hostname}")
 
 
 def sync(progress: Callable[[str], None] = log.info) -> dict[str, list[str]]:
@@ -104,7 +112,7 @@ def sync(progress: Callable[[str], None] = log.info) -> dict[str, list[str]]:
                 part.rename(dest)
                 out["downloaded"].append(t["id"])
                 progress(f"downloaded {t['id']}")
-                time.sleep(1)  # be polite to Wikimedia
+                time.sleep(3)  # be polite to Wikimedia
             except RateLimited as e:
                 throttled.add(host)
                 out["failed"].append(t["id"])

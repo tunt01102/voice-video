@@ -8,6 +8,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# A checkout keeps data in <repo>/data (a symlink to the store); the installed tool (service, `mediaforge` CLI)
+# has no repo around it, so it uses the store directly — the same place service.sh points the service at.
+DEFAULT_DATA_DIR = PROJECT_ROOT / "data" if (PROJECT_ROOT / "pyproject.toml").exists() else Path.home() / ".local/share/mediaforge"
 
 
 def _env(name: str, default: str) -> str:
@@ -27,7 +30,7 @@ class Settings:
     host: str = field(default_factory=lambda: _env("host", "127.0.0.1"))
     port: int = field(default_factory=lambda: int(_env("port", "8765")))
     # Resolved so paths match whether we reach the store via the project's data/ symlink or directly.
-    data_dir: Path = field(default_factory=lambda: Path(_env("data_dir", str(PROJECT_ROOT / "data"))).expanduser().resolve())
+    data_dir: Path = field(default_factory=lambda: Path(_env("data_dir", str(DEFAULT_DATA_DIR))).expanduser().resolve())
     ffmpeg: str = field(default_factory=lambda: _env("ffmpeg", _find_ffmpeg_full()))
     ffprobe: str = field(default_factory=lambda: _env("ffprobe", str(Path(_find_ffmpeg_full()).with_name("ffprobe"))))
     llm_order: list[str] = field(default_factory=lambda: _env("llm_order", "claude,ollama").split(","))
