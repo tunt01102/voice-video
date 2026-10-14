@@ -145,6 +145,16 @@ def resubtitle(job: str, karaoke: bool = typer.Option(True, help="highlight the 
 
 
 @app.command()
+def repronounce(job: str, readings: list[str] = typer.Argument(..., help='TERM=READING, e.g. PNJ="Pi En Di"'),
+                format: str = "mp4", local: bool = False) -> None:
+    """Change how words are read in a finished job (re-reads only those sentences; no video re-render)."""
+    pairs = dict(r.split("=", 1) for r in readings if "=" in r)
+    if not pairs:
+        raise typer.BadParameter('use TERM=READING, e.g. PNJ="Pi En Di"')
+    _run("repronounce", {"job": job, "readings": pairs, "format": format}, local)
+
+
+@app.command()
 def subtitle(media: Path, lang: Optional[str] = None, burn: bool = False, translate_to: Optional[str] = None,
              local: bool = False) -> None:
     """Transcribe audio/video to SRT/VTT/ASS (optionally burn in / translate)."""

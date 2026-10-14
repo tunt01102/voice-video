@@ -110,6 +110,7 @@ claude mcp add -s user --transport http mediaforge http://127.0.0.1:8765/mcp
 | `prepare_video` | Writes the script and lists terms the TTS may misread, before rendering. Returns `plan_file` + `candidates`. |
 | `create_video` | `kind`: `narrated`, `short` or `explainer`. Input is a brief, your own script, slide markdown, or a `plan_file` from `prepare_video` with `pronunciations` (`{"PNJ": "Pi En Di"}`). Returns a `job_id`. |
 | `resubtitle_video` | Rebuilds a finished video's subtitles (fit-to-frame, karaoke) without re-rendering voice or images |
+| `repronounce_video` | Fixes how words are read in a finished video (`{"PNJ": "Pi En Di"}`): re-reads only those sentences and exports a new MP4, no re-render |
 | `voiceover_recording` | Narration and subtitles over a screen recording |
 | `transcribe_subtitles` | Media → SRT/VTT/ASS, with optional burn-in and translation |
 | `job_status`, `list_jobs`, `list_voices` | Track jobs and list voices |
@@ -124,11 +125,17 @@ curl -s localhost:8765/api/jobs -H 'content-type: application/json' \
 curl -N localhost:8765/api/jobs/<id>/events          # live progress (SSE)
 ```
 
-Job types: `tts`, `image`, `subtitle`, `narrated`, `short`, `explainer`, `screen`, `enrol`, `prepare`, `resubtitle`.
+Job types: `tts`, `image`, `subtitle`, `narrated`, `short`, `explainer`, `screen`, `enrol`, `prepare`, `resubtitle`, `repronounce`.
 
 To fix the subtitles of a video rendered before 2026-10-14 (lines could run off the screen), press
 **🔤 Dựng lại phụ đề** on its card, or run `mediaforge resubtitle <job-id>`. The voice and pictures stay exactly
 the same; the old file moves to `data/trash/`.
+
+To fix a word that a finished video reads wrongly, open **🗣 Sửa phát âm** on its card. Enter the word as it
+is written (`PNJ`) and how to read it (`Pi En Di`); add more rows as needed. Then press **Đọc lại & xuất video**.
+Every sentence containing the word is read again and spliced into a new MP4. The pictures and subtitles are not
+re-rendered. The reading is saved to the lexicon, so later videos get it right. CLI:
+`mediaforge repronounce <job-id> PNJ="Pi En Di"`.
 
 ## How pronunciation is kept correct
 

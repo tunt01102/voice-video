@@ -119,6 +119,17 @@ async def resubtitle_video(job_id: str, karaoke: bool = True, wait_seconds: floa
 
 
 @mcp.tool()
+async def repronounce_video(job_id: str, readings: dict[str, str], format: str = "mp4",
+                            wait_seconds: float = 0) -> dict[str, Any]:
+    """Fix mispronounced words in a finished video/TTS job without re-rendering it.
+
+    readings: {term as written in the script: how to read it}, e.g. {"PNJ": "Pi En Di", "pháp lý": "pháp lí"}.
+    Every sentence containing a term is re-read in the cloned voice and spliced into a new export (video stream
+    copied). Readings are saved to the pronunciation lexicon for later renders. Returns the export path."""
+    return await _submit("repronounce", {"job": job_id, "readings": readings, "format": format}, wait_seconds)
+
+
+@mcp.tool()
 async def voiceover_recording(recording: str, script: str, lang: str = "auto", voice: str | None = None,
                               wait_seconds: float = 0) -> dict[str, Any]:
     """Add a cloned-voice narration and burned subtitles to an existing screen recording (local video path)."""

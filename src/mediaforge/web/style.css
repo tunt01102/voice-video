@@ -115,3 +115,13 @@ table.prescan label.check { margin: 0; font-size: 13px; }
 .ps-scenes li { margin-bottom: 6px; line-height: 1.5; }
 .resub-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; width: 100%; }
 #prescan .inline-label { flex-direction: row; align-items: center; gap: 6px; margin: 0; }
+
+/* fix pronunciation of a finished job */
+.repron { width: 100%; border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.repron-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.repron-row input { flex: 1 1 180px; width: auto; min-width: 0; }
+.repron-count { font-size: 12.5px; min-width: 64px; }
+.repron-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.repron-last video { width: 100%; margin-top: 6px; }
+.repron-sents { margin: 6px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.5; }
+.repron-sents li.warn { color: var(--muted); }

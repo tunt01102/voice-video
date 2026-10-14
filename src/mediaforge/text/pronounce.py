@@ -160,7 +160,7 @@ def scan(text: str, lang: str, *, voice: str | None = None, use_llm: bool = True
 
 
 def remember(lang: str, readings: dict[str, str], verified: list[str] | tuple[str, ...] = (), *,
-             voice: str | None = None) -> dict[str, Any]:
+             voice: str | None = None, origin: str = "prescan") -> dict[str, Any]:
     """Save owner answers from a pre-scan: readings → `manual`, confirmed-as-written → `verified`.
 
     Manual entries are never overwritten by automatic learning (normalize.learn).
@@ -175,13 +175,13 @@ def remember(lang: str, readings: dict[str, str], verified: list[str] | tuple[st
             continue
         prev = table.get(term, {})
         table[term] = {"say": say, "source": "manual" if say != term else "verified", "hits": prev.get("hits", 0),
-                       "origin": "prescan", "added_at": now}
+                       "origin": origin, "added_at": now}
         saved[term] = say
     for term in verified or ():
         term = str(term).strip()
         if term and term not in saved:
             prev = table.get(term, {})
-            table[term] = {"say": term, "source": "verified", "hits": prev.get("hits", 0), "origin": "prescan",
+            table[term] = {"say": term, "source": "verified", "hits": prev.get("hits", 0), "origin": origin,
                            "added_at": now}
             ok.append(term)
     N.save_lexicon(data, voice)

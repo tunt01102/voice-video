@@ -457,9 +457,16 @@ def run_export(p: dict[str, Any], progress: Progress, job_id: str | None = None)
     return export.run(p, progress, job_id)
 
 
+def run_repronounce(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
+    from mediaforge import repronounce
+
+    return repronounce.run(p, progress, job_id)
+
+
 RUNNERS: dict[str, Callable[..., dict[str, Any]]] = {
     "tts": run_tts, "image": run_image, "subtitle": run_subtitle, "video": run_video, "enrol": run_enrol,
     "rerender": run_rerender, "export": run_export, "prepare": run_prepare, "resubtitle": run_resubtitle,
+    "repronounce": run_repronounce,
 }
 
 
