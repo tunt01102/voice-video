@@ -8,14 +8,13 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 import time
 from functools import cache
-from urllib.parse import urlsplit
 from pathlib import Path
 from typing import Any, Callable
-
-import httpx
+from urllib.parse import urlsplit
 
 from mediaforge.config import settings
 
@@ -64,24 +63,30 @@ class RateLimited(Exception):
     pass
 
 
-def _fetch(client: httpx.Client, url: str, dest: Path) -> None:
+UA = "MediaForge/0.1 (local music library sync)"
+
+
+def _fetch(url: str, dest: Path) -> None:
+    # curl, not httpx: Wikimedia's edge throttles httpx clients (HTTP 429) while serving curl normally.
     for _ in range(5):
-        with client.stream("GET", url) as r:
-            if r.status_code == 429:
-                # Wikimedia throttles bursts: wait out short pauses, give up on the host for long ones (re-run later).
-                wait = int(r.headers.get("retry-after", "600") or 600)
-                if wait > 60:
-                    raise RateLimited(f"rate-limited by {urlsplit(url).hostname} (retry after {wait}s)")
-                time.sleep(wait + 1)
-                continue
-            r.raise_for_status()
-            ctype = r.headers.get("content-type", "")
-            if not (ctype.startswith("audio/") or ctype in ("application/ogg", "application/octet-stream")):
-                raise ValueError(f"not audio ({ctype})")
-            with dest.open("wb") as f:
-                for chunk in r.iter_bytes(1 << 16):
-                    f.write(chunk)
-            return
+        r = subprocess.run(["curl", "-sSL", "--max-time", "300", "-A", UA, "-o", str(dest), "-w", "%{http_code} %{content_type}",
+                            "-D", "-", url], capture_output=True, text=True)
+        if r.returncode:
+            raise OSError(r.stderr.strip() or f"curl exit {r.returncode}")
+        code, _, ctype = r.stdout.rsplit("\n", 1)[-1].partition(" ")
+        if code == "429":
+            # Short pauses are waited out; a long one means "come back later" (re-run sync).
+            m = re.search(r"(?im)^retry-after:\s*(\d+)", r.stdout)
+            wait = int(m[1]) if m else 600
+            if wait > 60:
+                raise RateLimited(f"rate-limited by {urlsplit(url).hostname} (retry after {wait}s)")
+            time.sleep(wait + 1)
+            continue
+        if code != "200":
+            raise OSError(f"HTTP {code}")
+        if not (ctype.startswith("audio/") or ctype in ("application/ogg", "application/octet-stream")):
+            raise ValueError(f"not audio ({ctype})")
+        return
     raise RateLimited(f"still rate-limited by {urlsplit(url).hostname}")
 
 
@@ -89,38 +94,36 @@ def sync(progress: Callable[[str], None] = log.info) -> dict[str, list[str]]:
     """Download every catalogue track that is missing (as mp3). Safe to re-run."""
     out: dict[str, list[str]] = {"downloaded": [], "present": [], "failed": []}
     throttled: set[str] = set()
-    headers = {"User-Agent": "MediaForge/0.1 (local music library sync)"}
-    with httpx.Client(follow_redirects=True, timeout=120, headers=headers) as client:
-        for t in catalog():
-            dest = track_path(t)
-            if dest.exists():
-                out["present"].append(t["id"])
-                continue
-            host = urlsplit(t["download_url"]).hostname or ""
-            if host in throttled:
-                out["failed"].append(t["id"])
-                continue
-            src = dest.with_name(f"{t['id']}.src.{t['ext']}")
-            part = dest.with_suffix(".part.mp3")
-            try:
-                _fetch(client, t["download_url"], src)
-                if t["ext"] == "mp3":
-                    src.rename(part)
-                else:
-                    subprocess.run([settings.ffmpeg, "-y", "-v", "error", "-i", str(src), "-vn", "-c:a", "libmp3lame",
-                                    "-b:a", "192k", str(part)], check=True)
-                part.rename(dest)
-                out["downloaded"].append(t["id"])
-                progress(f"downloaded {t['id']}")
-                time.sleep(3)  # be polite to Wikimedia
-            except RateLimited as e:
-                throttled.add(host)
-                out["failed"].append(t["id"])
-                progress(f"failed {t['id']}: {e}")
-            except (httpx.HTTPError, ValueError, OSError, subprocess.CalledProcessError) as e:
-                out["failed"].append(t["id"])
-                progress(f"failed {t['id']}: {e}")
-            finally:
-                src.unlink(missing_ok=True)
-                part.unlink(missing_ok=True)
+    for t in catalog():
+        dest = track_path(t)
+        if dest.exists():
+            out["present"].append(t["id"])
+            continue
+        host = urlsplit(t["download_url"]).hostname or ""
+        if host in throttled:
+            out["failed"].append(t["id"])
+            continue
+        src = dest.with_name(f"{t['id']}.src.{t['ext']}")
+        part = dest.with_suffix(".part.mp3")
+        try:
+            _fetch(t["download_url"], src)
+            if t["ext"] == "mp3":
+                src.rename(part)
+            else:
+                subprocess.run([settings.ffmpeg, "-y", "-v", "error", "-i", str(src), "-vn", "-c:a", "libmp3lame",
+                                "-b:a", "192k", str(part)], check=True)
+            part.rename(dest)
+            out["downloaded"].append(t["id"])
+            progress(f"downloaded {t['id']}")
+            time.sleep(3)  # be polite to Wikimedia
+        except RateLimited as e:
+            throttled.add(host)
+            out["failed"].append(t["id"])
+            progress(f"failed {t['id']}: {e}")
+        except (ValueError, OSError, subprocess.CalledProcessError) as e:
+            out["failed"].append(t["id"])
+            progress(f"failed {t['id']}: {e}")
+        finally:
+            src.unlink(missing_ok=True)
+            part.unlink(missing_ok=True)
     return out
