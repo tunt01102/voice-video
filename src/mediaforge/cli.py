@@ -154,6 +154,46 @@ def repronounce(job: str, readings: list[str] = typer.Argument(..., help='TERM=R
     _run("repronounce", {"job": job, "readings": pairs, "format": format}, local)
 
 
+def _text_arg(text: Optional[str]) -> Optional[str]:
+    """Poem/lyrics given inline or as @file."""
+    if text and text.startswith("@"):
+        return Path(text[1:]).read_text("utf-8")
+    return text
+
+
+@app.command()
+def recite(text: Optional[str] = typer.Argument(None, help="the poem (one line per row) or @file"),
+           poem: Optional[str] = typer.Option(None, help="built-in poem id (see `mediaforge poems`)"),
+           version: Optional[str] = typer.Option(None, help="phien-am | dich:<translator>"),
+           voice: Optional[str] = None, mood: str = "auto", spirit: Optional[str] = None,
+           title: Optional[str] = None, author: Optional[str] = None, tempo: float = 1.0,
+           accompaniment: str = "auto", video: bool = False, aspect: str = "16:9", local: bool = False) -> None:
+    """Ngâm thơ: chant a poem in your cloned voice with đàn tranh / sáo (optionally as an illustrated video)."""
+    _run("recite", {"text": _text_arg(text), "poem_id": poem, "version": version, "voice": voice, "mood": mood,
+                    "spirit": spirit, "title": title, "author": author, "tempo": tempo,
+                    "accompaniment": accompaniment, "video": video, "aspect": aspect}, local)
+
+
+@app.command()
+def sing(text: str = typer.Argument(..., help="lyrics (one line per row) or @file"), voice: Optional[str] = None,
+         mood: str = "auto", bpm: Optional[float] = None, spirit: Optional[str] = None, title: Optional[str] = None,
+         author: Optional[str] = None, accompaniment: str = "auto", video: bool = False, aspect: str = "16:9",
+         local: bool = False) -> None:
+    """Hát: sing lyrics in your cloned voice on a tone-aware melody with a beat-locked band."""
+    _run("sing", {"text": _text_arg(text), "voice": voice, "mood": mood, "bpm": bpm, "spirit": spirit,
+                  "title": title, "author": author, "accompaniment": accompaniment, "video": video,
+                  "aspect": aspect}, local)
+
+
+@app.command()
+def poems() -> None:
+    """Built-in Tang poems for `recite --poem`."""
+    from mediaforge.sing import poems as P
+
+    for p in P.summary():
+        typer.echo(f"{p['id']:<28} {p['title']} — {p['author']}  [{', '.join(p['versions'])}]")
+
+
 @app.command()
 def subtitle(media: Path, lang: Optional[str] = None, burn: bool = False, translate_to: Optional[str] = None,
              local: bool = False) -> None:

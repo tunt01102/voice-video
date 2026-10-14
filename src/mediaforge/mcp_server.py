@@ -17,9 +17,9 @@ from mediaforge.voice import profiles
 mcp = MCPServer(
     "mediaforge",
     instructions=(
-        "Local media generation on this Mac: cloned-voice speech (English/Vietnamese), subtitles, images and "
-        "videos. Long jobs return a job_id; poll job_status or pass wait_seconds. Output paths are absolute local "
-        "files. Use list_voices to find the owner's voice id (prefer it over 'demo')."
+        "Local media generation on this Mac: cloned-voice speech (English/Vietnamese), singing and poetry "
+        "chanting (ngâm thơ), subtitles, images and videos. Long jobs return a job_id; poll job_status or pass "
+        "wait_seconds. Output paths are absolute local files. Use list_voices to find the owner's voice id (prefer it over 'demo')."
     ),
 )
 
@@ -109,6 +109,46 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
                                 "burn_subtitles": burn_subtitles, "plan_file": plan_file,
                                 "pronunciations": pronunciations, "verified_terms": verified_terms,
                                 "karaoke": karaoke}, wait_seconds)
+
+
+@mcp.tool()
+async def recite_poem(text: str | None = None, poem_id: str | None = None, version: str | None = None,
+                      voice: str | None = None, mood: str = "auto", spirit: str | None = None,
+                      title: str | None = None, author: str | None = None, tempo: float = 1.0,
+                      accompaniment: str = "auto", video: bool = False, aspect: str = "16:9",
+                      wait_seconds: float = 0) -> dict[str, Any]:
+    """Ngâm thơ: chant a Vietnamese poem in the owner's cloned voice, with đàn tranh / sáo accompaniment.
+
+    text: the poem, one line per row (or poem_id from list_poems; version 'phien-am' or 'dich:<translator>').
+    mood: auto (Claude reads the poem) | hung-trang (proud, heroic) | tram-mac (calm) | u-hoai (longing) | bi-ai.
+    spirit: the feeling the author wants affirmed (guides mood and images). accompaniment: auto (traditional
+    instruments in the voice's key) | none | a list_music id. video=True adds an illustrated film ("hoạt cảnh")
+    with karaoke lyrics. Returns a job id; poll job_status.
+    """
+    return await _submit("recite", {"text": text, "poem_id": poem_id, "version": version, "voice": voice,
+                                    "mood": mood, "spirit": spirit, "title": title, "author": author, "tempo": tempo,
+                                    "accompaniment": accompaniment, "video": video, "aspect": aspect}, wait_seconds)
+
+
+@mcp.tool()
+async def sing_song(text: str, voice: str | None = None, mood: str = "auto", bpm: float | None = None,
+                    spirit: str | None = None, title: str | None = None, author: str | None = None,
+                    accompaniment: str = "auto", video: bool = False, aspect: str = "16:9",
+                    wait_seconds: float = 0) -> dict[str, Any]:
+    """Hát: sing Vietnamese lyrics in the owner's cloned voice on a tone-aware melody (lyrics stay intelligible),
+    with a beat-locked band (đàn tranh, sáo, mõ, trống) in the voice's key. One lyric line per row.
+    mood/spirit/accompaniment/video as in recite_poem; bpm defaults to 76 (proud) or 66."""
+    return await _submit("sing", {"text": text, "voice": voice, "mood": mood, "bpm": bpm, "spirit": spirit,
+                                  "title": title, "author": author, "accompaniment": accompaniment,
+                                  "video": video, "aspect": aspect}, wait_seconds)
+
+
+@mcp.tool()
+def list_poems() -> list[dict[str, Any]]:
+    """Built-in Tang poems (thơ Đường) for recite_poem: id, title, author, Hán-Việt lines, verse translations."""
+    from mediaforge.sing import poems
+
+    return [{k: p[k] for k in ("id", "title", "author", "form", "mood", "versions", "phien_am")} for p in poems.summary()]
 
 
 @mcp.tool()

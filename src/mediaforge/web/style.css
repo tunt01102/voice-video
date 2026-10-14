@@ -125,3 +125,8 @@ table.prescan label.check { margin: 0; font-size: 13px; }
 .repron-last video { width: 100%; margin-top: 6px; }
 .repron-sents { margin: 6px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.5; }
 .repron-sents li.warn { color: var(--muted); }
+
+.song-out { width: 100%; }
+.song-out .spirit { font-style: italic; font-size: 16px; border-left: 3px solid var(--accent); padding-left: 10px; }
+.poem-meta { font-size: 13px; margin: -6px 0 12px; }
+.song-form textarea[readonly] { opacity: .85; }

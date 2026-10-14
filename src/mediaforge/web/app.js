@@ -8,14 +8,14 @@ const api = async (path, opts = {}) => {
 };
 const toast = (msg) => { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 3500); };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const TYPE_LABEL = { tts: "Giọng nói", image: "Ảnh", subtitle: "Phụ đề", short: "Short", narrated: "Video", explainer: "Explainer", screen: "Screen", video: "Video", enrol: "Thu mẫu", rerender: "Đọc lại câu", export: "Xuất file", prepare: "Chuẩn bị kịch bản", resubtitle: "Dựng lại phụ đề", repronounce: "Sửa phát âm" };
+const TYPE_LABEL = { tts: "Giọng nói", image: "Ảnh", subtitle: "Phụ đề", short: "Short", narrated: "Video", explainer: "Explainer", screen: "Screen", video: "Video", enrol: "Thu mẫu", rerender: "Đọc lại câu", export: "Xuất file", prepare: "Chuẩn bị kịch bản", resubtitle: "Dựng lại phụ đề", repronounce: "Sửa phát âm", sing: "Hát", recite: "Ngâm thơ" };
 const HIDDEN_TYPES = ["enrol", "rerender", "export", "prepare", "resubtitle", "repronounce"];
 
 // ------------------------------------------------------------------ tabs
 $$("#tabs button").forEach((b) => b.onclick = () => {
   $$("#tabs button").forEach((x) => x.classList.toggle("active", x === b));
   $$(".tab").forEach((t) => t.classList.toggle("active", t.id === "tab-" + b.dataset.tab));
-  ({ jobs: loadJobs, voices: loadVoices, lexicon: loadLexicon, system: loadHealth })[b.dataset.tab]?.();
+  ({ jobs: loadJobs, voices: loadVoices, lexicon: loadLexicon, system: loadHealth, recite: syncSongForms, sing: syncSongForms })[b.dataset.tab]?.();
   history.replaceState(null, "", "#" + b.dataset.tab);
 });
 
@@ -242,6 +242,7 @@ function renderOutputs(job, out) {
   if (fileUrl(f.video) || (fileUrl(f.audio) && Array.isArray(r.sentences))) out.append(renderExport(job));
   if (Array.isArray(r.sentences) && r.sentences.length) out.append(renderRepronounce(job));
   if (Array.isArray(r.sentences) && r.sentences.length) out.append(renderQA(job));
+  if (["sing", "recite"].includes(job.type)) out.append(renderSong(job));
   if (r.text && job.type === "subtitle") out.insertAdjacentHTML("beforeend", `<pre>${esc(r.text)}</pre>`);
 }
 function renderResubtitle(job) {
@@ -711,3 +712,81 @@ $("#lex-save").onclick = async () => {
 const openHashTab = () => { const t = location.hash.slice(1); const b = t && $(`#tabs button[data-tab="${t}"]`); if (b && !b.classList.contains("active")) b.click(); };
 window.addEventListener("hashchange", openHashTab);
 loadVoices().then(openHashTab);
+
+// ------------------------------------------------------------------ ngâm thơ / hát
+const MOOD_VI = { "hung-trang": "Hùng tráng", "tram-mac": "Trầm mặc", "u-hoai": "U hoài", "bi-ai": "Bi ai" };
+let poemList = [];
+function renderSong(job) {
+  const r = job.result || {}, f = job.files || {}, rep = r.report || {};
+  const box = document.createElement("div"); box.className = "song-out";
+  const links = [];
+  const add = (label, v) => fileUrl(v) && links.push(`<a href="${fileUrl(v)}" download>${label}</a>`);
+  add("Giọng (WAV)", f.vocal); add("Nhạc đệm (WAV)", f.accompaniment); add("Giai điệu (JSON)", f.melody);
+  const lines = (rep.lines || []).map((l) => `<tr><td>${esc(l.text)}</td><td>${esc(l.sung_heard || "")}</td><td>${esc(l.sung_syllables || "")}</td><td>${esc(l.sung_with_tones || "")}</td><td>${esc(l.engine || "")} · lần ${l.take}/${l.takes_tried}</td></tr>`).join("");
+  box.innerHTML = `
+    <p><b>${esc(r.title || "")}</b>${r.author ? " — " + esc(r.author) : ""} · ${esc(MOOD_VI[r.mood] || r.mood || "")} · giọng ${esc(r.key || "")}${r.bpm ? " · " + r.bpm + " BPM" : ""} · ${r.duration || "?"} s</p>
+    ${rep.spirit ? `<p class="spirit">“${esc(rep.spirit)}”</p>` : ""}
+    ${links.length ? `<div class="links">${links.join("")}</div>` : ""}
+    ${lines ? `<details><summary>Độ rõ lời (AI nghe lại từng câu)</summary><table class="lex"><thead><tr><th>Câu</th><th>AI nghe được</th><th>Âm tiết</th><th>Kèm dấu</th><th>Bản đọc</th></tr></thead><tbody>${lines}</tbody></table>
+      <p class="muted">Whisper được huấn luyện trên lời nói, nên nghe giọng ngân kém hơn người. Con số chỉ để tham khảo.</p></details>` : ""}`;
+  return box;
+}
+async function songForm(section) {
+  const kind = section.dataset.kind, isRecite = kind === "recite";
+  section.append($("#tpl-song").content.cloneNode(true));
+  const form = $("form", section), out = $(".song-result", section);
+  $$(isRecite ? ".only-sing" : ".only-recite", form).forEach((e) => e.remove());
+  $(".song-intro", form).textContent = isRecite
+    ? "Ngâm một bài thơ bằng chính giọng của bạn: giai điệu đi theo thanh điệu tiếng Việt, câu cuối ngân láy, đàn tranh và sáo vọng theo từng câu."
+    : "Hát lời của bạn bằng chính giọng của bạn: giai điệu ngũ cung theo dấu thanh (lời vẫn rõ), ban nhạc đàn tranh, sáo, mõ và trống theo nhịp.";
+  $(".text-label", form).textContent = isRecite ? "Bài thơ (mỗi câu một dòng)" : "Lời bài hát (mỗi câu một dòng)";
+  form.text.placeholder = isRecite ? "Mình ta với cả trời sao sáng,\nNâng chén sương đêm cạn hết sầu" : "Mỗi câu một dòng…";
+  $("button[type=submit]", form).textContent = isRecite ? "🪷 Ngâm" : "🎵 Hát";
+  syncSongForms();
+  if (form.tempo) form.tempo.oninput = () => { $(".o-tempo", form).textContent = (+form.tempo.value).toFixed(2); };
+  if (isRecite) {
+    try { poemList = await api("/api/poems"); } catch { poemList = []; }
+    for (const p of poemList) form.poem.append(new Option(`${p.title} — ${p.author}`, p.id));
+    const fillVersions = () => {
+      const p = poemList.find((x) => x.id === form.poem.value);
+      form.version.innerHTML = ""; $(".poem-meta", form).innerHTML = "";
+      form.version.closest("label").hidden = !p;
+      if (!p) { form.text.readOnly = false; return; }
+      for (const v of p.versions) form.version.append(new Option(v === "phien-am" ? "Phiên âm Hán-Việt" : "Dịch thơ: " + v.slice(5), v));
+      if (p.versions.length > 1) form.version.value = p.versions[1];
+      showPoem();
+    };
+    const showPoem = () => {
+      const p = poemList.find((x) => x.id === form.poem.value); if (!p) return;
+      const v = form.version.value, tr = (p.translations || []).find((t) => "dich:" + t.translator === v);
+      form.text.value = (tr ? tr.lines : p.phien_am).join("\n"); form.text.readOnly = true;
+      form.title.value = p.title; form.author.value = p.author;
+      $(".poem-meta", form).innerHTML = `${p.title_han ? esc(p.title_han) + " · " : ""}${esc(p.form || "")}${p.dich_nghia ? `<br><i>Dịch nghĩa:</i> ${esc(p.dich_nghia)}` : ""}`;
+    };
+    form.poem.onchange = fillVersions; form.version.onchange = showPoem; fillVersions();
+  }
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = $("button[type=submit]", form); btn.disabled = true;
+    try {
+      if (!form.text.value.trim()) throw new Error(isRecite ? "Nhập bài thơ hoặc chọn một bài" : "Nhập lời bài hát");
+      const params = { text: form.text.value, voice: form.voice.value || null, mood: form.mood.value,
+        spirit: form.spirit.value || null, title: form.title.value || null, author: form.author.value || null,
+        accompaniment: form.accompaniment.value, video: form.video.checked, aspect: form.aspect.value };
+      if (isRecite) { params.tempo = +form.tempo.value; if (form.poem.value) { params.poem_id = form.poem.value; params.version = form.version.value; } }
+      else if (form.bpm.value) params.bpm = +form.bpm.value;
+      const job = await api("/api/jobs", { method: "POST", body: JSON.stringify({ type: kind, params, source: "dashboard" }) });
+      out.innerHTML = ""; out.append(renderJob(job)); followJob(job.id);
+    } catch (err) { toast(err.message); } finally { btn.disabled = false; }
+  };
+}
+// Voice and library lists load asynchronously; copy them into the song forms whenever a song tab opens.
+function syncSongForms() {
+  for (const form of $$(".song-form")) {
+    const vs = $(".voice-select", form), src = $("#voice-select");
+    if (src.options.length && vs.options.length !== src.options.length) { vs.innerHTML = src.innerHTML; vs.value = src.value; }
+    if (!form.accompaniment.querySelector("option[data-lib]"))
+      for (const t of musicTracks) { const o = new Option(`Thư viện: ${t.title}`, t.id); o.dataset.lib = "1"; form.accompaniment.append(o); }
+  }
+}
+$$(".song-tab").forEach((sec) => songForm(sec));

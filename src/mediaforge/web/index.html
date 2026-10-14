@@ -12,6 +12,8 @@
   <div class="brand"><span class="logo">◆</span> MediaForge <small id="health-dot" class="dot"></small></div>
   <nav id="tabs">
     <button data-tab="create" class="active">Tạo mới</button>
+    <button data-tab="recite">🪷 Ngâm thơ</button>
+    <button data-tab="sing">🎵 Hát</button>
     <button data-tab="jobs">Jobs</button>
     <button data-tab="voices">Giọng nói</button>
     <button data-tab="lexicon">Phát âm</button>
@@ -116,6 +118,10 @@
   <div id="create-result"></div>
 </section>
 
+<!-- ============================== NGÂM THƠ / HÁT (filled by app.js: songForm) -->
+<section id="tab-recite" class="tab song-tab" data-kind="recite"></section>
+<section id="tab-sing" class="tab song-tab" data-kind="sing"></section>
+
 <!-- ============================== JOBS -->
 <section id="tab-jobs" class="tab">
   <div class="toolbar">
@@ -187,6 +193,59 @@
     <small class="job-msg muted"></small>
     <div class="job-out"></div>
   </div>
+</template>
+
+<template id="tpl-song">
+  <form class="card song-form" autocomplete="off">
+    <p class="muted song-intro"></p>
+    <div class="grid2">
+      <label class="only-recite">Bài thơ
+        <select name="poem"><option value="">✍️ Thơ của tôi (nhập bên dưới)</option></select>
+      </label>
+      <label class="only-recite">Bản
+        <select name="version"></select>
+      </label>
+    </div>
+    <label><span class="text-label">Lời</span>
+      <textarea name="text" rows="6"></textarea>
+    </label>
+    <div class="poem-meta muted"></div>
+    <div class="grid4">
+      <label>Tựa đề <input name="title" placeholder="(tuỳ chọn)"></label>
+      <label>Tác giả <input name="author" placeholder="(tuỳ chọn)"></label>
+      <label>Giọng <select name="voice" class="voice-select"></select></label>
+      <label>Tinh thần
+        <select name="mood">
+          <option value="auto">Claude đọc bài và tự chọn</option>
+          <option value="hung-trang">Hùng tráng · khí khái (hơi Bắc)</option>
+          <option value="tram-mac">Trầm mặc · ung dung (hơi Bắc, chậm)</option>
+          <option value="u-hoai">U hoài · nhớ thương (hơi Oán)</option>
+          <option value="bi-ai">Bi ai (hơi Ai)</option>
+        </select>
+      </label>
+    </div>
+    <label>Khí khái muốn khẳng định (tuỳ chọn — dẫn dắt giai điệu và hình ảnh)
+      <input name="spirit" placeholder="Ví dụ: ngạo nghễ, một mình đối ẩm cùng trời sao, uống cạn nỗi sầu mà không gục ngã">
+    </label>
+    <div class="grid4">
+      <label class="only-recite">Nhịp ngâm <output class="o-tempo">1.00</output>
+        <input type="range" name="tempo" min="0.8" max="1.25" step="0.05" value="1"><small>← khoan thai · nhanh →</small></label>
+      <label class="only-sing">Nhịp (BPM) <input type="number" name="bpm" min="50" max="140" placeholder="tự động"></label>
+      <label>Nhạc đệm
+        <select name="accompaniment">
+          <option value="auto">Đàn tranh · sáo trúc (theo đúng giọng)</option>
+          <option value="none">Không nhạc (chỉ giọng)</option>
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" name="video" checked> Dựng video hoạt cảnh</label>
+      <label>Khung hình <select name="aspect"><option>16:9</option><option>9:16</option><option>1:1</option></select></label>
+    </div>
+    <div class="actions">
+      <button type="submit" class="primary"></button>
+      <span class="hint">Giọng hát/ngâm là giọng nhân bản của bạn. Có video thì mất vài phút.</span>
+    </div>
+  </form>
+  <div class="song-result"></div>
 </template>
 
 <script src="/app.js"></script>
