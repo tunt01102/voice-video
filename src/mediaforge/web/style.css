@@ -104,3 +104,14 @@ button.rec.small { padding: 4px 12px; font-size: 13px; }
 .export-row select { width: auto; padding: 6px 9px; }
 button.primary.small { padding: 6px 12px; font-size: 13.5px; }
 .export-list { margin-top: 6px; }
+
+/* pronunciation pre-scan + re-subtitle */
+#prescan h3 { margin-top: 0; }
+table.prescan td { vertical-align: top; }
+table.prescan .ps-ctx { color: var(--muted); font-size: 13px; max-width: 420px; }
+table.prescan .ps-say { min-width: 160px; }
+table.prescan label.check { margin: 0; font-size: 13px; }
+#prescan mark, .ps-scenes mark { background: rgba(255, 212, 0, .28); color: inherit; border-radius: 3px; padding: 0 2px; }
+.ps-scenes li { margin-bottom: 6px; line-height: 1.5; }
+.resub-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; width: 100%; }
+#prescan .inline-label { flex-direction: row; align-items: center; gap: 6px; margin: 0; }

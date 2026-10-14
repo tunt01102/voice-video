@@ -69,11 +69,30 @@ async def generate_image(prompt: str, aspect: str = "16:9", count: int = 1, styl
 
 
 @mcp.tool()
+async def prepare_video(brief: str | None = None, script: str | None = None, kind: str = "narrated",
+                        lang: str = "auto", voice: str | None = None, seconds: int = 60, style: str = "cinematic",
+                        slides_markdown: str | None = None, wait_seconds: float = 300) -> dict[str, Any]:
+    """Step 1 of a video: write the script and scan it for terms the TTS may misread (acronyms, foreign names,
+    codes, symbols) BEFORE rendering.
+
+    Returns plan_file, the scene narrations and `candidates` [{term, say, known, reason_labels, context}].
+    Decide a reading for each unknown term (ask the user when unsure, e.g. PNJ -> 'Pi En Di'), then call
+    create_video(plan_file=..., pronunciations={term: reading}, verified_terms=[terms that read fine as written]).
+    The answers are saved to the pronunciation lexicon for every later render.
+    """
+    return await _submit("prepare", {"brief": brief, "script": script, "kind": kind, "lang": lang, "voice": voice,
+                                     "seconds": seconds, "style": style, "slides_markdown": slides_markdown},
+                         wait_seconds)
+
+
+@mcp.tool()
 async def create_video(brief: str | None = None, script: str | None = None, kind: str = "narrated",
                        lang: str = "auto", voice: str | None = None, seconds: int = 60, style: str = "cinematic",
                        aspect: str | None = None, music: str | None = None, pitch: float = 0.0,
                        slides_markdown: str | None = None, media: list[str] | None = None,
-                       burn_subtitles: bool = True, wait_seconds: float = 0) -> dict[str, Any]:
+                       burn_subtitles: bool = True, plan_file: str | None = None,
+                       pronunciations: dict[str, str] | None = None, verified_terms: list[str] | None = None,
+                       karaoke: bool = True, wait_seconds: float = 0) -> dict[str, Any]:
     """Create a narrated video with cloned voice, generated visuals and subtitles.
 
     kind: 'narrated' (16:9 AI visuals), 'short' (9:16 with karaoke subtitles), 'explainer' (slides).
@@ -81,11 +100,22 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
     explainers ('# Title', '- bullet', '> narration'). media: optional per-scene image/video paths.
     music: optional background track (ducked under the voice): a library id from list_music, or a local audio path. Videos take minutes; by default this returns
     a job_id immediately — poll job_status.
+    plan_file / pronunciations / verified_terms: from prepare_video (recommended: avoids mispronounced audio).
+    karaoke: highlight the word being spoken (default on).
     """
     return await _submit(kind, {"brief": brief, "script": script, "lang": lang, "voice": voice, "seconds": seconds,
                                 "style": style, "aspect": aspect, "music": music, "fx": {"pitch": pitch},
                                 "slides_markdown": slides_markdown, "media": media,
-                                "burn_subtitles": burn_subtitles}, wait_seconds)
+                                "burn_subtitles": burn_subtitles, "plan_file": plan_file,
+                                "pronunciations": pronunciations, "verified_terms": verified_terms,
+                                "karaoke": karaoke}, wait_seconds)
+
+
+@mcp.tool()
+async def resubtitle_video(job_id: str, karaoke: bool = True, wait_seconds: float = 0) -> dict[str, Any]:
+    """Rebuild a finished video's burned-in subtitles (always fit the frame; karaoke word highlight) without
+    re-rendering its voice or images. The old render and its exports move to the trash."""
+    return await _submit("resubtitle", {"job": job_id, "karaoke": karaoke}, wait_seconds)
 
 
 @mcp.tool()
