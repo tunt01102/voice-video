@@ -178,7 +178,7 @@ def mix(vocal: np.ndarray, backing: np.ndarray | None, *, style: str, fxp: FX.Vo
         n = max(voc.shape[1], back.shape[1])
         total = np.zeros((2, n), dtype=np.float32)
         total[:, :voc.shape[1]] += voc
-        total[:, :back.shape[1]] += back * (0.42 if style == "ngam" else 0.55)
+        total[:, :back.shape[1]] += back * duck_curve(shaped, n) * BACKING_GAIN[style]
     pre = _save_stereo(out / "song.pre.wav", total / (np.abs(total).max() + 1e-9) * 0.9)
     wav = out / "song.wav"
     A.run_ffmpeg(["-i", str(pre), "-af", "loudnorm=I=-14:TP=-1.0:LRA=11", "-ar", str(A.SR), "-c:a", "pcm_s16le", str(wav)])
@@ -186,6 +186,19 @@ def mix(vocal: np.ndarray, backing: np.ndarray | None, *, style: str, fxp: FX.Vo
     mp3 = FX.to_mp3(wav, out / "song.mp3")
     return {"audio": str(wav), "mp3": str(mp3), "vocal": str(out / "vocal.wav"),
             "accompaniment": str(out / "accompaniment.wav") if backing is not None else None}
+
+
+# Backing level and ducking, measured on the owner's sung track (Whisper, 8 s windows, 14 syllables):
+# hát at 0.55 without ducking 4/14 → 0.35 with ducking 12/14 (ACE-Step's own best seed singing it: 12/14).
+BACKING_GAIN = {"ngam": 0.32, "hat": 0.35}
+
+
+def duck_curve(vocal: np.ndarray, n: int, depth: float = 0.6) -> np.ndarray:
+    """Gain for the backing: dips by `depth` while the voice sings (100 ms envelope), so words stay on top."""
+    env = np.convolve(np.abs(vocal), np.ones(4800) / 4800, mode="same")
+    env = env / (env.max() + 1e-9)
+    g = 1 - depth * np.clip(env * 3, 0, 1)
+    return np.pad(g, (0, max(0, n - g.size)), constant_values=1.0)[:n].astype(np.float32)
 
 
 def _save_stereo(path: Path, x: np.ndarray) -> Path:

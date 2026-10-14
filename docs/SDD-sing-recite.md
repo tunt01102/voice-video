@@ -139,6 +139,17 @@ Findings:
 - MediaForge is consistent and in the owner's voice.
 - MediaForge's *mixed* hát loses clarity under the ACE bed.
 
+**Fix (same day):** the backing level drops to 0.35 for hát and 0.32 for ngâm, and the backing is **ducked** under the
+voice: it dips 60 % on a 100 ms envelope of the dry vocal. Re-mixing the same hát job gave:
+
+| Backing level | Without ducking | With ducking |
+|---|---|---|
+| 0.55 | 4/14 | 10/14 |
+| 0.35 | 8/14 | **12/14 (11 with tones)** |
+| 0.25 | 8/14 | 13/14 |
+
+At 0.35 with ducking, the owner's voice matches ACE-Step's best seed on clarity.
+
 Upgrade path: generate ACE-Step vocals, keep the clearest of N, and convert the timbre to the owner's voice with
 a permissive pitch-preserving converter (candidate: OpenVoice v2 tone-colour converter, MIT; needs evaluation).
 
