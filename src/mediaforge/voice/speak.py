@@ -129,9 +129,21 @@ def synth_sentence(
     def best() -> Attempt:
         return min(attempts, key=lambda a: a.score)
 
+    def run(att: Attempt) -> Attempt:
+        nonlocal ref
+        try:
+            return _run_attempt(att, sentence, lang, ref, lenient)
+        except Exception:
+            # The reference clip was deleted while this job ran: re-resolve (falls back to a clip that exists) once.
+            if not ref or Path(ref.audio_path).exists():
+                raise
+            stale, ref = ref.audio_path, profiles.voice_ref(voice_id, lang)
+            log.warning("reference %s vanished mid-job; retrying with %s", stale, ref.audio_path if ref else None)
+            return _run_attempt(att, sentence, lang, ref, lenient)
+
     # 1) first pass with each planned engine
     for e in plan_engines:
-        attempts.append(_run_attempt(Attempt(e, seed, 0.8, _tts_text(sentence, lang, e, lexicon, {})), sentence, lang, ref, lenient))
+        attempts.append(run(Attempt(e, seed, 0.8, _tts_text(sentence, lang, e, lexicon, {}))))
     # 2) repair loop
     step = 0
     while best().score > thr and len(attempts) < max_attempts + len(plan_engines) - 1:
@@ -147,7 +159,7 @@ def synth_sentence(
                 att = Attempt(b.engine, seed + 101 * (step + 1), 0.6, b.tts_text, b.respell)
             else:
                 att = Attempt(b.engine, seed + 7, 0.6, _tts_text(sentence, lang, b.engine, lexicon, respell), respell)
-        attempts.append(_run_attempt(att, sentence, lang, ref, lenient))
+        attempts.append(run(att))
         step += 1
 
     chosen = best()

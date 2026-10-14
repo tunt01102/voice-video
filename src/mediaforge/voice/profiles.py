@@ -8,6 +8,7 @@ to any LLM (only text is).
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
 import subprocess
@@ -22,6 +23,8 @@ from mediaforge import audio as A
 from mediaforge.config import settings
 from mediaforge.text.normalize import detect_lang
 from mediaforge.tts.base import DEFAULT_ROUTE, VoiceRef
+
+log = logging.getLogger(__name__)
 
 MAX_REF_SECONDS = 11.0
 
@@ -240,8 +243,14 @@ def voice_ref(voice_id: str | None, lang: str) -> VoiceRef | None:
     if not voice_id:
         return None
     p = get_voice(voice_id)
+    # A clip can vanish under us (deleted on the Voices tab mid-job, restored backup): only use files that exist.
+    present = [s for s in p["samples"] if (settings.data_dir / s["file"]).exists()]
     sid = p.get("refs", {}).get(lang)
-    sample = next((s for s in p["samples"] if s["id"] == sid), None)
+    sample = next((s for s in present if s["id"] == sid), None)
+    if sample is None and present:
+        sid = pick_refs(present).get(lang)
+        sample = next((s for s in present if s["id"] == sid), None)
+        log.warning("voice %s: reference clip for %s missing, falling back to %s", voice_id, lang, sid)
     if sample is None:
         return None
     return VoiceRef(audio_path=str(settings.data_dir / sample["file"]), text=sample["text"], lang=sample["lang"])

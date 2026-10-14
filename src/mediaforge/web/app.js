@@ -98,7 +98,11 @@ function fileUrl(v) { return v && typeof v === "object" && v.url ? v.url : null;
 function renderOutputs(job, out) {
   out.innerHTML = "";
   const f = job.files || {};
-  if (job.status === "failed") { out.innerHTML = `<pre class="qa-bad">${esc(job.error || job.message)}</pre>`; return; }
+  if (job.status === "failed") {
+    const err = job.error || "", head = job.message || err.split("\n")[0];
+    out.innerHTML = `<p class="qa-bad">${esc(head)}</p>` + (err.includes("\n") ? `<details><summary class="muted">Chi tiết lỗi</summary><pre class="qa-bad">${esc(err)}</pre></details>` : "");
+    return;
+  }
   if (job.status !== "done") return;
   if (fileUrl(f.video)) out.insertAdjacentHTML("beforeend", `<video controls preload="metadata" src="${fileUrl(f.video)}" poster="${fileUrl(f.thumbnail) || ""}"></video>`);
   if (Array.isArray(f.images)) f.images.forEach((i) => out.insertAdjacentHTML("beforeend", `<a href="${fileUrl(i)}" target="_blank"><img src="${fileUrl(i)}"></a>`));
