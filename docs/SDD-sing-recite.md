@@ -117,9 +117,21 @@ locked to its timing because it knows every sung note.
 `accompaniment` may also be `none`, a music-library id, or a local path. A library track is faded to length,
 and its CC BY credit is reported as `report.music_credit`.
 
-**ACE-Step 1.5** (MIT) remains the upgrade path for richer instrumental beds. It must run as a separate-venv
-sidecar because its torch/transformers pins conflict with ours, and its weights' licence and MPS stability must
-be confirmed first.
+**ACE-Step 1.5** (`accompaniment: "ace+traditional"` or `"ace"`, `sing/ace.py`) adds an AI-orchestrated bed.
+
+- **Licence.** Code is MIT (github.com/ACE-Step/ACE-Step-1.5). The weights are MIT
+  (huggingface.co/ACE-Step/Ace-Step1.5), and the model card allows commercial use of output. The bundled
+  Qwen3-Embedding-0.6B is Apache-2.0.
+- **Install.** It runs as a **sidecar** in its own venv, because its torch 2.10/transformers pins conflict with
+  ours. `scripts/install_ace_step.sh` pins commit ca1e85f under `~/.local/share/mediaforge-sidecars/ace-step`
+  (override with `MEDIAFORGE_ACE_STEP_ROOT`).
+- **Invocation.** The job runs `src/mediaforge/sing/ace_generate.py` with the sidecar's python (`-P`, so our
+  package directory is not on its path). It sends a caption per mood, the key (`bac` → major, otherwise minor,
+  on the voice's tonic) and the BPM for songs. For ngâm it adds "free rhythm, no percussion".
+- **Cost.** Measured on M4 Max: ~9 s per 30 s clip warm, 9.4 GB of weights, 41–60 GB peak unified memory.
+- **Mix.** BPM and key are only *hints* to ACE-Step, so in `ace+traditional` the bed sits at 0.55 under the
+  key-locked instruments. ACE-Step ends early, so the job asks for 15 % extra and trims, with a 1.5 s fade-in
+  and a 3 s fade-out.
 
 ## 7. Video hoạt cảnh
 
@@ -159,4 +171,4 @@ in `source_urls`.
 - Possible additions:
   - the owner records a guide melody (hum), followed by f0 extraction;
   - more ngâm điệu (Sa mạc, Bồng mạc, Kiều) as melodic templates;
-  - ACE-Step instrumental sidecar.
+  - keep the ACE-Step process warm (load is ~3 s of the 9 s).
