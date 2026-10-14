@@ -107,11 +107,12 @@ def synth_sentence(
     ref = profiles.voice_ref(voice_id, lang)
     lexicon = N.merged_lexicon(voice_id, lang)
     capable = engines_for(lang)
-    if engine == "best":
-        plan_engines = capable
-    else:
-        preferred = engine or (voice or {}).get("engines", {}).get(lang) or DEFAULT_ROUTE[lang]
-        plan_engines = [preferred]
+    # "best" (try every capable engine) may come from the request or from the voice's saved routing.
+    preferred = engine or (voice or {}).get("engines", {}).get(lang) or DEFAULT_ROUTE[lang]
+    if not engine and preferred != "best" and preferred not in capable:
+        log.warning("voice %s routes %s to unknown engine %r; using %s", voice_id, lang, preferred, DEFAULT_ROUTE[lang])
+        preferred = DEFAULT_ROUTE[lang]
+    plan_engines = capable if preferred == "best" else [preferred]
     alternates = [e for e in capable if e not in plan_engines]
 
     # Sentence-level cache: identical requests are free.
