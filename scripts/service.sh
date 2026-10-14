@@ -22,7 +22,13 @@ install_tool() {
 }
 
 case "${1:-status}" in
-  install|update)
+  update)
+    install_tool
+    if launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then
+      launchctl kickstart -k "gui/$(id -u)/$LABEL"; echo "updated and restarted"; exit 0
+    fi
+    exec "$0" install ;;
+  install)
     install_tool
     cat > "$PLIST" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
@@ -46,6 +52,8 @@ case "${1:-status}" in
 </dict></plist>
 PL
     launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+    # bootout is asynchronous; bootstrapping before the old job is gone fails with error 5.
+    for _ in {1..20}; do launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || break; sleep 0.5; done
     launchctl bootstrap "gui/$(id -u)" "$PLIST"
     echo "installed $PLIST — http://127.0.0.1:8765" ;;
   uninstall)

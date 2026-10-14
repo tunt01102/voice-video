@@ -65,6 +65,17 @@ def build_cues(
         if txt.endswith(PUNCT_STRONG) or (txt.endswith(PUNCT_SOFT) and soft_full):
             flush()
     flush()
+    # Merge orphan one-word cues ("mãi.") into the previous cue when it still fits on screen.
+    merged: list[Cue] = []
+    for c in cues:
+        prev = merged[-1] if merged else None
+        if prev and len(c.words) == 1 and c.start - prev.end < 0.6:
+            words = prev.words + c.words
+            if len(" ".join(w["text"] for w in words)) <= limit:
+                merged[-1] = Cue(prev.start, c.end, words, _wrap([w["text"] for w in words], max_chars))
+                continue
+        merged.append(c)
+    cues = merged
     for a, b in zip(cues, cues[1:]):
         # Close short gaps so text doesn't flicker; otherwise linger briefly. Never overlap.
         a.end = b.start - min_gap if b.start - a.end < 0.5 else min(a.end + 0.25, b.start - min_gap)
