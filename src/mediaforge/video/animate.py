@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import mimetypes
 import subprocess
+import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -22,6 +23,9 @@ WEB = Path(__file__).parent / "scene_web"
 ORIGIN = "http://mediaforge.scene"  # served from WEB via request routing; nothing listens on the network
 LAYOUTS = ("bullets", "stat", "3d")
 SHAPES = ("globe", "cube", "torus", "network")
+# GSAP SplitText effects for titles and bullets (scene.html TEXT_FX), picked from the scene's mood.
+TEXT_FX = ("rise", "blur", "wave", "type")
+MOOD_TEXT_FX = {"calm": "blur", "reflective": "blur", "playful": "wave", "tense": "type", "urgent": "type"}
 
 
 def available() -> bool:
@@ -52,6 +56,17 @@ def layout_of(sc: dict[str, Any], index: int) -> str:
     return "3d" if index == 0 else "bullets"
 
 
+def text_fx_for(sc: dict[str, Any]) -> str:
+    """The plan's `text_fx` when valid, else from the mood (rise when the mood says nothing)."""
+    fx = sc.get("text_fx")
+    return fx if fx in TEXT_FX else MOOD_TEXT_FX.get(sc.get("mood") or "", "rise")
+
+
+def _nfc(text: str) -> str:
+    # SplitText splits per code point: a decomposed "ể" (e + two marks) would become three animated pieces.
+    return unicodedata.normalize("NFC", text)
+
+
 class Renderer:
     """One Chromium for a whole video; `scene()` renders one slide to an MP4."""
 
@@ -59,12 +74,13 @@ class Renderer:
         self.page, self.width, self.height = page, width, height
 
     def scene(self, out: Path, *, title: str, bullets: list[str], seconds: float, theme: str = "midnight",
-              layout: str = "bullets", shape: str = "globe", stat: dict | None = None, background: str | None = None,
+              layout: str = "bullets", shape: str = "globe", text_fx: str = "rise", stat: dict | None = None, background: str | None = None,
               counter: str = "", footer: str = "", progress: tuple[float, float] = (0.0, 0.0), fps: int = 30) -> Path:
         self._background = background if background and Path(background).is_file() else None
         self.page.goto(f"{ORIGIN}/scene.html")
         self.page.wait_for_function("window.__ready === true")
-        data = {"title": title, "bullets": bullets[:5], "seconds": seconds, "width": self.width, "height": self.height,
+        data = {"title": _nfc(title), "bullets": [_nfc(b) for b in bullets[:5]],
+                "text_fx": text_fx if text_fx in TEXT_FX else "rise", "seconds": seconds, "width": self.width, "height": self.height,
                 "colors": colors(theme), "layout": layout if layout in LAYOUTS else "bullets",
                 "shape": shape if shape in SHAPES else "globe", "stat": stat, "background": bool(self._background),
                 "counter": counter, "footer": footer, "progress0": progress[0], "progress1": progress[1]}

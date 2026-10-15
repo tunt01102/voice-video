@@ -46,7 +46,7 @@ Maintainer-only dev skills found inside `motiondivision/motion` and `remotion-de
 | `remotion-*` (11, all but `remotion-saas`) | remotion-dev/skills | hand-built Remotion videos (create, markup, captions, render, studio, maps, …) |
 | `dotlottie-web` | LottieFiles/dotlottie-web (MIT) | Lottie assets, if adopted |
 
-Engine: `slides_engine="animated"` on explainer videos — see SDD §7.2 and `src/mediaforge/video/animated.py`.
+GSAP 3.15.0 + SplitText vendored 2026-10-16 for slide text effects. Engine: `slides_engine="animated"` on explainer videos — see SDD §7.2 and `src/mediaforge/video/animated.py`.
 
 ## Coverage after this change
 

@@ -473,6 +473,7 @@ def build_visuals(p: dict[str, Any], plan_data: dict[str, Any], out: Path, durat
                 pending.append((clip, dict(
                     title=sc.get("slide_title") or plan_data["title"], bullets=sc.get("bullets") or [], seconds=need,
                     theme=p.get("theme", "midnight"), layout=animate.layout_of(sc, i), shape=sc.get("shape") or "globe",
+                    text_fx=animate.text_fx_for(sc),
                     stat=sc.get("stat") if isinstance(sc.get("stat"), dict) else None, background=bg,
                     counter=f"{i + 1:02d} / {len(scenes_in):02d}", footer=plan_data.get("title") or "",
                     progress=(sum(durations[:i]) / total, sum(durations[:i + 1]) / total))))

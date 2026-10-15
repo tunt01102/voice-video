@@ -303,7 +303,8 @@ result exposes as `report.music_credit` and the dashboard shows under the video.
 - **Explainer**: input = markdown slides (`# title` / bullets per slide, `> note` =
   narration) or a brief the LLM turns into slides; slides rendered by Pillow; or
   input = a screen recording + script → voice-over + subtitles laid over the recording.
-- **Animated explainer** (`slides_engine="animated"`, 2026-10-15): each slide is an HTML scene — word-by-word title,
+- **Animated explainer** (`slides_engine="animated"`, 2026-10-15): each slide is an HTML scene — title and bullets
+  animated with GSAP SplitText (2026-10-16; effect from the scene mood: rise / blur / wave / type, or plan `text_fx`),
   bullets arriving across the narration, count-up `stat` slides, rotating three.js `3d` slides, ambient drift,
   deck progress bar — rendered at 30 fps by stepping an anime.js timeline (`__seek(t)`, never the clock) in
   headless Chromium and piping JPEG frames into FFmpeg. Clip length = slot + 0.5 s cross-fade, so compose,
