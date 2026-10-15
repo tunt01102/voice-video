@@ -67,7 +67,9 @@ for briefs. In `slides_markdown`, put directive lines under a slide's `# Title` 
   `settings.ffmpeg` → `slides/slide_NN.mp4`, length = narration slot + 0.5 s cross-fade.
 - `pipelines.build_visuals` uses it when `kind == "explainer"` and `slides_engine == "animated"`;
   compose, subtitles, music, cards are unchanged. Clips are re-rendered only when the slot length changed.
-- Burned-in subtitles own the bottom band: keep slide content above ~86 % height (40 % on 9:16).
+- Burned-in subtitles own the bottom band: keep slide content above ~86 % height (above 60 % on 9:16, where the
+  subtitles sit at MarginV 520/1920). On 9:16 the `3d` canvas is a band at 7–28 % with the text below it.
+  `#content` shrinks its type (down to 0.55×) until the text fits its box — never let text overflow.
 - Vendored libs: `scene_web/vendor/` (anime.js 4.5.0, three.js r186 bundled with esbuild — MIT; GSAP 3.15.0 +
   SplitText — GSAP no-charge licence, allowed 2026-10-16), licence notes beside them.
 
