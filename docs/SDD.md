@@ -242,7 +242,35 @@ provenance: SDD-stock-voices.md.
    WER for EN. Lexicon terms and brand-like tokens (MediaForge, Block8, API) are passed to
    Whisper as an `initial_prompt` hint and diff blocks made only of them are excluded, because
    ASR cannot spell back a correctly spoken brand name ("Media4"). Duration sanity
-   (tokens/sec) catches babble/truncation.
+   (tokens/sec, expected length at least 0.5 s) catches babble/truncation.
+   **Very short sentences** (≤ 3 syllables, `speak.is_short`; 2026-10-16). Under a second of audio, Whisper often
+   mishears ("Chào bạn" → "Chào bà") or hallucinates ("Hãy subscribe cho kênh…"). A short sentence is heard alone
+   first. A lone one (no neighbour) is padded with 0.3 s of silence. Only when the alone hearing is **garbage** is
+   it heard a second time, joined to its neighbour (`speak.Context`): the previous sentence, or else the next one,
+   synthesised early and reused. Garbage = a repeat, a judge error, twice the words, or under 30 % of the syllables
+   shared. In the second hearing only its own words are scored (`asr.error_rate(focus=…)`); words at the seam
+   with the context count for neither. A near miss stays a failure, because in context Whisper's language prior
+   papers over a changed particle.
+   Measured on the data-store copy with gi-ng-t: 12 short sentences, each with a neighbour, read by both engines
+   at 2 seeds, plus a wrong variant of each ("Chào bà.", "Tạm dừng.", "Chú ý nha.", …). The same takes were scored
+   both ways:
+
+   | Judge | Correct takes passed | Wrong takes caught |
+   |---|---|---|
+   | alone (before) | 31/48 | 48/48 |
+   | context always | 41/48 | 45/48 (the 3 misses: "Chú ý nha" heard as "nhé") |
+   | **context only for a garbage hearing (shipped)** | **36/48** | **48/48** |
+
+   The 30 % cut was chosen on these same 96 takes. `eval voice --voice gi-ng-t` (no neighbours, so it measures only
+   the padding and the duration floor): 35/41 before, 34/41 after. The one flip, "dot V.N.", comes from VoxCPM
+   synthesising a different take on the same seed, not from the padding: on 6 fresh takes, alone and padded gave
+   the same scores. The earlier pass was also doubtful: the take was heard as "dot den" and scored 0.0.
+   **Regional voices** (2026-10-16): a voice whose profile has `region` Trung or Nam is judged with that region's
+   tone merges (`voice/region.py`). A syllable heard with the same letters and a tone of the same group is not a
+   mistake: Nam hỏi~ngã; Trung sắc~hỏi~ngã~nặng (all oblique tones). Every other difference still counts. LLM
+   respellings of ordinary Vietnamese words are dropped for these voices, so a regional reading is never "fixed"
+   the Northern way. Lessons were already blocked by reading-gate rules 3–4. Results:
+   [SDD-stock-voices.md](SDD-stock-voices.md) §5.5.
 5. **Self-repair** on failure (max 4 attempts per sentence, keep best, stop after 2 that do not improve). The
    strategy order depends on the failure class (repeat → new seed, truncated → phrase-wise, acronym/foreign terms →
    LLM respelling; also engine switch). A respelling is **not** written to the lexicon any more: it becomes a

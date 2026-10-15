@@ -146,3 +146,34 @@ warmth 0.2, clarity 0.8); `eval stock --apply` kept it. Nữ · Bắc · Tự nh
   attempts per sentence. Learned readings stay scoped to the stock voice that produced them (lessons are per voice).
 - Both read slower than the band (4.0 vs 4.8–5.7 syll/s) even at pace 1.1, the top of the grid.
 
+
+### 5.5 Regional tones (2026-10-16, data-store copy, `eval stock` for the 4 Trung/Nam voices)
+
+QA and the review no longer count a regional tone merge as a mistake (`voice/region.py`, SDD §5.2). A syllable
+heard with the same letters and a tone of the voice's region group is forgiven. Every other difference counts. The
+Tones column is now the regional rate. The raw rate is kept beside it (`tone_err_raw`).
+
+**Which tones.** Before the change, Whisper's tone swaps on the two Central presets (both seeds, every fx variant)
+were dominated by oblique (trắc) tones turning into each other: sắc→hỏi 71×, sắc→nặng 40×, hỏi→nặng 17×, sắc→ngã
+10×. Swaps across bằng/trắc were rarer but real: nặng→huyền 55×, huyền→ngang 36×, nặng→ngang 31×. On Nữ · Trung,
+the owner's spec "hỏi/ngã, sắc/nặng" lowered the tone error only from 12.1 % to 9.7 %. Merging all oblique tones
+lowered it to 6.0 %. That wider set is what shipped for Trung (**owner decision to confirm**). Swaps across
+bằng/trắc still count. Southern: no hỏi↔ngã swap was heard at all (the Southern presets' tone error is 0.2–1.7 %),
+so Nam hỏi~ngã follows the spec and had no measurable effect. The Southern voices' small gap is clarity, not tones.
+
+| Voice | Composite before → after | Clarity | Tones (raw → regional) | Stability (1st take passes QA) |
+|---|---|---|---|---|
+| Nữ · Trung · Tự nhiên | 74.0 → **82.0** | 83.5 → 90.5 | 63.6 → 82.6 (raw 11.4 %, regional 5.8 %) | 62.5 → 75.0 % |
+| Nam · Trung · Tự nhiên | 69.2 → **75.8** | 83.5 → 86.9 | 59.4 → 73.7 (raw 14.0 %, regional 8.8 %) | 43.8 → 62.5 % |
+| Nữ · Nam · Tin tức | 92.0 → 93.1 | 90.5 → 93.3 | 95.0 → 96.9 | 81.2 → 81.2 % |
+| Nam · Nam · Tin tức | 94.4 → 94.9 | 93.7 → 94.7 | 99.5 → 99.5 | 87.5 → 87.5 % |
+
+- The before run reproduced §5.4 exactly (74.0 / 69.2). After the change, QA picks different takes as best, and the
+  synthesis itself varies slightly between runs, so raw tone errors moved a little (12.1 → 11.4 %, 13.5 → 14.0 %).
+  The Southern clarity gain (CER 4.8 → 3.3 %) is take-to-take variation of this kind, not the hỏi~ngã rule.
+- Pace is unchanged (both Central voices ≈ 4.0 syll/s, still below the band). Elapsed 1 281 s before, 438 s after
+  (fewer repairs).
+- Learning: reading-gate rules 3 (a correct Vietnamese word is never respelled) and 4 (tone-only change) already
+  blocked "Bắc hoá" lessons. Now the repair loop also drops LLM respellings of ordinary words for these voices. A
+  smoke run of Nữ · Trung on the copy passed both test sentences. "thời sự → Thơi Sư" is still scored, because
+  huyền/nặng → ngang crosses bằng/trắc.
