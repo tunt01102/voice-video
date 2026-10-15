@@ -252,6 +252,15 @@ else's voice needs recorded consent (Giọng nói tab). MCP: `revoice_video(job_
      English term stays on one engine (VieNeu reads English words inside a Vietnamese sentence), so the voice
      never changes at the English words — even with `best` routing. ▶ previews it before saving. Saved as
      `english` in the lexicon; MCP/REST: `english_terms=["Claude Code", "pull request"]`.
+   - **Cụm nhiều chữ.** Words like "pull request", "slash command" or "Claude Code" are listed as one term, so you tick
+     **tiếng Anh** once.
+   - **Only your answers are saved.** Readings that arrive with an MCP/REST request (`pronunciations`,
+     `verified_terms`, `english_terms`) apply to that video only. They are never saved, and a term you already
+     answered keeps your answer. The job report lists these terms under `job_terms.kept_owner`. Answers you give in the dashboard are saved as before.
+   - **Một giọng cho cả video.** A Vietnamese video reads every sentence with one engine (VieNeu under `best`). The
+     engine is never switched during repair, so the voice does not change between sentences. It is also about 2.7×
+     faster (measured 484 s → 180 s on an 18-sentence script). Turn it off with `one_voice=false`; for `speak` it is opt-in
+     (`one_voice=true`, CLI `--one-voice`).
 3. **Speech-recognition check.** Every sentence is synthesised and transcribed back with Whisper large-v3-turbo, then compared with the script:
    - Vietnamese is scored as the mean of syllable WER and CER.
    - English is scored as WER.

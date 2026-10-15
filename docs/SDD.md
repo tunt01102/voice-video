@@ -212,6 +212,29 @@ provenance: SDD-stock-voices.md.
    Measured on the data-store copy (gi-ng-t, `best`, 3 mixed sentences): default → VoxCPM for sentence 1 and
    VieNeu for 2–3 (voice change), 70 s; English-kept → VieNeu for all three, 1 attempt each, 31 s, Whisper heard
    every English term as written. Revoice carries the marks to the new voice.
+   **Multi-word terms** (2026-10-16): the pre-scan joins adjacent foreign / brand / acronym words separated only by
+   spaces into one term ("pull request", "slash command", "Claude Code", "AI agent"; at most 4 words, a longer
+   English clause stays as single words), so "tiếng Anh" is ticked once. A longer run is cut around a part that also
+   stands alone in the script or is a multi-word lexicon term ("review pull request" → "review" + "pull request").
+   A standalone word is counted only where it is not inside a listed phrase (`pronounce._runs`, `_split_known`).
+   **Whose answers are saved** (2026-10-16): only the owner's. Plan-gate answers in the dashboard are sent with
+   `from_owner` and stored as `owner_terms` → saved to the lexicon before the voice stage, as before. Readings that
+   come with a request — MCP/REST `pronunciations`, `verified_terms`, `english_terms` — are **job-local**
+   (`pronounce.job_terms`): applied to that job only (`synth_sentence(readings=…)`, part of the cache key), never
+   written to the lexicon, and a term the owner already answered (`manual` / `verified` / `english`, global or for
+   the voice, case-insensitive) keeps the owner's answer. Conflicts are listed in the report as
+   `job_terms.kept_owner` (term → {owner, request}). Revoice passes a request's terms job-local to the new voice and
+   carries only the owner's answers into its lexicon. (Incident 2026-10-16: an MCP job overwrote "Claude Code →
+   clốt cốt" and "GitHub → gít háp".)
+   **Một giọng cho cả video** (`one_voice`, 2026-10-16): every sentence of a job uses one engine, chosen once by
+   `speak.job_engine` — a stock voice's engine, an explicit engine, the voice's route, or under `best` the
+   language default (VieNeu for vi; a blend keeps a blend-capable engine). `synth_sentence(lock_engine=True)`
+   drops the other engine from the first pass, from repair (`engine` strategy), from guide prompts and from
+   `engine_route` lessons. Default on for Vietnamese videos (`pipelines.one_voice`: `one_voice=None` → lang == vi),
+   opt-in for `speak`; 🔁 re-reads and revoice keep the job's lock. Measured on the data-store copy (gi-ng-t, route
+   `best`, the 18-sentence script of job a5bde995ad72, cache cleared): default → VieNeu 15 / VoxCPM 3, **4 engine
+   changes between sentences**, 483.6 s, 41 attempts, QA 18/18; `one_voice` → VieNeu 18, **0 changes**, **180.1 s**,
+   24 attempts, QA 18/18 (first take passed 17/18 in both).
 2. **Split** into sentences/clauses ≤ 220 chars.
 3. **Synthesise** each sentence with the routed engine (fixed seed for reproducibility).
 4. **QA**: resample to 16 kHz → Whisper → compare with the normalised input.
@@ -340,8 +363,8 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 | `GET/POST /api/voices`, `GET/PATCH/DELETE /api/voices/{id}` | voice profiles |
 | `POST /api/voices/{id}/samples` | multipart upload/recording → processed sample |
 | `GET/PUT /api/voices/{id}/lexicon`, `GET/PUT /api/lexicon` | pronunciation lexicons |
-| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip, prepare, sing, recite, eval` (+ internal `rerender`, `export`, `resubtitle`, `repronounce`, `blend`, `restage`, `revoice`); video params `review: [plan, visuals]` pause the job in status `waiting` |
-| `POST /api/jobs/{id}/approve`, `/restage`, `/sentences/{i}/accept`, `GET/POST /api/jobs/{id}/rating`, `GET /api/lessons`, `PATCH /api/lessons/{id}`, `GET /api/insights`, `GET /api/incidents`, `POST /api/lint` | review steps, partial re-renders, owner judgement and the lessons store ([SDD-review-upgrade.md](SDD-review-upgrade.md) §11.1) |
+| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip, prepare, sing, recite, eval` (+ internal `rerender`, `export`, `resubtitle`, `repronounce`, `blend`, `restage`, `revoice`); video params `review: [plan, visuals]` pause the job in status `waiting`; `one_voice` (default on for vi videos); `pronunciations` / `verified_terms` / `english_terms` are job-local (§5.2) |
+| `POST /api/jobs/{id}/approve` (`from_owner: true` = dashboard answers, saved to the lexicon), `/restage`, `/sentences/{i}/accept`, `GET/POST /api/jobs/{id}/rating`, `GET /api/lessons`, `PATCH /api/lessons/{id}`, `GET /api/insights`, `GET /api/incidents`, `POST /api/lint` | review steps, partial re-renders, owner judgement and the lessons store ([SDD-review-upgrade.md](SDD-review-upgrade.md) §11.1) |
 | `GET /api/poems`, `GET /api/sing/moods` | Tang poem catalogue (Ngâm thơ tab); moods/styles for sing/recite |
 | `POST /api/jobs/{id}/sentences/{i}/rerender` | `{file?, lang?}` — AI re-renders sentence *i* as a take (recording = guide) |
 | `POST /api/jobs/{id}/repronounce` | `{readings: {term: reading}, format?}` — re-read every sentence containing a term, export (no re-render); `GET /api/jobs/{id}/occurrences?terms=` previews matches |
