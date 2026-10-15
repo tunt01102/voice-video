@@ -15,3 +15,8 @@
   project): Remotion (free individual licence) and GSAP ("no charge" licence) are allowed; MPL-2.0 libs are
   licence-OK but not adopted (no gain yet). Existing slide templates stay on anime.js; never build a no-code visual
   animation editor on GSAP (prohibited use). Licences: docs/SKILLS-REVIEW.md §Licence decisions.
+- Tests: `uv run --with pytest python -m pytest -q` (pytest is not in the venv). E2E/GPU tests only on a copy of the
+  data store (`MEDIAFORGE_DATA_DIR=<copy> uv run mediaforge serve --port 8766`; symlink `music/` before starting) and
+  only when `/api/health` shows `running: null`. Deploy = `scripts/service.sh update`, then check /api/health + logs.
+- Dashboard screenshots: headless Chrome hangs on SSE — wrap it in `perl -e 'alarm 30; exec @ARGV' … --headless=new
+  --virtual-time-budget=8000 --screenshot=…`. New elements inside `.job-out` (flex) need `flex: 1 0 100%`.

@@ -1,7 +1,6 @@
 # SDD — Giọng mẫu (stock presenter voices)
 
-v1.0, 2026-10-15. Status: built on branch `feature/stock-voices` (off `feature/p6-repair-budget`), reviewed on a copy of the data store. Not yet
-deployed to the live service; the owner decides that after listening.
+v1.0, 2026-10-15. Status: merged to `main` (c179c1d) and deployed 2026-10-15; reviewed on a copy of the data store.
 
 ## 1. Goal
 
@@ -123,7 +122,7 @@ Findings:
 ### 5.3 Owner listening
 
 Ten previews (tuned fx), ranked by the composite, are in `~/.local/share/mediaforge/outputs/giong-mau-review/`
-with a rating sheet. **Deployed 2026-10-15 at the owner's request** from the unmerged branch `feature/stock-voices`
+with a rating sheet. **Deployed 2026-10-15 at the owner's request** (first from the branch `feature/stock-voices`, merged to `main` the same day)
 (`scripts/service.sh update`). The `stock_previews` job then ran on the live store and created the 10 profiles,
 2 anchors and 10 previews; the owner's voice is still the default. To roll back, run `scripts/service.sh update`
 from `main`; the stock profiles stay in `voices/stock-*`, and main's dashboard does not list them correctly.

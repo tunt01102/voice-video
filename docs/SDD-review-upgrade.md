@@ -1,6 +1,6 @@
 # SDD — Review and upgrade: Studio UX, staged pipeline, creative direction, learning from mistakes
 
-Status: v1.1 (P6-A…D implemented, see §11; P6-E open) · 2026-10-15 · Owner: tu.dev@block8.ai · Extends [SDD.md](SDD.md) §5, §7, §8, §9, §10, §11
+Status: v1.1 (P6-A…E done, see §11) · 2026-10-15 · Owner: tu.dev@block8.ai · Extends [SDD.md](SDD.md) §5, §7, §8, §9, §10, §11
 
 ## 1. Problem
 
@@ -475,7 +475,7 @@ SDD §10, because none of the above needs it. CSS gets design tokens (`:root` va
 | **P6-B Lessons store + review** | §5.1.1–5.1.3, 5.1.5; ratings; job page (§5.5.2 step 6); Kinh nghiệm tab; undo toasts; app.js modules | Lessons visible and applied with chips; rating stored; digest prints | Done 2026-10-15 |
 | **P6-C Staged pipeline** | §5.3 stages, resume, gates, restage, stage timings, upload validation; Studio flow steps 1–5 | Kill the server mid-visuals → job resumes at visuals; restage one scene ≤ 60 s + compose | Done 2026-10-15 (resume unit-tested with a simulated crash; live restage measured, §11.2) |
 | **P6-D Creative direction** | §5.4.1–5.4.4 art direction, structure templates, hook variants, self-critique, mood motion table, cards, mood music + envelopes | Blind A/B of 3 topics (old vs new) rated by the owner; new wins ≥ 2/3 | Done 2026-10-15 — owner's blind A/B: new style preferred in 3/3 topics |
-| P6-E Evaluate | §5.4.5 candidates, WavLM-SV (already P4) | Licence review done | Open |
+| P6-E Evaluate | §5.4.5 candidates, WavLM-SV (already P4) | Licence review done | Done 2026-10-15 (§11.4; no model added) |
 
 P6-A comes first because it is cheap and stops the active harm (the polluted lexicon). P6-B is next, because
 creative features (P6-D) need ratings to learn from.
