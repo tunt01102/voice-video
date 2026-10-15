@@ -20,6 +20,7 @@ from mediaforge.text import normalize as N
 from mediaforge.tts.base import DEFAULT_ROUTE, VoiceRef, blend_engines, engines_for, get_engine, self_normalises
 from mediaforge.voice import fx as FX
 from mediaforge.voice import profiles
+from mediaforge.voice.region import tone_groups
 
 log = logging.getLogger(__name__)
 Progress = Callable[[float, str], None]
@@ -115,7 +116,8 @@ def _garbage(expected: str, heard: str, lang: str, qa: dict[str, Any]) -> bool:
     return bool(qa.get("repeat") or qa.get("judge")) or len(hyp) >= 2 * len(ref) or shared < 0.3 * max(1, len(ref))
 
 
-def _listen(x: np.ndarray, sentence: str, lang: str, lenient: set[str], ctx: Context | None) -> tuple[str, dict]:
+def _listen(x: np.ndarray, sentence: str, lang: str, lenient: set[str], ctx: Context | None,
+            tones: tuple[frozenset[str], ...] = ()) -> tuple[str, dict]:
     """Transcribe and score one take. Returns (heard, qa).
 
     A short sentence (is_short) with a neighbour is heard alone first; only when that hearing is garbage is it heard
@@ -130,7 +132,7 @@ def _listen(x: np.ndarray, sentence: str, lang: str, lenient: set[str], ctx: Con
             judge_retry = True
             heard = asr.transcribe(clip, lang=lang, initial_prompt=((hint + ". ") if hint else "") + expected,
                                    temperature=0.0)["text"]
-        qa = asr.error_rate(expected, heard, lang, lenient, focus=focus)
+        qa = asr.error_rate(expected, heard, lang, lenient, focus=focus, tone_groups=tones)
         qa["judge_retry"] = judge_retry
         qa["judge"] = asr.judge_error(heard, lang, expected)
         qa["repeat"] = asr.repetition(expected, heard, lang)
@@ -191,7 +193,8 @@ def _tts_text(sentence: str, lang: str, engine_name: str, lexicon: dict[str, str
     return text if self_normalises(engine_name, lang) else N.normalise(text, lang)
 
 
-def _run_attempt(att: Attempt, sentence: str, lang: str, ref, lenient: set[str], ctx: Context | None = None) -> Attempt:
+def _run_attempt(att: Attempt, sentence: str, lang: str, ref, lenient: set[str], ctx: Context | None = None,
+                 tones: tuple[frozenset[str], ...] = ()) -> Attempt:
     engine = get_engine(att.engine)
     t = time.time()
 
@@ -207,7 +210,7 @@ def _run_attempt(att: Attempt, sentence: str, lang: str, ref, lenient: set[str],
     att.seconds = round(time.time() - t, 2)
     # Hint rare spellings to Whisper so correct brand names are not reported as mistakes. Greedy decoding: the
     # sampling fallback is where Whisper hallucinates (CJK on Vietnamese audio).
-    heard, qa = _listen(x, sentence, lang, lenient, ctx)
+    heard, qa = _listen(x, sentence, lang, lenient, ctx, tones)
     qa["dur_ratio"] = round(_duration_ratio(sentence, lang, x), 2)
     att.audio, att.heard, att.qa = x, heard, qa
     att.score = round(qa["score"] + _duration_penalty(sentence, lang, x), 4)
@@ -257,6 +260,14 @@ REPAIR_LIMIT = {"reseed": 2, "engine": 1, "phrases": 1, "respell": 2}
 STALL_LIMIT = 2
 
 
+def native(term: str) -> bool:
+    """Every word of `term` is an ordinary Vietnamese word (no acronym): respelling it can only change its accent."""
+    from mediaforge.text.pronounce import is_vi_syllable
+
+    words = [w.strip(",.;:!?\"'()") for w in term.split()]
+    return bool(words) and all(w and is_vi_syllable(w) and not w.isupper() for w in words)
+
+
 def _overlaps(term: str, english: set[str]) -> bool:
     """A rewrite of `term` would touch one of the English-kept terms (inside it, or containing it)."""
     return any(N.terms_in(e, [term]) or N.terms_in(term, [e]) for e in english)
@@ -304,6 +315,9 @@ def synth_sentence(
             log.info("blend voice %s: engine %s cannot blend, using %s", voice_id, engine, capable[0])
             engine = None
     stock = (voice or {}).get("kind") == "stock"
+    # A Central / Southern voice: its regional tone merges are not mistakes, and native words are never respelled the
+    # Northern way (voice/region.py).
+    tones = tone_groups(voice) if lang == "vi" else ()
     if stock:
         # A stock voice (preset speaker / designed voice) exists in one engine only: no alternates, no "best".
         capable, engine = [voice["engine"]], voice["engine"]  # type: ignore[index]
@@ -347,7 +361,8 @@ def synth_sentence(
                           {e: {t: v[0] for t, v in d.items()} for e, d in lesson_readings.items()}, sorted(judged)]
                          + ([guide["id"]] if guide else []) + (["phrases"] if phrase_first else [])
                          + ([["english", *sorted(eng)]] if eng else [])
-                         + ([["context", context.side, context.text]] if context else []), ensure_ascii=False)
+                         + ([["context", context.side, context.text]] if context else [])
+                         + ([["tones", *sorted(sorted(g) for g in tones)]] if tones else []), ensure_ascii=False)
     key = hashlib.sha256(key_src.encode()).hexdigest()[:24]
     cache_dir = settings.sub("cache", "tts")
     if cache and (cache_dir / f"{key}.wav").exists() and (cache_dir / f"{key}.json").exists():
@@ -384,14 +399,14 @@ def synth_sentence(
     def run(att: Attempt) -> Attempt:
         nonlocal ref
         try:
-            return _run_attempt(att, sentence, lang, ref, lenient, context)
+            return _run_attempt(att, sentence, lang, ref, lenient, context, tones)
         except Exception:
             # The reference clip was deleted while this job ran: re-resolve (falls back to a clip that exists) once.
             if not ref or not ref.audio_path or Path(ref.audio_path).exists():
                 raise
             stale, ref = ref.audio_path, profiles.voice_ref(voice_id, lang)
             log.warning("reference %s vanished mid-job; retrying with %s", stale, ref.audio_path if ref else None)
-            return _run_attempt(att, sentence, lang, ref, lenient, context)
+            return _run_attempt(att, sentence, lang, ref, lenient, context, tones)
 
     p_phrases, p_pauses = punct_phrases(sentence)
     if len(p_phrases) < 2 and L.is_long(sentence, lang):  # long and unpunctuated: split before conjunctions
@@ -468,7 +483,7 @@ def synth_sentence(
             tried_phrases = True
         else:                     # ask the LLM for phonetic respellings of the misheard words
             respell = {**b.respell, **{t: v for t, v in _respell_with_llm(sentence, lang, b.qa, b.heard).items()
-                                       if not _overlaps(t, eng)}}
+                                       if not _overlaps(t, eng) and not (tones and native(t))}}
             if respell == b.respell:
                 att = derive(b, b.engine, seed + 101 * (step + 1), 0.6, b.respell)
             else:
@@ -527,6 +542,7 @@ def synth_sentence(
         "lint": [k for k in lint_readings], "lessons": applied, "judge_accepted": sorted(judged),
         **({"english": sorted(eng)} if eng else {}),
         **({"context": chosen.qa.get("context")} if context else {}),
+        **({"region": voice.get("region")} if tones else {}),  # type: ignore[union-attr]
     }
     A.save(cache_dir / f"{key}.wav", chosen.audio)  # type: ignore[arg-type]
     (cache_dir / f"{key}.json").write_text(json.dumps(report, ensure_ascii=False))

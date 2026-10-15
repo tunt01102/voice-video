@@ -182,7 +182,7 @@ def _fake_loop(monkeypatch, scorer):
     monkeypatch.setattr(S, "_respell_with_llm", lambda *a: {"SAP": "sáp"})
     calls = []
 
-    def fake_run(att, sentence, lang, ref, lenient, ctx=None):
+    def fake_run(att, sentence, lang, ref, lenient, ctx=None, tones=()):
         att.score, att.heard = scorer(att)
         att.qa = {"score": att.score, "missing": ["sap"] if att.score else [], "extra": [], "dur_ratio": 1.0}
         att.audio = np.zeros(A.SR // 10, dtype=np.float32)
