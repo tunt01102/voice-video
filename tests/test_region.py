@@ -12,6 +12,8 @@ def test_only_a_same_letter_swap_inside_a_group_is_forgiven():
     assert regional_variant("tuổi", "tuỗi", NAM) and regional_variant("chữ", "chử", NAM)
     assert not regional_variant("tuổi", "tuỗi", ())                  # a Northern voice keeps every tone
     assert not regional_variant("số", "sổ", NAM)                      # sắc → hỏi is not a Southern merge
+    assert regional_variant("số", "sổ", TRUNG) and regional_variant("sự", "sử", TRUNG)
+    assert not regional_variant("thời", "thơi", TRUNG)                # huyền → ngang (bằng) still counts
     assert not regional_variant("nội", "lội", TRUNG)                  # other letters: always a mistake
     assert not regional_variant("mới", "mơi", TRUNG)                  # sắc → ngang: not a merge
     assert tone_groups({"region": "Nam"}) == NAM and tone_groups({"region": "Bắc"}) == () and tone_groups(None) == ()

@@ -1,7 +1,7 @@
 """Regional tones: QA for Central and Southern voices (docs/SDD-stock-voices.md §5.5).
 
-Whisper hears Vietnamese the Northern way. A Southern or Central speaker who merges hỏi and ngã (and, in parts of the
-Centre, sắc and nặng) is reading correctly for their region, so QA does not count those swaps as mistakes, and the
+Whisper hears Vietnamese the Northern way. A Southern or Central speaker who merges hỏi and ngã (and, in the
+Centre, the oblique tones sắc / hỏi / ngã / nặng) is reading correctly for their region, so QA does not count those swaps as mistakes, and the
 repair loop does not "fix" them by respelling native words the Northern way. Only a syllable heard with exactly the
 same letters and a tone from the same regional group is forgiven; any other difference still fails.
 """
@@ -13,10 +13,13 @@ from typing import Any
 
 from mediaforge.sing.tones import tone_of
 
-# Tone pairs a region does not keep apart (as heard by a Northern-trained judge), by profile `region`.
+# Tones a region does not keep apart (as heard by a Northern-trained judge), by profile `region`. Measured on the two
+# Central presets (eval stock 2026-10-16, SDD-stock-voices §5.5): Whisper swapped sắc→hỏi 71×, sắc→nặng 40×, hỏi→nặng
+# 17×, sắc→ngã 10× — the oblique (trắc) tones blur into each other; hỏi~ngã + sắc~nặng alone forgave only a fifth.
+# Swaps across bằng/trắc (nặng→huyền, huyền→ngang, ngang→sắc) still count.
 REGION_TONES: dict[str, tuple[frozenset[str], ...]] = {
     "Nam": (frozenset({"hoi", "nga"}),),
-    "Trung": (frozenset({"hoi", "nga"}), frozenset({"sac", "nang"})),
+    "Trung": (frozenset({"sac", "hoi", "nga", "nang"}),),
 }
 _TONE_MARKS = {"́", "̀", "̉", "̃", "̣"}
 
