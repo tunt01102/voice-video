@@ -743,7 +743,8 @@ async function loadVoices() {
   voices = await api("/api/voices");
   prompts = await api("/api/voices/prompts");
   const sel = $("#voice-select"); const cur = sel.value || store.get("voice", "");
-  sel.innerHTML = `<option value="">Mặc định</option>` + voices.map((v) => `<option value="${v.id}">${v.kind === "stock" ? "Giọng mẫu: " : ""}${esc(v.name)}${v.default ? " ★" : ""}</option>`).join("");
+  const dv = voices.find((v) => v.default);
+  sel.innerHTML = `<option value="">Mặc định${dv ? ` · ${esc(dv.name)}` : ""}</option>` + voices.map((v) => `<option value="${v.id}">${v.kind === "stock" ? "Giọng mẫu: " : ""}${esc(v.name)}${v.default ? " ★" : ""}</option>`).join("");
   sel.value = cur; if (sel.value !== cur) sel.value = "";
   applyVoiceFx();
   renderStock();
@@ -880,6 +881,8 @@ function renderStock() {
       <div class="meta"><b>${esc(v.name)}</b><small class="muted">${v.preview_ready
         ? `${v.engine === "voxcpm" ? "giọng thiết kế" : "giọng có sẵn"}${v.preview?.duration ? ` · ${Math.round(v.preview.duration)} giây` : ""}`
         : "chưa có bản nghe thử"}</small></div>
+      ${v.default ? `<span class="badge done" title="Giọng dùng khi không chọn giọng nào">mặc định</span>`
+        : `<button class="ghost small def" title="Dùng giọng này khi không chọn giọng nào (dashboard, MCP, CLI)">★</button>`}
       <button class="ghost small use">Dùng</button></div>`).join("");
   $$("#stock-list .play").forEach((b) => b.onclick = () => {
     const id = b.closest(".stock-item").dataset.id;
@@ -894,6 +897,12 @@ function renderStock() {
     const id = b.closest(".stock-item").dataset.id;
     $("#voice-select").value = id; store.set("voice", id); applyVoiceFx();
     toast(`Đã chọn “${voices.find((v) => v.id === id).name}” cho các video/giọng đọc mới`);
+  });
+  $$("#stock-list .def").forEach((b) => b.onclick = async () => {
+    const v = voices.find((x) => x.id === b.closest(".stock-item").dataset.id);
+    if (!confirm(`Đặt “${v.name}” làm giọng mặc định? Mọi video/giọng đọc không chọn giọng sẽ dùng giọng này.`)) return;
+    await api(`/api/voices/${v.id}/default`, { method: "POST" });
+    toast(`Giọng mặc định: “${v.name}”`); loadVoices();
   });
   const build = $("#stock-build");
   if (build) build.onclick = async () => {
