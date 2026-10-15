@@ -244,7 +244,8 @@ def create_app() -> FastAPI:
 
         body: {stage: plan|visuals, plan?: {title?, scenes?: [{narration?, visual_prompt?, from?}], art_direction?, hook?},
                pronunciations?: {term: reading}, verified_terms?: [term], english_terms?: [term], lexicon_voice?,
-               skip_rest?: bool}
+               from_owner?: bool, skip_rest?: bool}
+        from_owner (the dashboard) saves the term answers to the lexicon; without it they apply to this job only.
         """
         from mediaforge import pipelines
 
@@ -259,9 +260,14 @@ def create_app() -> FastAPI:
         if body.get("skip_rest"):
             approved = list(dict.fromkeys([*approved, *(params.get("review") or [])]))
         params["approved"] = approved
-        for k in ("pronunciations", "verified_terms", "english_terms", "lexicon_voice"):
-            if body.get(k):
-                params[k] = body[k]
+        keys = ("pronunciations", "verified_terms", "english_terms", "lexicon_voice")
+        if body.get("from_owner"):
+            # The owner's own answers at the dashboard's plan gate: saved to the lexicon before the voice stage.
+            params["owner_terms"] = {k: body[k] for k in keys if body.get(k)}
+        else:  # any other client: job-local, never saved, never over the owner's answers (pipelines.request_terms)
+            for k in keys:
+                if body.get(k):
+                    params[k] = body[k]
         out = Path(job["result"]["out"])
         if stage == "plan" and body.get("plan"):
             try:

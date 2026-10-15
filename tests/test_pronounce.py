@@ -89,3 +89,14 @@ def test_lexicon_phrase_splits_a_longer_run():
     assert {"review", "pull request"} <= found
     found = terms(P.scan("Hãy review pull request này.", "vi", use_llm=False))
     assert found == {"review pull request"}             # no other evidence: one term, ticked once
+
+
+def test_job_terms_never_override_owner_answers():
+    P.remember("vi", {"PNJ": "Pi En Di"}, ["Carroll"], english=["GitHub"], voice="jt")
+    t = P.job_terms("vi", "jt", {"PNJ": "Pê En Giây", "KOL": "cây âu eo", "pnj": "x"}, ["Carroll", "ESG"],
+                    ["GitHub", "Carroll", "slash command"])
+    assert t["readings"] == {"KOL": "cây âu eo", "ESG": "ESG"} and t["english"] == ["slash command"]
+    assert t["kept_owner"] == {"PNJ": {"owner": "Pi En Di", "request": "Pê En Giây"},
+                               "pnj": {"owner": "Pi En Di", "request": "x"},
+                               "Carroll": {"owner": "Carroll", "request": "tiếng Anh"}}
+    assert "KOL" not in N.load_lexicon("jt")["vi"]                       # job-local: nothing saved

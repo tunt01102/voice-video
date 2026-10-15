@@ -53,7 +53,7 @@ function planGate(job, out) {
       else if ($(".ps-say", tr).value.trim()) readings[tr.dataset.term] = $(".ps-say", tr).value.trim();
     });
     const body = { stage: "plan", skip_rest: skip, plan: { title: $(".g-title", box).value, scenes: scenesOut, art_direction: adOut },
-      pronunciations: readings, verified_terms: verified, english_terms: english };
+      pronunciations: readings, verified_terms: verified, english_terms: english, from_owner: true };
     if (hook) body.plan.hook = +hook.value;
     $(".g-status", box).textContent = "Đang gửi…";
     try { const j = await api(`/api/jobs/${job.id}/approve`, { method: "POST", body: JSON.stringify(body) }); updateJob(j); followJob(j.id); }

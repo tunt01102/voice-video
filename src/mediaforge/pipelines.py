@@ -282,10 +282,16 @@ def sentence_spans(sentences: list[str], words: list[dict]) -> list[list[float]]
 def run_tts(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
     out = _out_dir("tts", job_id)
     preview = bool(p.get("preview"))  # "Nghe thử": nobody reads timings or subtitles of a preview
+    english, terms = p.get("english_terms"), None
+    if english and not p.get("from_owner"):  # a request's terms never override the owner's own answers
+        terms = request_terms(p, p.get("lang") if p.get("lang") in ("vi", "en") else "vi", p.get("voice"))
+        english = terms["english"]
     r = S.speak(D.strip_markers(p["text"]), voice=p.get("voice"), lang=p.get("lang", "auto"), engine=p.get("engine"),
                 fx=p.get("fx"), out_dir=out, name="voice", seed=int(p.get("seed", 1234)), progress=progress,
                 overrides=p.get("overrides"), regen=p.get("regen"), takes=p.get("takes"), timings=not preview,
-                english=p.get("english_terms"), one_voice=bool(p.get("one_voice")))
+                english=english, one_voice=bool(p.get("one_voice")))
+    if terms:
+        r["job_terms"] = terms
     r["sentence_spans"] = sentence_spans([x["text"] for x in r["sentences"]], r["words"])
     if p.get("subtitles", not preview) and r["words"]:
         r["subtitles"] = subtitles.write_all(r["words"], out / "voice")
@@ -663,6 +669,18 @@ def one_voice(p: dict[str, Any], lang: str) -> bool:
     return lang == "vi" if v is None else bool(v)
 
 
+def request_terms(p: dict[str, Any], lang: str, voice: str | None) -> dict[str, Any]:
+    """The request's pronunciations / verified_terms / english_terms (MCP, REST): this job only, never saved, and
+    never over the owner's own lexicon answers (pronounce.job_terms). The owner's dashboard answers are `owner_terms`
+    and are saved before the voice stage."""
+    from mediaforge.text import pronounce
+    from mediaforge.voice import profiles
+
+    base = profiles.base_voice(voice or profiles.default_voice())
+    return pronounce.job_terms(lang, base, p.get("pronunciations"), p.get("verified_terms") or [],
+                               p.get("english_terms") or [])
+
+
 def voice_stage(p: dict[str, Any], plan_data: dict[str, Any], out: Path, *, lang: str, voice: str | None,
                 width: int, height: int, progress: Progress) -> dict[str, Any]:
     """Narration per scene → out/voice/scene_NN.wav, out/voice.wav (with silence under the cards), word timings,
@@ -670,13 +688,15 @@ def voice_stage(p: dict[str, Any], plan_data: dict[str, Any], out: Path, *, lang
     Missing `cards` in the plan means no cards (a video made before cards existed keeps its timeline)."""
     scenes_in = plan_data["scenes"]
     scene_audio, scene_reports = [], []
+    terms = request_terms(p, lang, voice)
     vprog = _sub(progress, 0.05, 0.40)
     for i, sc in enumerate(scenes_in):
         vprog(i / len(scenes_in), f"voice {i + 1}/{len(scenes_in)}")
         r = S.speak(sc["narration"], voice=voice, lang=lang, engine=p.get("engine"), fx=p.get("fx"),
                     out_dir=out / "voice", name=f"scene_{i + 1:02d}", seed=int(p.get("seed", 1234)) + 100 * i,
                     timings=False, overrides=p.get("overrides"), regen=p.get("regen"), takes=p.get("takes"),
-                    english=p.get("english_terms"), one_voice=one_voice(p, lang))
+                    english=terms["english"], readings=terms["readings"],
+                    one_voice=one_voice(p, lang))
         scene_audio.append(A.load(r["audio"]))
         scene_reports.append(r)
     voice_track = A.crossfade_concat(scene_audio, [SCENE_GAP] * (len(scene_audio) - 1), fade=0.005)
@@ -691,7 +711,7 @@ def voice_stage(p: dict[str, Any], plan_data: dict[str, Any], out: Path, *, lang
     tr = asr.transcribe(out / "voice.wav", lang=lang)
     words = [w.as_dict() for w in asr.align_script(full_text, tr["words"], len(voice_track) / A.SR)]
     subs = subtitles.write_all(words, out / "subtitles", width=width, height=height, karaoke=p.get("karaoke"))
-    vs = {"scene_reports": scene_reports, "durations": durations, "words": words, "subs": subs}
+    vs = {"scene_reports": scene_reports, "durations": durations, "words": words, "subs": subs, "job_terms": terms}
     (out / "voice.json").write_text(json.dumps(vs, ensure_ascii=False))
     return vs
 
@@ -777,17 +797,21 @@ def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
         voice_wav = out / "voice.wav"
     else:
         ts = time.time()
-        if p.get("pronunciations") or p.get("verified_terms") or p.get("english_terms"):
-            # Readings the owner gave before rendering (pre-scan): save them so this and later renders use them.
-            report["pronunciations"] = pronounce.remember(lang, p.get("pronunciations") or {}, p.get("verified_terms") or [],
-                                                          voice=p.get("lexicon_voice"),
-                                                          english=p.get("english_terms") or [])
+        own = p.get("owner_terms") or {}
+        if own.get("pronunciations") or own.get("verified_terms") or own.get("english_terms"):
+            # The owner's answers at the dashboard's plan gate: saved, so this and later renders use them. A request's
+            # own terms (MCP / REST) are job-local instead (request_terms in voice_stage).
+            report["pronunciations"] = pronounce.remember(lang, own.get("pronunciations") or {},
+                                                          own.get("verified_terms") or [], voice=own.get("lexicon_voice"),
+                                                          english=own.get("english_terms") or [])
         if "cards" not in plan_data:
             plan_data["cards"] = card_plan(p, plan_data, kind=kind, aspect=aspect, music_id=music_id)
             (out / "plan.json").write_text(json.dumps(plan_data, ensure_ascii=False, indent=2))
         vs = voice_stage(p, plan_data, out, lang=lang, voice=voice, width=W, height=H, progress=progress)
         scene_reports, durations, words, subs = vs["scene_reports"], vs["durations"], vs["words"], vs["subs"]
         voice_wav = out / "voice.wav"
+        if vs["job_terms"]["readings"] or vs["job_terms"]["english"] or vs["job_terms"]["kept_owner"]:
+            report["job_terms"] = vs["job_terms"]
         timings["voice"] = round(time.time() - ts, 1)
         done("voice")
 
