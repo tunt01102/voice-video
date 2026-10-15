@@ -116,7 +116,8 @@ Notes on the inputs:
   - `- bullet` lines are bullet points
   - `> narration` lines are what the voice says
 - **Animated slides** (`--animated`, dashboard "Kiểu slide: Động", MCP `slides_engine="animated"`): titles and
-  bullets move in time with the narration, a slide about one number counts it up, and big-idea slides get a
+  bullets move in time with the narration (letters flip up, sharpen from a blur, bounce in or are typed — chosen
+  from each slide's mood), a slide about one number counts it up, and big-idea slides get a
   rotating 3D object. From a brief, Claude picks each slide's layout; with markdown slides the first slide is 3D and
   the rest are bullets. It adds about 1–1.5 s of rendering per second of video. Needs Playwright's Chromium
   once: `uv run playwright install chromium --only-shell` (installed Google Chrome is used if it's missing).

@@ -22,7 +22,13 @@
   body.vertical.split #content { right: 8%; top: 9%; }
   #bar { height: calc(10 * var(--u)); width: calc(120 * var(--u)); background: var(--accent); border-radius: 99px; transform-origin: left center; margin-bottom: calc(30 * var(--u)); }
   #title { color: var(--title); font-weight: 700; font-size: calc(76 * var(--u)); line-height: 1.16; letter-spacing: -.01em; }
-  #title .w { display: inline-block; white-space: pre; }
+  /* hidden until their tween starts: an anime.js tween only applies its from-value once reached */
+  #bullets li, #stat { opacity: 0; }
+  #bullets li .dot { transform: scale(0); }
+  /* SplitText pieces: no kerning, so splitting into chars never shifts a letter */
+  #title, #bullets .txt { font-kerning: none; text-rendering: optimizeSpeed; }
+  #title .c, #bullets .c { transform-style: preserve-3d; }
+  .caret { display: inline-block; width: .08em; height: .95em; margin-left: .06em; vertical-align: -.1em; background: var(--accent); }
   #bullets { list-style: none; margin-top: calc(48 * var(--u)); }
   #bullets li { position: relative; color: var(--text); font-size: calc(44 * var(--u)); line-height: 1.3; padding-left: calc(56 * var(--u)); margin-bottom: calc(28 * var(--u)); }
   #bullets li .dot { position: absolute; left: calc(4 * var(--u)); top: calc(18 * var(--u)); width: calc(20 * var(--u)); height: calc(20 * var(--u)); border-radius: 50%; background: var(--accent); box-shadow: 0 0 calc(18 * var(--u)) var(--accent); }
@@ -40,9 +46,10 @@
   body.vertical #foot { font-size: calc(30 * var(--u)); }
   #three { position: absolute; right: 2%; top: 8%; width: 46%; height: 84%; }
   body.vertical #three { left: 0; right: 0; top: auto; bottom: 18%; width: 100%; height: 44%; }
-  /* top, not bottom: burned-in subtitles own the bottom band */
-  #foot { position: absolute; left: 7.5%; right: 7.5%; top: 5%; display: flex; align-items: center; gap: calc(24 * var(--u)); color: var(--text); font-size: calc(24 * var(--u)); opacity: .8; }
-  body.vertical #foot { top: 4%; }
+  /* top right: burned-in subtitles own the bottom band, chapter labels (subtitles.chapter ass) the top left */
+  #foot { position: absolute; left: 38%; right: 7.5%; top: 5%; display: flex; align-items: center; gap: calc(24 * var(--u)); color: var(--text); font-size: calc(24 * var(--u)); opacity: .8; }
+  body.vertical #foot { top: 4%; left: 34%; right: 6%; }
+  #brand { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
   #track { flex: 1; height: calc(4 * var(--u)); background: rgba(255,255,255,.14); border-radius: 99px; overflow: hidden; }
   #fill { height: 100%; width: 0; background: var(--accent); }
 </style>
@@ -59,24 +66,53 @@
     <ul id="bullets"></ul>
     <div id="stat"></div>
   </div>
-  <div id="foot"><span id="num"></span><div id="track"><div id="fill"></div></div><span id="brand"></span></div>
+  <div id="foot"><span id="brand"></span><div id="track"><div id="fill"></div></div><span id="num"></span></div>
 </div>
 <script src="/vendor/anime.umd.min.js"></script>
+<script src="/vendor/gsap.min.js"></script>
+<script src="/vendor/SplitText.min.js"></script>
 <script type="module">
 import * as THREE from "/vendor/three.module.min.js";
 
 const $ = (s) => document.querySelector(s);
-let tl = null, three = null, D = null;
+gsap.registerPlugin(SplitText);
+let tl = null, gt = null, three = null, D = null, caret = null, typedUntil = 0;
 
-function words(el, text) {
-  el.textContent = "";
-  for (const part of text.split(/(\s+)/)) {
-    if (!part) continue;
-    const s = document.createElement("span");
-    s.className = "w"; s.textContent = part; el.appendChild(s);
-  }
-  return el.querySelectorAll(".w");
-}
+// Text effects (GSAP SplitText), chosen per slide from its mood in animate.py. Each adds tweens for one text
+// element to the paused GSAP timeline `gt` at `at` seconds and returns when it finishes.
+const TEXT_FX = {
+  // letters flip up into place
+  rise: (el, at, { title }) => {
+    const sp = SplitText.create(el, { type: "words,chars", charsClass: "c", aria: "none" });
+    gt.from(sp.chars, { opacity: 0, yPercent: 70, rotationX: -85, transformPerspective: 600, transformOrigin: "50% 100%",
+      duration: 0.75, ease: "power4.out", stagger: title ? 0.022 : 0.012 }, at);
+    return at + 0.75 + sp.chars.length * (title ? 0.022 : 0.012);
+  },
+  // words sharpen out of a soft blur (calm, reflective)
+  blur: (el, at, { title }) => {
+    const sp = SplitText.create(el, { type: "words", aria: "none" });
+    gt.from(sp.words, { opacity: 0, filter: "blur(14px)", y: "0.25em", duration: 1.1, ease: "power2.out", stagger: title ? 0.09 : 0.06 }, at);
+    return at + 1.1 + sp.words.length * (title ? 0.09 : 0.06);
+  },
+  // letters pop in with a bounce (playful)
+  wave: (el, at, { title }) => {
+    const sp = SplitText.create(el, { type: "words,chars", charsClass: "c", aria: "none" });
+    gt.from(sp.chars, { opacity: 0, scale: 0, y: "0.5em", rotation: -25, duration: 0.6, ease: "back.out(2.4)",
+      stagger: title ? 0.03 : 0.014 }, at);
+    return at + 0.6 + sp.chars.length * (title ? 0.03 : 0.014);
+  },
+  // typed letter by letter behind a caret (tense, urgent)
+  type: (el, at, { title }) => {
+    const sp = SplitText.create(el, { type: "words,chars", charsClass: "c", aria: "none", ignore: ".caret" });
+    const each = title ? 0.045 : 0.022;
+    gt.from(sp.chars, { autoAlpha: 0, duration: 0.001, stagger: each }, at);
+    if (title) {
+      caret = document.createElement("span"); caret.className = "caret"; el.appendChild(caret);
+      sp.chars.forEach((c, i) => gt.call(() => c.after(caret), null, at + i * each));  // caret follows the typing
+    }
+    return at + sp.chars.length * each;
+  },
+};
 
 function setupThree(shape, accent, W, H) {
   const canvas = $("#three");
@@ -135,7 +171,7 @@ function setupThree(shape, accent, W, H) {
 
 window.__setup = async (data) => {
   D = data;
-  const { createTimeline, stagger } = anime;
+  const { createTimeline } = anime;
   const root = document.documentElement.style;
   for (const [k, v] of Object.entries(data.colors)) root.setProperty(`--${k}`, v);
   const vertical = data.height > data.width;
@@ -151,25 +187,30 @@ window.__setup = async (data) => {
   $("#num").textContent = data.counter || "";
   $("#brand").textContent = data.footer || "";
 
-  const ws = words($("#title"), data.title);
+  $("#title").textContent = data.title;
   const ul = $("#bullets");
   // a stat slide is about its one number: the bullets stay in the narration
   for (const b of (layout === "stat" && data.stat) ? [] : data.bullets) {
     const li = document.createElement("li");
-    li.innerHTML = '<span class="dot"></span>'; li.appendChild(document.createTextNode(b)); ul.appendChild(li);
+    li.innerHTML = '<span class="dot"></span><span class="txt"></span>';
+    li.querySelector(".txt").textContent = b; ul.appendChild(li);
   }
+  await document.fonts.ready;  // split only once the real font is measured
+  const fx = TEXT_FX[data.text_fx] || TEXT_FX.rise;
+  gt = gsap.timeline({ paused: true });
   const S = data.seconds * 1000;
   tl = createTimeline({ autoplay: false, defaults: { ease: "outExpo" } });
-  tl.add("#bar", { scaleX: [0, 1], duration: 900 }, 0)
-    .add(ws, { opacity: [0, 1], translateY: [`${40 * u}px`, 0], filter: ["blur(8px)", "blur(0px)"], duration: 900, delay: stagger(70) }, 150);
+  tl.add("#bar", { scaleX: [0, 1], duration: 900 }, 0);
+  typedUntil = fx($("#title"), 0.15, { title: true });
 
   // Bullets arrive one by one across the slide, roughly following the narration.
   const lis = ul.querySelectorAll("li");
   const first = 900, span = Math.max(S * 0.62 - first, 600);
   lis.forEach((li, i) => {
     const at = first + (lis.length > 1 ? span * i / (lis.length - 1) : 0);
-    tl.add(li, { opacity: [0, 1], translateX: [`${-60 * u}px`, 0], duration: 800 }, at)
+    tl.add(li, { opacity: [0, 1], translateX: [`${-30 * u}px`, 0], duration: 600 }, at)
       .add(li.querySelector(".dot"), { scale: [0, 1.35, 1], duration: 700, ease: "outBack" }, at);
+    fx(li.querySelector(".txt"), at / 1000 + 0.1, { title: false });
   });
 
   if (layout === "stat" && data.stat) {
@@ -195,16 +236,17 @@ window.__setup = async (data) => {
   } else {
     $("#stat").style.display = "none";
   }
-  tl.add("#foot", { opacity: [0, 0.8], duration: 600 }, 400);
   if (layout === "3d") three = setupThree(data.shape || "globe", data.colors.accent, data.width, data.height);
   else $("#three").style.display = "none";
-  await document.fonts.ready;
   if (data.background) await new Promise((ok) => { const i = new Image(); i.onload = i.onerror = ok; i.src = "/bg"; });
   return true;
 };
 
 window.__seek = (t) => {
   tl.seek(Math.min(t * 1000, tl.duration));
+  gt.seek(Math.min(t, gt.duration()), false);
+  // caret blinks (2 Hz) after typing, then goes away
+  if (caret) caret.style.opacity = t < typedUntil ? 1 : t < typedUntil + 1.5 ? (Math.floor(t * 4) % 2 ? 0 : 1) : 0;
   const W = D.width, H = D.height;
   // slow ambient drift so a held slide never looks frozen
   $("#b1").style.transform = `translate(${W * (0.62 + 0.06 * Math.sin(t * 0.35))}px, ${H * (-0.12 + 0.05 * Math.cos(t * 0.3))}px)`;

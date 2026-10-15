@@ -26,12 +26,24 @@ CLI: `mediaforge explainer "brief" --animated --theme block8 --lang vi`.
 | `stat` | `stat: {"value": "87%", "label": "…"}` | count-up number + ring; bullets hidden (say them in narration) |
 | `3d` | optional `shape`: globe / cube / torus / network | title + bullets left, rotating three.js object right |
 
+Text effects (GSAP SplitText) on the title and bullets, from the scene's `mood` unless `text_fx` is set:
+
+| text_fx | mood | look |
+|---|---|---|
+| `rise` (default) | curious, hopeful, triumphant, none | letters flip up into place |
+| `blur` | calm, reflective | words sharpen out of a blur |
+| `wave` | playful | letters pop in with a bounce |
+| `type` | tense, urgent | typed letter by letter behind a blinking caret |
+
 With no layout the first slide is `3d` and the rest are `bullets`. The LLM planner fills `layout`/`stat`/`shape`
 for briefs; for `slides_markdown` edit the plan (`review=["plan"]` or a `plan_file`).
 
 ## How it renders (for code changes)
 
-- `src/mediaforge/video/scene_web/scene.html` — one slide. anime.js timeline (`autoplay:false`) + three.js.
+- `src/mediaforge/video/scene_web/scene.html` — one slide. anime.js timeline (`autoplay:false`) for bar, dots,
+  stat; a paused GSAP timeline for SplitText text effects (`TEXT_FX`); three.js for 3D. Both timelines are
+  seeked in `__seek`. Text is NFC-normalised in animate.py so a Vietnamese letter is never split from its marks;
+  split only after `document.fonts.ready`; no line masks (they clip stacked diacritics like ể).
   Contract: `__setup(data)` once, `__seek(t)` per frame. **Never read the clock** (no `Date.now`,
   `requestAnimationFrame`, CSS transitions/animations): frames must be a pure function of `t`.
 - `src/mediaforge/video/animate.py` — Playwright headless Chromium (bundled shell, falls back to installed
@@ -40,7 +52,8 @@ for briefs; for `slides_markdown` edit the plan (`review=["plan"]` or a `plan_fi
 - `pipelines.build_visuals` uses it when `kind == "explainer"` and `slides_engine == "animated"`;
   compose, subtitles, music, cards are unchanged. Clips are re-rendered only when the slot length changed.
 - Burned-in subtitles own the bottom band: keep slide content above ~86 % height (40 % on 9:16).
-- Vendored libs: `scene_web/vendor/` (anime.js 4.5.0, three.js r186 bundled with esbuild) — MIT, licences beside them.
+- Vendored libs: `scene_web/vendor/` (anime.js 4.5.0, three.js r186 bundled with esbuild — MIT; GSAP 3.15.0 +
+  SplitText — GSAP no-charge licence, allowed 2026-10-16), licence notes beside them.
 
 Check a change: render one slide with `animate.renderer(1920, 1080)` → `scene(...)`, grab a frame with
 `settings.ffmpeg -ss 3 -i slide.mp4 -frames:v 1 x.png` and look at it, then `uv run pytest`.

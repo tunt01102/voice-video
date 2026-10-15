@@ -20,6 +20,19 @@ def test_layout_of():
     assert animate.layout_of({"layout": "3d"}, 4) == "3d" and animate.layout_of({"layout": "weird"}, 3) == "bullets"
 
 
+def test_text_fx_follows_mood_unless_the_plan_says():
+    assert animate.text_fx_for({"mood": "calm"}) == "blur" and animate.text_fx_for({"mood": "urgent"}) == "type"
+    assert animate.text_fx_for({"mood": "playful"}) == "wave" and animate.text_fx_for({}) == "rise"
+    assert animate.text_fx_for({"mood": "calm", "text_fx": "wave"}) == "wave"
+    assert animate.text_fx_for({"mood": "calm", "text_fx": "explode"}) == "blur"
+
+
+def test_text_is_nfc_so_splittext_keeps_diacritics_whole():
+    import unicodedata
+    decomposed = unicodedata.normalize("NFD", "Kiểm thử")
+    assert len(animate._nfc(decomposed)) == len("Kiểm thử") < len(decomposed)
+
+
 def test_colors_follow_theme():
     c = animate.colors("block8")
     assert c["accent"] == "#00c88c" and c["bg1"] == "#0a0c10"
@@ -73,6 +86,7 @@ def test_build_visuals_animated(tmp_path, fake_renderer):
     assert [s["layout"] for s in scenes] == ["3d", "stat"] and scenes[1]["stat"]["value"] == "42"
     assert [s["seconds"] for s in scenes] == [3.5, 5.5] and scenes[0]["theme"] == "ocean"
     assert scenes[0]["counter"] == "01 / 02" and scenes[1]["progress"] == (3 / 8, 1.0)
+    assert [s["text_fx"] for s in scenes] == ["rise", "rise"]
     assert [(v.kind, v.fill, v.duration) for v in vis] == [("video", "hold", 3.0), ("video", "hold", 5.0)]
 
 
@@ -113,5 +127,5 @@ def _chromium() -> bool:
 def test_real_render_is_exact_length(tmp_path):
     with animate.renderer(320, 180) as r:
         out = r.scene(tmp_path / "s.mp4", title="Xin chào thế giới", bullets=["một", "hai"], seconds=1.0,
-                      layout="3d", shape="torus", fps=30)
+                      layout="3d", shape="torus", text_fx="type", fps=30)
     assert abs(A.probe_duration(out) - 1.0) < 0.05

@@ -30,6 +30,8 @@ v3 → v4: `anime.timeline()` → `createTimeline()`, `easing:` → `ease:`, `'e
 `anime.stagger` → `stagger`, `complete` → `onComplete`, `update` → `onUpdate`.
 
 Timing concepts in the installed `gsap-*` skills (position parameter, transforms over layout properties) apply
-directly. The existing templates use anime.js — keep them on it. GSAP is allowed (owner decision 2026-10-16) when a
-new effect needs SplitText / MorphSVG / DrawSVG: vendor `gsap.min.js` + the plugin into `scene_web/vendor/`, build a
-paused `gsap.timeline({ paused: true })` and call `tl.seek(t)` from `__seek` — same determinism rules.
+directly. Layout motion uses anime.js; text effects use GSAP SplitText (vendored, allowed 2026-10-16) on a paused
+`gsap.timeline({ paused: true })` seeked from `__seek` (`gt.seek(t, false)`, seconds) — same determinism rules. For
+another GSAP plugin (MorphSVG, DrawSVG), vendor its `dist/*.min.js` beside `gsap.min.js` and register it.
+Gotcha: an anime.js tween applies its from-value only once reached — give elements that appear later a hidden
+initial style in CSS (see `#bullets li`, `.dot`).
