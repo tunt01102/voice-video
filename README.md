@@ -87,7 +87,7 @@ or **Đặt mặc định** on one of your own voices.
 | Vertical short | 📱 Short | `mediaforge short "5 mẹo bảo mật mật khẩu" --lang vi` |
 | 16:9 video | 🎬 Video | `mediaforge video "How MFA stops account takeover" --lang en --seconds 60` |
 | Slide explainer | 🧑‍🏫 Explainer | `mediaforge explainer --slides deck.md` |
-| Animated presentation (moving titles, count-up numbers, 3D) | 🧑‍🏫 Explainer → Kiểu slide: Động | `mediaforge explainer "brief" --animated` |
+| Animated presentation (moving titles, count-up numbers, 3D) | 🧑‍🏫 Explainer → Kiểu slide: Động | `mediaforge explainer "brief"` (animated is the default; `--static` for stills) |
 | Voice-over on a screen recording | — | `mediaforge screen demo.mov "@script.txt"` |
 | Video from a Word/PDF (pictures kept) | 📄 Nhập từ Word/PDF | `mediaforge video --document report.pdf --style chibi` |
 | Images | 🖼 Ảnh | `mediaforge image "a cozy café in Hanoi" --count 4 --style chibi` |
@@ -135,7 +135,8 @@ Notes on the inputs:
     | `@mood calm` | scene mood (calm, reflective, curious, tense, urgent, hopeful, triumphant, playful) |
 
     An unknown value is ignored (the slide keeps its default) and listed in the job's warnings.
-- **Animated slides** (`--animated`, dashboard "Kiểu slide: Động", MCP `slides_engine="animated"`): titles and
+- **Animated slides** (the default since 2026-10-16: CLI `--static`, dashboard "Kiểu slide: Tĩnh" or MCP
+  `slides_engine="static"` give Pillow stills): titles and
   bullets move in time with the narration (letters flip up, sharpen from a blur, bounce in or are typed — chosen
   from each slide's mood), a slide about one number counts it up, and big-idea slides get a
   rotating 3D object. From a brief, Claude picks each slide's layout; with markdown slides the first slide is 3D and

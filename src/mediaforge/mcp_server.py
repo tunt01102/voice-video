@@ -129,7 +129,7 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
                        pronunciations: dict[str, str] | None = None, verified_terms: list[str] | None = None,
                        english_terms: list[str] | None = None, karaoke: bool = True, document: str | None = None, document_as: str = "brief",
                        structure: str = "auto", cards: bool | None = None, critique: bool = True,
-                       review: list[str] | None = None, slides_engine: str = "static", theme: str = "midnight",
+                       review: list[str] | None = None, slides_engine: str = "animated", theme: str = "midnight",
                        wait_seconds: float = 0) -> dict[str, Any]:
     """Create a narrated video with cloned voice, generated visuals and subtitles.
 
@@ -150,7 +150,7 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
     cards: title + end card (default on for 16:9 narrated/explainer). critique: one self-review pass of the script
     (default on). review: ["plan", "visuals"] pauses the job (status 'waiting') for the owner to approve in the
     dashboard — leave empty for a one-shot render.
-    slides_engine (explainer only): 'static' (Pillow slides) or 'animated' — presentation slides with animated
+    slides_engine (explainer only): 'animated' (default) or 'static' (Pillow slides, faster) — animated
     titles/bullets, count-up stat slides and rotating three.js 3D slides (layout per slide from the plan, or
     'layout'/'stat'/'shape' in a plan_file; in slides_markdown a line '@layout stat 87% | label', '@layout 3d cube',
     '@shape torus', '@fx type' (rise|blur|wave|type) or '@mood calm' under a slide's '# Title'). theme: midnight |

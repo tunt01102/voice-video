@@ -16,7 +16,8 @@ MediaForge already does everything from script to MP4; this skill is the map.
    brief=… | script=… | slides_markdown=… | plan_file=…, lang="vi"|"en", voice=<id>, music="auto")`.
 5. Poll `job_status`; the result has `video`, `thumbnail`, `subtitles`, `report.warnings`.
 
-CLI: `mediaforge explainer "brief" --animated --theme block8 --lang vi`.
+CLI: `mediaforge explainer "brief" --theme block8 --lang vi` (animated is the default for MCP and CLI since
+2026-10-16; `--static` / `slides_engine="static"` for Pillow stills).
 
 ## Slide layouts (per scene in plan.json)
 
