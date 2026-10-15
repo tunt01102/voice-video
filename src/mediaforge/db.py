@@ -18,7 +18,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,
-    status TEXT NOT NULL,            -- queued | running | done | failed | cancelled
+    status TEXT NOT NULL,            -- queued | running | waiting | done | failed | cancelled
     params TEXT NOT NULL,
     progress REAL NOT NULL DEFAULT 0,
     message TEXT NOT NULL DEFAULT '',
@@ -30,6 +30,29 @@ CREATE TABLE IF NOT EXISTS jobs (
     finished_at REAL
 );
 CREATE INDEX IF NOT EXISTS jobs_created ON jobs(created_at DESC);
+-- Lessons learned from mistakes and owner judgements (docs/SDD-review-upgrade.md §5.1). Text only, never audio.
+CREATE TABLE IF NOT EXISTS lessons (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,             -- reading | judge_accept | lint | engine_route | visual_pref | motion_pref | music_pref | plan_rule | ops
+    scope TEXT NOT NULL,            -- json {voice?, lang?, engine?, style?, kind?}
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,            -- json
+    status TEXT NOT NULL,           -- candidate | active | retired
+    evidence INTEGER NOT NULL DEFAULT 0,
+    contra INTEGER NOT NULL DEFAULT 0,
+    uses INTEGER NOT NULL DEFAULT 0,
+    wins INTEGER NOT NULL DEFAULT 0,
+    origin TEXT, note TEXT,
+    created_at REAL NOT NULL, updated_at REAL NOT NULL, last_used_at REAL
+);
+CREATE INDEX IF NOT EXISTS lessons_kind ON lessons(kind, status);
+CREATE TABLE IF NOT EXISTS signals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT, kind TEXT NOT NULL, payload TEXT NOT NULL, created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ratings (
+    job_id TEXT PRIMARY KEY, stars INTEGER NOT NULL, tags TEXT NOT NULL DEFAULT '[]', note TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL
+);
 """
 
 
@@ -46,14 +69,39 @@ def connect() -> Iterator[sqlite3.Connection]:
             conn.close()
 
 
-def init() -> None:
+_ready = False
+
+
+def ensure() -> None:
+    """Create tables if missing (cheap; for code paths that run without the job runner, e.g. the CLI or tests)."""
+    global _ready
+    if not _ready:
+        with connect() as c:
+            c.executescript(SCHEMA)
+        _ready = True
+
+
+def init(resumable: set[str] | frozenset[str] = frozenset(), max_resumes: int = 2) -> None:
+    """Create tables; jobs that were running when the process died are re-queued when they can run again
+    (resumable types, at most max_resumes times), otherwise failed."""
+    global _ready
     with connect() as c:
         c.executescript(SCHEMA)
-        # Anything that was running when the process died cannot be resumed mid-way.
-        c.execute(
-            "UPDATE jobs SET status='failed', error='interrupted by restart', finished_at=? WHERE status='running'",
-            (time.time(),),
-        )
+        _ready = True
+        now = time.time()
+        for r in c.execute("SELECT id, type, params FROM jobs WHERE status='running'").fetchall():
+            jid, jtype, params = r[0], r[1], json.loads(r[2])
+            n = int(params.get("_resumes", 0))
+            again = jtype in resumable and n < max_resumes
+            c.execute("INSERT INTO signals(job_id,kind,payload,created_at) VALUES(?,?,?,?)",
+                      (jid, "incident", json.dumps({"type": jtype, "error": "interrupted by restart", "resumed": again}), now))
+            if again:
+                params["_resumes"] = n + 1
+                c.execute("UPDATE jobs SET status='queued', message='tiếp tục sau khi khởi động lại', params=? WHERE id=?",
+                          (json.dumps(params, ensure_ascii=False), jid))
+            else:
+                c.execute("UPDATE jobs SET status='failed', error='interrupted by restart', finished_at=? WHERE id=?",
+                          (now, jid))
 
 
 def _row(r: sqlite3.Row | None) -> dict[str, Any] | None:

@@ -25,12 +25,51 @@ MOTIONS = ["zoom_in", "pan_right", "zoom_out", "pan_left", "pan_up", "zoom_in_tl
 TRANSITIONS = ["fade", "smoothleft", "fadeblack", "circleopen", "slideup", "dissolve"]
 
 
+# Motion and transition follow the scene's mood instead of rotating by index (SDD-review-upgrade §5.4.2).
+MOOD_STYLE: dict[str, tuple[list[str], list[str]]] = {
+    "calm": (["zoom_in", "pan_up", "zoom_out"], ["fade", "dissolve"]),
+    "reflective": (["zoom_out", "pan_up"], ["dissolve", "fade"]),
+    "curious": (["zoom_in_tl", "pan_right"], ["smoothleft", "circleopen"]),
+    "tense": (["zoom_in_tl", "zoom_in"], ["fadeblack"]),
+    "urgent": (["zoom_in", "pan_left"], ["fadeblack", "smoothleft"]),
+    "hopeful": (["zoom_out", "pan_right"], ["circleopen", "fade"]),
+    "triumphant": (["zoom_out", "pan_up"], ["circleopen", "fadewhite"]),
+    "playful": (["pan_right", "pan_left", "zoom_in"], ["slideup", "smoothleft"]),
+}
+# When the owner disliked the camera moves of earlier videos (motion_pref lesson): only slow zooms and soft cuts.
+GENTLE = (["zoom_in", "zoom_out"], ["fade", "dissolve"])
+
+
 @dataclass
 class Scene:
     visual: str               # image or video path
     duration: float           # seconds this scene is on screen
     kind: str = "image"       # image | video
     motion: str | None = None  # Ken Burns style for images; None = auto
+    transition: str | None = None  # xfade style INTO this scene; None = auto
+    card: str | None = None        # "title" | "end" for the cards around the narration scenes
+
+    def as_dict(self) -> dict:
+        return {"visual": self.visual, "duration": self.duration, "kind": self.kind, "motion": self.motion,
+                "transition": self.transition, "card": self.card}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Scene":
+        return cls(d["visual"], d["duration"], kind=d.get("kind", "image"), motion=d.get("motion"),
+                   transition=d.get("transition"), card=d.get("card"))
+
+
+def assign_styles(scenes: list[Scene], moods: list[str | None], *, gentle: bool = False) -> None:
+    """Fill motion/transition of scenes that have none from their mood; never the same motion twice in a row."""
+    prev = None
+    for i, sc in enumerate(scenes):
+        motions, transitions = GENTLE if gentle else MOOD_STYLE.get(moods[i] or "", (MOTIONS, TRANSITIONS))
+        if sc.kind == "image" and sc.motion is None:
+            options = [m for m in motions if m != prev] or [m for m in MOTIONS if m != prev]
+            sc.motion = options[i % len(options)]
+        if sc.transition is None and i > 0:
+            sc.transition = transitions[i % len(transitions)]
+        prev = sc.motion
 
 
 def _kenburns_filter(motion: str, w: int, h: int, fps: int, frames: int) -> str:
@@ -103,7 +142,7 @@ def compose(
         boundary = 0.0
         for i in range(1, n):
             boundary += scenes[i - 1].duration
-            style = transition_style or TRANSITIONS[(i - 1) % len(TRANSITIONS)]
+            style = scenes[i].transition or transition_style or TRANSITIONS[(i - 1) % len(TRANSITIONS)]
             label = f"[x{i}]"
             fc.append(f"{last}[{i}:v]xfade=transition={style}:duration={T}:offset={boundary:.3f}{label}")
             last = label
@@ -116,7 +155,7 @@ def compose(
         # audio
         if music:
             inputs += ["-stream_loop", "-1", "-i", str(music)]
-        fc += audio_graph(voice_idx, n + 1 if music else None, music_volume)
+        fc += audio_graph(voice_idx, n + 1 if music else None, music_volume, total=voice_dur + 0.6)
         args = [*inputs]
         if soft_srt:
             args += ["-i", str(soft_srt)]
@@ -136,13 +175,16 @@ def compose(
     return out_path
 
 
-def audio_graph(voice_idx: int, music_idx: int | None, music_volume: float = 0.18) -> list[str]:
-    """Voice (+ ducked music) → [aout]. Shared by compose and export so a remuxed voice track mixes identically."""
+def audio_graph(voice_idx: int, music_idx: int | None, music_volume: float = 0.18,
+                total: float | None = None) -> list[str]:
+    """Voice (+ ducked music) → [aout]. Shared by compose and export so a remuxed voice track mixes identically.
+    With `total` (seconds) the music fades in over 2 s and out over the last 3 s."""
     if music_idx is None:
         return [f"[{voice_idx}:a]aresample=48000,apad=pad_dur=0.6[aout]"]
+    fades = f",afade=t=in:d=2,afade=t=out:st={max(total - 3, 0):.2f}:d=3" if total else ""
     return [
         f"[{voice_idx}:a]aresample=48000,asplit=2[vo][key]",
-        f"[{music_idx}:a]aresample=48000,volume={music_volume}[m]",
+        f"[{music_idx}:a]aresample=48000,volume={music_volume}{fades}[m]",
         "[m][key]sidechaincompress=threshold=0.04:ratio=8:attack=15:release=350[duck]",
         "[vo][duck]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11[aout]",
     ]

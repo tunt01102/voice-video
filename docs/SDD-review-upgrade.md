@@ -1,6 +1,6 @@
 # SDD — Review and upgrade: Studio UX, staged pipeline, creative direction, learning from mistakes
 
-Status: v1.0 (design, not implemented) · 2026-10-15 · Owner: tu.dev@block8.ai · Extends [SDD.md](SDD.md) §5, §7, §8, §9, §10, §11
+Status: v1.1 (P6-A…D implemented, see §11; P6-E open) · 2026-10-15 · Owner: tu.dev@block8.ai · Extends [SDD.md](SDD.md) §5, §7, §8, §9, §10, §11
 
 ## 1. Problem
 
@@ -69,7 +69,7 @@ Failure taxonomy (from intended-vs-heard pairs):
 
 | Class | Example (intended → heard) | Root cause | Countermeasure |
 |---|---|---|---|
-| **F1 Truncation / babble** | "…bạn sẽ không còn là nút thắt, mà trở thành ␠" → "…mà trở thành!"; "lưu lịch sử mã số…" → "lưu lưu lưu hòi tư.leich" | Long sentences, and **malformed input**: the planned sentence ends mid-clause with a trailing space, and one never-passed TTS input starts mid-word ("ệu PNJ công bố…"), a splitter defect. | Script lint before synthesis (§5.2.1). Phrase-wise synthesis by default for VI sentences over ~35 syllables. |
+| **F1 Truncation / babble** | "…bạn sẽ không còn là nút thắt, mà trở thành người dẫn đường cho cả đội." → "…mà trở thành!" (the engine stopped early) | Engine behaviour on long sentences. Separately, one never-passed TTS input is a fragment cut at both ends ("ệu PNJ công bố … năm hai n"), a caller/splitter defect. (Correction, v1.1: v1.0 misread a display truncation as a malformed plan sentence.) | Script lint before synthesis (§5.2.1). Phrase-wise synthesis by default for VI sentences over ~35 syllables. |
 | **F2 Acronym / URL / code-switch runs** | "AI tại Ây Ai Ét Em I chấm vi en" → "AI-EMI.VN"; "S.M.E." → "S.M.I." | A run of spelled letters with no pauses. A domain is read as one token. | Acronym-run expansion with pauses. Domain and URL normaliser. Prescan forces a reading (§5.2.2). |
 | **F3 Judge error (ASR)** | Whisper writes CJK on VI audio ("Công kẹp胸 Trang chủ…"); "thoăn thoắt" → "thoán thoát" on **both** engines; held sung vowels under-heard | Whisper, not the voice. | Judge hardening plus an owner override that becomes a lesson (§5.2.3). |
 | **F4 Hallucinated repetition** | "Báo cáo bền vững 2025 andra 2025 phát hành…" | Engine sampling. | Repetition detector in QA (n-gram repeat ⇒ immediate re-seed, not LLM respelling). |
@@ -436,7 +436,7 @@ SDD §10, because none of the above needs it. CSS gets design tokens (`:root` va
 
 | Surface | Addition |
 |---|---|
-| REST | `GET /api/lessons?status=&kind=`, `PATCH /api/lessons/{id}` `{status, note}`, `POST /api/jobs/{id}/rating`, `POST /api/jobs/{id}/sentences/{i}/accept` (nghe đúng rồi), `POST /api/jobs/{id}/restage` `{stage, scene?, changes}`, `POST /api/jobs/{id}/approve` `{stage, plan?}`, `GET /api/lint` (text → findings), `GET /api/insights` (trends) |
+| REST | `GET /api/lessons?status=&kind=`, `PATCH /api/lessons/{id}` `{status, note}`, `POST /api/jobs/{id}/rating`, `POST /api/jobs/{id}/sentences/{i}/accept` (nghe đúng rồi), `POST /api/jobs/{id}/restage` `{stage, scene?, changes}`, `POST /api/jobs/{id}/approve` `{stage, plan?}`, `POST /api/lint` `{text, lang}` → findings + fixed text, `GET /api/insights` (trends) |
 | Job status | `waiting` (gate). `result.stages`, `report.lint`, `report.lessons_applied` |
 | MCP | `create_video`/`prepare_video` gain `review`, `structure`, `art_direction` (optional overrides); new `rate_job`, `list_lessons`, `restage_video`. Existing tools are unchanged by default. |
 | CLI | `mediaforge lessons list|approve|reject|migrate|report`, `mediaforge eval voice` |
@@ -471,10 +471,10 @@ SDD §10, because none of the above needs it. CSS gets design tokens (`:root` va
 
 | Phase | Scope | Exit criterion | Status |
 |---|---|---|---|
-| **P6-A Learning hygiene + lint** | §5.1.4 gate + migration, §5.2.1 lint, §5.2.3 judge hardening + repetition detector + class-aware budget, "✓ Nghe đúng rồi", regression corpus + `eval` | 0 harmful active readings; corpus ≥ 80 %; unit tests for gate and lint | Open |
-| **P6-B Lessons store + review** | §5.1.1–5.1.3, 5.1.5; ratings; job page (§5.5.2 step 6); Kinh nghiệm tab; undo toasts; app.js modules | Lessons visible and applied with chips; rating stored; digest prints | Open |
-| **P6-C Staged pipeline** | §5.3 stages, resume, gates, restage, stage timings, upload validation; Studio flow steps 1–5 | Kill the server mid-visuals → job resumes at visuals; restage one scene ≤ 60 s + compose | Open |
-| **P6-D Creative direction** | §5.4.1–5.4.4 art direction, structure templates, hook variants, self-critique, mood motion table, cards, mood music + envelopes | Blind A/B of 3 topics (old vs new) rated by the owner; new wins ≥ 2/3 | Open |
+| **P6-A Learning hygiene + lint** | §5.1.4 gate + migration, §5.2.1 lint, §5.2.3 judge hardening + repetition detector + class-aware budget, "✓ Nghe đúng rồi", regression corpus + `eval` | 0 harmful active readings; corpus ≥ 80 %; unit tests for gate and lint | Done 2026-10-15 — 0 harmful active readings; corpus 20/36 (56 %) pass + 8 awaiting the owner's ✓ (see §11.2) |
+| **P6-B Lessons store + review** | §5.1.1–5.1.3, 5.1.5; ratings; job page (§5.5.2 step 6); Kinh nghiệm tab; undo toasts; app.js modules | Lessons visible and applied with chips; rating stored; digest prints | Done 2026-10-15 |
+| **P6-C Staged pipeline** | §5.3 stages, resume, gates, restage, stage timings, upload validation; Studio flow steps 1–5 | Kill the server mid-visuals → job resumes at visuals; restage one scene ≤ 60 s + compose | Done 2026-10-15 (resume unit-tested with a simulated crash; live restage measured, §11.2) |
+| **P6-D Creative direction** | §5.4.1–5.4.4 art direction, structure templates, hook variants, self-critique, mood motion table, cards, mood music + envelopes | Blind A/B of 3 topics (old vs new) rated by the owner; new wins ≥ 2/3 | Built 2026-10-15; the owner's A/B is still to do |
 | P6-E Evaluate | §5.4.5 candidates, WavLM-SV (already P4) | Licence review done | Open |
 
 P6-A comes first because it is cheap and stops the active harm (the polluted lexicon). P6-B is next, because
@@ -498,3 +498,59 @@ creative features (P6-D) need ratings to learn from.
 | Art direction makes every video look alike | The motif is per video, not global. `visual_pref` lessons shift style only after ≥ 2 consistent ratings. |
 | Resume reruns a half-written stage | A stage writes into `stage.tmp/`, renamed on success. Resume restarts that stage from scratch. |
 | Front-end split breaks existing flows | Modules are moved first with no behaviour change, and the dashboard is smoke-tested on the dev server before each phase |
+
+## 11. Implementation notes (v1.1, 2026-10-15)
+
+### 11.1 Where the code is
+
+| Concern | Files |
+|---|---|
+| Lessons, signals, ratings, reading gate, migration, insights, incidents | `lessons.py`, tables in `db.py` |
+| Script lint (L1–L5), TTS-only readings, long-sentence phrasing | `text/lint.py` |
+| Judge: greedy decoding, CJK retry, repetition, spelled-acronym match | `asr.py` (`judge_error`, `repetition`, `spelled_match`) |
+| Class-aware repair, counterfactual learning, lesson readings per engine | `voice/speak.py` (`classify`, `REPAIR_ORDER`, `STALL_LIMIT`) |
+| Regression corpus + eval job | `voice_regression.jsonl`, `evals.py`, `mediaforge eval voice` |
+| Stages, gates, resume, plan edits, recompose, cards, chapters, auto music | `pipelines.py` (`run_video`, `AwaitApproval`, `apply_plan_edits`, `recompose`, `add_cards`, `chapter_ass`, `auto_music`), `restage.py`, `jobs.py` (`waiting`, `requeue`, `RESUMABLE`), `db.init` |
+| Mood motion/transitions, music fades | `video/compose.py` (`MOOD_STYLE`, `assign_styles`, `audio_graph(total=)`) |
+| Cards | `video/slides.py` (`render_card`), lower-thirds `subtitles.with_chapters` |
+| Dashboard | `web/js/studio.js` (gates, scene strip), `web/js/jobpage.js` (#job/<id>, timeline, rating), `web/js/lessons.js` (Kinh nghiệm, incidents); `app.js` keeps the rest |
+| REST | `POST /api/jobs/{id}/sentences/{i}/accept`, `/approve`, `/restage`, `GET/POST /api/jobs/{id}/rating`, `GET /api/lessons`, `PATCH /api/lessons/{id}`, `GET /api/insights`, `GET /api/incidents`, `POST /api/lint` |
+| MCP | `create_video` (+ `review`, `structure`, `cards`, `critique`, `music="auto"`), `restage_video`, `rate_job`, `list_lessons` |
+
+### 11.2 Measured
+
+- **Regression corpus** (36 sentences that had *never* passed, voice gi-ng-t, data-store copy): 0/36 before →
+  5/36 after the first P6-A pass → **20/36 (56 %)** after adding the spelled-acronym judge (acronym class 18/22).
+  The remaining 16: 8 × "thoăn thoắt" (both engines are heard as "thoán thoát"; this needs the owner's ✓ Nghe đúng
+  rồi, after which they count as judge-accepted), 3 engine babble/repeat on long sentences, 4 acronym-only
+  fragments ("A.I.", "S, M, E."), 1 cut fragment. Mean attempts on failing sentences is still 4.3 (target ≤ 3, not
+  met): the stall rule stops after two non-improving tries, but the first pass already spends two attempts with
+  `engine=best`.
+- **Gated 16:9 video, end to end** (copy of the data store, 25 s brief, chibi, 3 scenes): plan 38 s (with
+  self-critique) → voice 47 s → visuals 85 s → compose 7.5 s. Redrawing one scene at the storyboard took ≈ 25 s.
+  Changing the music of the finished video (compose-only restage) took ≈ 10 s. The art direction kept one
+  recurring character across scenes. Title card, chapter lower-third, karaoke subtitles and the end card with the
+  CC BY credit were checked frame by frame.
+- **Lexicon migration** (dry-run on live data, real run on a copy): 13 of the 15 `learned` entries retired by the
+  gate, 2 left as candidates (`for → pho`, `I m → ai am`).
+
+### 11.3 Differences from the design
+
+- The corpus ships in the package (`src/mediaforge/voice_regression.jsonl`, because the service runs an installed
+  copy), not in `tests/corpus/`. It grows from `qa_fail` signals in the local DB instead of from appended lines.
+  Eval runs (`learn=False`) record no signals and no lesson uses.
+- `POST /api/lint`, not GET (the text is a body).
+- **Added (not in v1.0):** spelled-acronym matching in QA (`asr.spelled_match`). The eval showed the main acronym
+  failure was the judge comparing a phonetic spelling with Whisper's written form ("ây ai ét em i chấm vi en" vs
+  "AISME.vn").
+- No "✂ Tách câu" button: 🔁 Tạo lại already renders phrase-first.
+- `app.js` was not split. New UI lives in ES modules under `web/js/` that use `app.js`'s globals, which avoids
+  churn in working code.
+- `engine_route` lessons are recorded as signals only (no automatic routing yet). Mood "duration bias" is not
+  implemented, because scene length is the narration length.
+- `music: "auto"` is available (dashboard: "🎵 Tự chọn theo không khí video"), but the default stays "no music"
+  so existing MCP callers see no change.
+- Sing/recite: an interrupted job is re-queued and re-runs from the start (no per-stage checkpoints). This still
+  replaces "failed (interrupted)". Resumes are limited to 2 per job, and enrol/rerender/export are never re-run.
+- Jobs → Thư viện: thumbnails, text search, "⧉ Làm thêm bản như vầy" and a `waiting` filter were added to the
+  Jobs tab instead of a new tab.

@@ -20,6 +20,10 @@ voice_app = typer.Typer(no_args_is_help=True, help="Manage cloned voices")
 app.add_typer(voice_app, name="voice")
 music_app = typer.Typer(no_args_is_help=True, help="Background-music library")
 app.add_typer(music_app, name="music")
+lessons_app = typer.Typer(no_args_is_help=True, help="Lessons learned from mistakes (sổ kinh nghiệm)")
+app.add_typer(lessons_app, name="lessons")
+eval_app = typer.Typer(no_args_is_help=True, help="Regression evaluations")
+app.add_typer(eval_app, name="eval")
 
 BASE = f"http://{settings.host}:{settings.port}"
 
@@ -303,6 +307,60 @@ def voice_blend(owner: str, partner: str, amount: float = typer.Option(0.25, hel
                 name: Optional[str] = None, local: bool = False) -> None:
     """Pha giọng: a new voice that stays mostly OWNER with AMOUNT of PARTNER (partner needs a consent record)."""
     _run("blend", {"owner": owner, "partner": partner, "amount": amount, "name": name}, local)
+
+
+# ------------------------------------------------------------------ lessons & evals
+
+@lessons_app.command("list")
+def lessons_list(status: Optional[str] = None, kind: Optional[str] = None) -> None:
+    """Lessons: id, status, kind, scope, key → value."""
+    from mediaforge import lessons
+
+    for l in lessons.list_lessons(status, kind):
+        val = l["value"].get("say") or json.dumps(l["value"], ensure_ascii=False)[:60]
+        typer.echo(f"{l['id']}  {l['status']:<9} {l['kind']:<12} {json.dumps(l['scope'], ensure_ascii=False):<40} "
+                   f"{l['key']} → {val}  (evidence {l['evidence']}, uses {l['uses']}, wins {l['wins']}) {l.get('note') or ''}")
+
+
+@lessons_app.command("approve")
+def lessons_approve(ids: list[str], note: Optional[str] = None) -> None:
+    from mediaforge import lessons
+
+    for lid in ids:
+        typer.echo(f"{lid}: {lessons.set_status(lid, 'active', note)['status']}")
+
+
+@lessons_app.command("reject")
+def lessons_reject(ids: list[str], note: Optional[str] = None) -> None:
+    from mediaforge import lessons
+
+    for lid in ids:
+        typer.echo(f"{lid}: {lessons.set_status(lid, 'retired', note)['status']}")
+
+
+@lessons_app.command("migrate")
+def lessons_migrate(dry_run: bool = typer.Option(False, help="show what would happen, change nothing")) -> None:
+    """Move old `learned` lexicon entries into lessons through the reading gate (backs the lexicons up first)."""
+    from mediaforge import lessons
+
+    for r in lessons.migrate_lexicons(dry_run=dry_run):
+        typer.echo(f"{r['status']:<9} [{r['voice'] or 'global'}/{r['lang']}] {r['term']} → {r['say']}   ({r['reason']})")
+
+
+@lessons_app.command("report")
+def lessons_report(days: int = 30) -> None:
+    """Trends: QA failures by class, recurring sentences, lessons, ratings."""
+    from mediaforge import lessons
+
+    _print(lessons.insights(days))
+
+
+@eval_app.command("voice")
+def eval_voice(voice: Optional[str] = None, engine: Optional[str] = None, limit: Optional[int] = None,
+               classes: Optional[list[str]] = typer.Option(None, "--class"), local: bool = False) -> None:
+    """Synthesise the regression corpus (sentences that failed before) and print the pass rate per class."""
+    params = {k: v for k, v in {"voice": voice, "engine": engine, "limit": limit, "classes": classes}.items() if v}
+    _run("eval", params, local)
 
 
 # ------------------------------------------------------------------ ops

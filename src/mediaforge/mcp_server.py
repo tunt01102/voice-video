@@ -123,7 +123,8 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
                        burn_subtitles: bool = True, plan_file: str | None = None,
                        pronunciations: dict[str, str] | None = None, verified_terms: list[str] | None = None,
                        karaoke: bool = True, document: str | None = None, document_as: str = "brief",
-                       wait_seconds: float = 0) -> dict[str, Any]:
+                       structure: str = "auto", cards: bool | None = None, critique: bool = True,
+                       review: list[str] | None = None, wait_seconds: float = 0) -> dict[str, Any]:
     """Create a narrated video with cloned voice, generated visuals and subtitles.
 
     kind: 'narrated' (16:9 AI visuals), 'short' (9:16 with karaoke subtitles), 'explainer' (slides).
@@ -137,14 +138,36 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
     document: local .docx/.pdf (.doc/.rtf/.odt) path used as the content instead of brief/script; its pictures are
     shown on the scenes where they appear. document_as: 'brief' (Claude writes the script from it) or 'script'
     (read verbatim). pitch: omit to use the voice's saved settings.
+    music='auto' picks a library track matching the video's mood (skipping tracks the owner rated down).
+    structure: auto | story | listicle | myth-fact | before-after | how-to | news (brief mode).
+    cards: title + end card (default on for 16:9 narrated/explainer). critique: one self-review pass of the script
+    (default on). review: ["plan", "visuals"] pauses the job (status 'waiting') for the owner to approve in the
+    dashboard — leave empty for a one-shot render.
     """
     return await _submit(kind, {"brief": brief, "script": script, "lang": lang, "voice": voice, "seconds": seconds,
                                 "style": style, "aspect": aspect, "music": music, "fx": _fx(pitch=pitch),
                                 "slides_markdown": slides_markdown, "media": media,
                                 "burn_subtitles": burn_subtitles, "plan_file": plan_file,
                                 "pronunciations": pronunciations, "verified_terms": verified_terms,
-                                "karaoke": karaoke, "document": document, "document_as": document_as},
+                                "karaoke": karaoke, "document": document, "document_as": document_as,
+                                "structure": structure, "critique": critique, "review": review or [],
+                                **({"cards": cards} if cards is not None else {})},
                          wait_seconds)
+
+
+@mcp.tool()
+async def restage_video(job_id: str, scene: int | None = None, prompt: str | None = None, music: str | None = None,
+                        wait_seconds: float = 0) -> dict[str, Any]:
+    """Change part of a finished video without a full render: give `scene` (0-based) and optionally a new English
+    `prompt` to redraw that scene's picture, or `music` (library id, or 'none') to change the background music.
+    Voice and subtitles are kept; the old render goes to trash."""
+    if scene is not None:
+        params: dict[str, Any] = {"job": job_id, "stage": "visuals", "scene": scene, **({"prompt": prompt} if prompt else {})}
+    elif music is not None:
+        params = {"job": job_id, "stage": "compose", "music": "__none" if music == "none" else music}
+    else:
+        return {"error": "give scene (+prompt) or music"}
+    return await _submit("restage", params, wait_seconds)
 
 
 @mcp.tool()
@@ -257,3 +280,30 @@ def list_music() -> list[dict[str, Any]]:
     Tracks with an 'attribution' need that credit line in the video description."""
     return [{k: t.get(k) for k in ("id", "title", "artist", "mood", "duration_s", "licence", "attribution")}
             for t in music.list_tracks() if t["available"]]
+
+
+@mcp.tool()
+def rate_job(job_id: str, stars: int, tags: list[str] | None = None, note: str = "") -> dict[str, Any]:
+    """Record the owner's verdict on a finished job (1–5 stars) so later videos improve.
+
+    tags (what the rating is about): giọng, phát âm, nhịp, hình, chuyển cảnh, phụ đề, nhạc, nội dung.
+    A low rating tagged `nội dung` with a note turns the note into a rule for future scripts. Only pass the owner's
+    own judgement — never rate on their behalf.
+    """
+    from mediaforge import lessons
+
+    job = db.get_job(job_id)
+    if not job or job["status"] != "done":
+        return {"error": "job must be finished"}
+    r = lessons.rate(job, stars, tags or [], note)
+    return {"rating": r["rating"], "lessons": [{k: l[k] for k in ("id", "kind", "key", "status")} for l in r["lessons"]]}
+
+
+@mcp.tool()
+def list_lessons(status: str | None = "active", kind: str | None = None) -> list[dict[str, Any]]:
+    """What MediaForge has learned from earlier mistakes and ratings (status: candidate|active|retired; kind: reading,
+    judge_accept, plan_rule, visual_pref, motion_pref, music_pref, ops)."""
+    from mediaforge import lessons
+
+    return [{k: l[k] for k in ("id", "kind", "scope", "key", "value", "status", "evidence", "uses", "wins", "note")}
+            for l in lessons.list_lessons(status, kind, 200)]

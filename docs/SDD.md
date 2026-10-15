@@ -195,11 +195,12 @@ Routing default: `vi → vieneu`, `en → voxcpm`, configurable per voice and pe
    Whisper as an `initial_prompt` hint and diff blocks made only of them are excluded, because
    ASR cannot spell back a correctly spoken brand name ("Media4"). Duration sanity
    (tokens/sec) catches babble/truncation.
-5. **Self-repair** on failure (max 4 attempts per sentence, keep best):
-   a. new seed + lower temperature; b. switch engine; c. ask the LLM to propose
-   phonetic respellings for the mismatched words (diff of expected vs. heard), apply
-   them for this attempt, and record successful respellings into the voice's lexicon
-   as `learned` entries (visible/editable in the dashboard).
+5. **Self-repair** on failure (max 4 attempts per sentence, keep best, stop after 2 that do not improve). The
+   strategy order depends on the failure class (repeat → new seed, truncated → phrase-wise, acronym/foreign terms →
+   LLM respelling; also engine switch). A respelling is **not** written to the lexicon any more: it becomes a
+   `reading` lesson only if it passes the reading gate and the same attempt without it fails, and it is applied
+   only after it has won in two different sentences or the owner approves it (Kinh nghiệm tab). See
+   [SDD-review-upgrade.md](SDD-review-upgrade.md) §5.1–5.2.
 6. **Join** sentences with natural pauses (sentence 250 ms, clause 120 ms).
 7. **Voice FX** (`voice/fx.py`):
    - `pitch` (semitones, −6…+6; negative = deeper) — pedalboard `time_stretch(...,
@@ -299,7 +300,8 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 | `GET/POST /api/voices`, `GET/PATCH/DELETE /api/voices/{id}` | voice profiles |
 | `POST /api/voices/{id}/samples` | multipart upload/recording → processed sample |
 | `GET/PUT /api/voices/{id}/lexicon`, `GET/PUT /api/lexicon` | pronunciation lexicons |
-| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip, prepare, sing, recite` (+ internal `rerender`, `export`, `resubtitle`, `repronounce`, `blend`) |
+| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip, prepare, sing, recite, eval` (+ internal `rerender`, `export`, `resubtitle`, `repronounce`, `blend`, `restage`); video params `review: [plan, visuals]` pause the job in status `waiting` |
+| `POST /api/jobs/{id}/approve`, `/restage`, `/sentences/{i}/accept`, `GET/POST /api/jobs/{id}/rating`, `GET /api/lessons`, `PATCH /api/lessons/{id}`, `GET /api/insights`, `GET /api/incidents`, `POST /api/lint` | review steps, partial re-renders, owner judgement and the lessons store ([SDD-review-upgrade.md](SDD-review-upgrade.md) §11.1) |
 | `GET /api/poems`, `GET /api/sing/moods` | Tang poem catalogue (Ngâm thơ tab); moods/styles for sing/recite |
 | `POST /api/jobs/{id}/sentences/{i}/rerender` | `{file?, lang?}` — AI re-renders sentence *i* as a take (recording = guide) |
 | `POST /api/jobs/{id}/repronounce` | `{readings: {term: reading}, format?}` — re-read every sentence containing a term, export (no re-render); `GET /api/jobs/{id}/occurrences?terms=` previews matches |
@@ -319,7 +321,7 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 `?wait=true` on `POST /api/jobs` blocks until completion (≤ 600 s) for simple clients.
 
 ### 9.2 MCP (streamable HTTP at `http://127.0.0.1:8765/mcp`)
-Tools: `speak`, `blend_voices`, `generate_image`, `prepare_video`, `create_video`, `resubtitle_video`, `repronounce_video`, `recite_poem`, `sing_song`, `list_poems`,
+Tools: `speak`, `blend_voices`, `restage_video`, `rate_job`, `list_lessons`, `generate_image`, `prepare_video`, `create_video`, `resubtitle_video`, `repronounce_video`, `recite_poem`, `sing_song`, `list_poems`,
 `transcribe_subtitles`, `job_status`, `list_voices`, `list_jobs`, `list_music`. Long jobs return a job id
 immediately plus a `wait_seconds` option; results return absolute file paths (sessions
 run on the same machine). `create_video`/`prepare_video` take `document` (+ `document_as` brief|script) to use a
@@ -339,7 +341,7 @@ CLI talks to the running server when available, otherwise runs in-process.
 | P3 Dashboard | record/enrol voice, lexicon editor, job launcher, gallery | Done 2026-10-14 |
 | P3b Hát & Ngâm thơ | tone-aware melody, WORLD resynthesis of the cloned voice, đàn tranh/sáo accompaniment, video hoạt cảnh, dashboard tabs | Done 2026-10-14 |
 | P5 Artistry + pha giọng | **pha giọng done 2026-10-15** (VieNeu speaker-vector blend, calibrated: 25 % target → 25.5 % measured; consent-gated). Designed: measured ngâm/hát parameters, reference-melody mode, RVC re-voicing, storyboard hoạt cảnh — [SDD-artistry-voice-blend.md](SDD-artistry-voice-blend.md) §9 | P1a done, rest open |
-| P6 Review & upgrade | P6-A learning hygiene + lint, P6-B lessons store + ratings + job page, P6-C staged pipeline + storyboard, P6-D creative direction — [SDD-review-upgrade.md](SDD-review-upgrade.md) §8 (review found tone-stripping `learned` lexicon entries, e.g. `độ → đô`) | Designed 2026-10-15 |
+| P6 Review & upgrade | P6-A learning hygiene + lint, P6-B lessons store + ratings + job page, P6-C staged pipeline + storyboard, P6-D creative direction — [SDD-review-upgrade.md](SDD-review-upgrade.md) §8, §11 (review found tone-stripping `learned` lexicon entries, e.g. `độ → đô`) | A–D done 2026-10-15; E open |
 | P4 Later | install ltx-2-mlx and enable clips; music generation (ACE-Step, Apache-2.0 — evaluate); speaker-similarity score (WavLM-SV) to auto-pick the best reference and check take timbre; fine-tune on `corrections/`; broader automated tests (unit tests for guided repair/export exist in `tests/`); React upgrade | Open |
 
 **Owner action required:** record real samples (dashboard → Voices → Record). Until then
@@ -360,8 +362,8 @@ judged after enrolment.
 - **Data safety**: recordings are never deleted by the app. Every voice mutation writes a
   `data/backups/voices-*.tar.gz` snapshot (keep 30); deletes move to `data/trash/`; raw uploads
   stay in `voices/<id>/raw/`. `service.sh update` waits for the running job before restarting.
-- **Reliability**: jobs persisted; on restart `running` → `failed (interrupted)`,
-  `queued` resumes. Every job writes `report.json` (timings, QA per sentence, engine).
+- **Reliability**: jobs persisted; on restart a `running` render/tts/image/sing job is re-queued (videos skip the
+  stages in `stages.json`; at most 2 resumes), other `running` jobs → `failed (interrupted)`; `queued` resumes. Every job writes `report.json` (timings, QA per sentence, engine).
 - **Performance targets** (warm): 60 s narration < 60 s TTS incl. QA; 1024² image ≲ 15 s;
   60 s 1080p video (stills) < 4 min end-to-end.
 - **Observability**: structured logs in `data/logs/`, `/api/health`, dashboard queue view.

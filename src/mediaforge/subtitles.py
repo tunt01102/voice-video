@@ -383,3 +383,26 @@ def write_all(words: list[dict[str, Any]], out_base: str | Path, *, width: int =
         "vtt": str(write_vtt(cues, base.with_suffix(".vtt"))),
         "ass": str(write_ass(ass_cues, base.with_suffix(".ass"), width=width, height=height, karaoke=karaoke)),
     }
+
+
+def _ass_time(t: float) -> str:
+    cs = int(round(max(t, 0) * 100))
+    return f"{cs // 360000}:{cs // 6000 % 60:02d}:{cs // 100 % 60:02d}.{cs % 100:02d}"
+
+
+def with_chapters(ass_path: str | Path, chapters: list[tuple[float, float, str]], out_path: str | Path, *,
+                  height: int = 1080) -> Path:
+    """A copy of an ASS file with chapter headings as a top-left lower-third (SDD-review-upgrade §5.4.3). Only the
+    burned-in render uses it; the exported SRT/VTT/ASS stay plain subtitles."""
+    src = Path(ass_path).read_text("utf-8")
+    unit = height / 1080
+    style = (f"Style: Chapter,Arial,{int(40 * unit)},&H00FFFFFF,&H00FFFFFF,&H00F0B45B,&HB4101218,-1,0,0,0,100,100,1,0,3,"
+             f"{max(6, int(10 * unit))},0,7,{int(70 * unit)},{int(70 * unit)},{int(60 * unit)},1")
+    lines = src.splitlines()
+    k = next(i for i, l in enumerate(lines) if l.startswith("Style:"))
+    lines.insert(k + 1, style)
+    for a, b, text in chapters:
+        clean = text.replace("{", "(").replace("}", ")").replace("\n", " ")
+        lines.append(f"Dialogue: 1,{_ass_time(a)},{_ass_time(b)},Chapter,,0,0,0,,{{\\fad(250,300)}}{clean}")
+    Path(out_path).write_text("\n".join(lines) + "\n", "utf-8")
+    return Path(out_path)

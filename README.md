@@ -210,14 +210,23 @@ re-rendered. The reading is saved to the lexicon, so later videos get it right. 
 3. **Speech-recognition check.** Every sentence is synthesised and transcribed back with Whisper large-v3-turbo, then compared with the script:
    - Vietnamese is scored as the mean of syllable WER and CER.
    - English is scored as WER.
-4. **Automatic repair.** If a sentence fails, MediaForge tries, in order:
-   1. A new seed with a calmer temperature
-   2. The other engine
-   3. Claude proposing phonetic respellings for the misheard words
-5. **Learning.** A respelling that fixes a sentence is saved to the lexicon as `learned`.
+   - Before any synthesis, a **script check** (lint) joins sentences cut in the middle, removes stray foreign
+     characters, puts short pauses between runs of acronyms ("AI SME"), reads web addresses aloud ("aisme.vn" →
+     "aisme chấm vi en") and reads very long sentences phrase by phrase. Subtitles keep the written text.
+   - The judge is hardened: greedy decoding, a second listen when Whisper outputs Chinese/Korean characters, and
+     spelled-out acronyms are compared letter by letter ("ây ai ét em i" ≈ "AISME").
+4. **Automatic repair.** If a sentence fails, MediaForge picks the next try from *how* it failed: a repeated
+   word → a new seed; a cut-off ending → phrase-by-phrase; an acronym or foreign word → Claude's respelling; plus
+   the other engine. It stops after two tries that do not improve.
+5. **Learning, safely.** A respelling is learned only when the same try *without* it fails, it is not a correct
+   Vietnamese word (those are never respelled), and it has won in two different sentences, or you approve it.
+   Everything learned is listed in the **📘 Kinh nghiệm** tab (approve, reject, restore). A lesson that stops
+   helping retires itself.
 6. **Reporting.** Sentences that still fail are **highlighted in red** in the job's result panel, with the misheard words underlined. Each one has two buttons:
    - **🎙 Ghi âm câu này** records you reading the sentence. Your recording is **not** put into the video. The AI uses it as a guide (your pauses and phrasing) and reads the sentence again in your cloned voice, so it matches the sentences around it.
    - **🔁 Tạo lại** has the AI read the sentence again without a guide, with a new seed and phrase-by-phrase synthesis.
+   - **✓ Nghe đúng rồi**: you listened and the sentence is right, so the speech recogniser misheard it. The
+     sentence counts as passed, and QA stops failing those words for this voice.
 
    The new reading ("take") appears right under that sentence, next to the original and your recording (which is only there for comparison). The video is not re-rendered.
 7. **Export.** Under the video, pick which voice each sentence uses, choose a format from the dropdown (**MP4** by default; also MOV, MKV, WebM, MP3, WAV or M4A), and click **⬇ Xuất video**.
@@ -225,7 +234,25 @@ re-rendered. The reading is saved to the lexicon, so later videos get it right. 
    - Exports appear as download links. Exporting the same choice again reuses the earlier file.
 8. **Learning from your recordings.** Every recording is kept in `data/voices/<id>/corrections/` and added to the voice's samples.
    - The next time any job says that sentence, the AI uses your guide automatically.
-   - Respellings that fixed a sentence are saved to the lexicon.
+   - Respellings that fixed a sentence become lessons (see step 5).
+
+## Reviewing, rating and learning (Studio)
+
+- **Duyệt từng bước** (on by default for Video 16:9 and Explainer, off for Short). The job stops twice:
+  1. **Kịch bản.** Edit the narration, remove scenes, pick the hook (shorts), adjust the art direction (the
+     recurring character, the camera, the palette), and write readings for risky words.
+  2. **Storyboard.** Every picture with its prompt. **🔁 Vẽ lại** redraws one scene. Then **Dựng video**.
+- Each video gets an **art direction** shared by all scenes, a **mood** per scene that drives the camera move and
+  the transition, a **title card**, **chapter** labels and an **end card** (CTA and the music credit).
+  `music: auto` picks a library track that fits the mood.
+- **↗ Duyệt** on a job opens its review page:
+  - a sentence timeline under the player (red = failed; click to jump);
+  - **Cảnh & nhạc** to redraw one scene or change the music (only the picture is re-composed, in seconds);
+  - **Đánh giá**: 1–5 ★ and tags. Two low ratings on the same thing teach the system to avoid it, and a note
+    tagged *nội dung* becomes a rule for future scripts.
+- A render interrupted by a restart **continues** from its last finished stage instead of failing.
+- `mediaforge lessons list|approve|reject|report`, `mediaforge eval voice --voice <id>` (regression corpus of
+  sentences that failed before).
 
 ## Engines (all local, on Apple Silicon)
 
