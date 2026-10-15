@@ -1,6 +1,6 @@
 # MediaForge — Software Design Document
 
-Status: v1.5 (implemented; v1.5 adds the artistry/blend design) · 2026-10-15 · Owner: tu.dev@block8.ai · Internal tool, localhost only
+Status: v1.6 (implemented; v1.6 adds the review/upgrade design) · 2026-10-15 · Owner: tu.dev@block8.ai · Internal tool, localhost only
 
 MediaForge is the single local service on this Mac that every other task (and every
 Claude Code session) calls to produce **voice, audio, subtitles, images and videos**.
@@ -20,6 +20,7 @@ cloned voice**, in **English and Vietnamese**.
 | Image generation (local diffusion) | |
 | **Hát & Ngâm thơ**: singing / poetry chanting in the cloned voice, traditional accompaniment, illustrated video ([SDD-sing-recite.md](SDD-sing-recite.md)) | |
 | **Artistry upgrade + pha giọng (voice blending)** — measured ngâm/hát parameters, reference-melody singing, RVC re-voicing, storyboard hoạt cảnh, consent-gated blend of two voice profiles ([SDD-artistry-voice-blend.md](SDD-artistry-voice-blend.md), design) | |
+| **Review & upgrade (v1.6, design)** — safe learning from mistakes (lessons store, reading gate, owner "nghe đúng rồi" + ratings), script lint, staged/resumable video pipeline with storyboard, art direction and mood-driven motion/music, Studio dashboard ([SDD-review-upgrade.md](SDD-review-upgrade.md)) | |
 | Video styles: **narrated + AI visuals (16:9)**, **vertical shorts (9:16)**, **slide / screen explainer** | |
 | Optional AI video clips (LTX-2 MLX), off by default | |
 | REST API + SSE, MCP server for Claude sessions, web dashboard | |
@@ -338,6 +339,7 @@ CLI talks to the running server when available, otherwise runs in-process.
 | P3 Dashboard | record/enrol voice, lexicon editor, job launcher, gallery | Done 2026-10-14 |
 | P3b Hát & Ngâm thơ | tone-aware melody, WORLD resynthesis of the cloned voice, đàn tranh/sáo accompaniment, video hoạt cảnh, dashboard tabs | Done 2026-10-14 |
 | P5 Artistry + pha giọng | **pha giọng done 2026-10-15** (VieNeu speaker-vector blend, calibrated: 25 % target → 25.5 % measured; consent-gated). Designed: measured ngâm/hát parameters, reference-melody mode, RVC re-voicing, storyboard hoạt cảnh — [SDD-artistry-voice-blend.md](SDD-artistry-voice-blend.md) §9 | P1a done, rest open |
+| P6 Review & upgrade | P6-A learning hygiene + lint, P6-B lessons store + ratings + job page, P6-C staged pipeline + storyboard, P6-D creative direction — [SDD-review-upgrade.md](SDD-review-upgrade.md) §8 (review found tone-stripping `learned` lexicon entries, e.g. `độ → đô`) | Designed 2026-10-15 |
 | P4 Later | install ltx-2-mlx and enable clips; music generation (ACE-Step, Apache-2.0 — evaluate); speaker-similarity score (WavLM-SV) to auto-pick the best reference and check take timbre; fine-tune on `corrections/`; broader automated tests (unit tests for guided repair/export exist in `tests/`); React upgrade | Open |
 
 **Owner action required:** record real samples (dashboard → Voices → Record). Until then
