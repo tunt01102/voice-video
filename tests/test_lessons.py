@@ -305,3 +305,15 @@ def test_spelled_match_does_not_forgive_english_words():
     assert asr.error_rate("The cat sat", "The cats sat", "en")["score"] > 0
     assert asr.error_rate("They form a line", "They from a line", "en")["score"] > 0
     assert asr.error_rate("Visit their site", "Visit there site", "en")["score"] > 0
+
+
+def test_whisper_outro_hallucination_is_a_judge_error():
+    heard = "Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn"
+    assert asr.judge_error(heard, "vi", "chấm Vi En.")
+    assert not asr.judge_error("Hãy subscribe kênh nhé", "vi", "Hãy subscribe kênh nhé")   # the script says it
+    assert not asr.judge_error(heard, "vi")                                               # no script: unchanged
+
+
+def test_dotted_acronym_in_english_is_spelled_without_a_lexicon():
+    assert L.tts_readings("A.I.", "en", {}) == {"A.I": "A I"}
+    assert L.tts_readings("dot V.N.", "vi", {}) == {}

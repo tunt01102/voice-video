@@ -58,9 +58,20 @@ def transcribe(src: str | Path | np.ndarray, lang: str | None = None, sr: int = 
 FOREIGN_SCRIPT = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\u0400-\u04ff\u0600-\u06ff]")
 
 
-def judge_error(heard: str, lang: str) -> bool:
-    """ASR output that cannot be a reading of Vietnamese/English speech (CJK, Cyrillic, …): the judge failed."""
-    return lang in ("vi", "en") and bool(FOREIGN_SCRIPT.search(heard))
+# Whisper's stock hallucinations (YouTube outros it was trained on), typical on short or quiet clips: "chấm Vi En."
+# was heard as "Hãy subscribe cho kênh Ghiền Mì Gõ…" by both engines (corpus 2026-10-15).
+HALLUCINATIONS = ("subscribe", "ghiền mì gõ", "đăng ký kênh", "thanks for watching", "la la school")
+
+
+def judge_error(heard: str, lang: str, expected: str | None = None) -> bool:
+    """ASR output that cannot be a reading of the speech: foreign script (CJK, Cyrillic, …), or a stock Whisper
+    hallucination the script does not contain. The judge failed, not necessarily the voice."""
+    if lang not in ("vi", "en"):
+        return False
+    if FOREIGN_SCRIPT.search(heard):
+        return True
+    low, exp = heard.lower(), (expected or "").lower()
+    return expected is not None and any(h in low and h not in exp for h in HALLUCINATIONS)
 
 
 def _count(seq: list[str], sub: list[str]) -> int:

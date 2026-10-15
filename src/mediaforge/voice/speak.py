@@ -135,14 +135,14 @@ def _run_attempt(att: Attempt, sentence: str, lang: str, ref, lenient: set[str])
     hint = ", ".join(sorted(lenient)) if lenient else None
     heard = asr.transcribe(x, lang=lang, initial_prompt=hint, temperature=0.0)["text"]
     judge_retry = False
-    if asr.judge_error(heard, lang):
+    if asr.judge_error(heard, lang, sentence):
         # The judge failed, not necessarily the voice: listen again primed with the intended sentence (F3).
         judge_retry = True
         heard = asr.transcribe(x, lang=lang, initial_prompt=((hint + ". ") if hint else "") + sentence,
                                temperature=0.0)["text"]
     qa = asr.error_rate(sentence, heard, lang, lenient)
     qa["judge_retry"] = judge_retry
-    qa["judge"] = asr.judge_error(heard, lang)
+    qa["judge"] = asr.judge_error(heard, lang, sentence)
     qa["repeat"] = asr.repetition(sentence, heard, lang)
     qa["dur_ratio"] = round(_duration_ratio(sentence, lang, x), 2)
     att.audio, att.heard, att.qa = x, heard, qa

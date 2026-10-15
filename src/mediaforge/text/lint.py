@@ -94,7 +94,9 @@ def tts_readings(sentence: str, lang: str, lexicon: dict[str, str] | None = None
     for m in DOMAIN.finditer(sentence):
         out[m.group(0)] = domain_reading(m.group(0), lang)
     for m in DOTTED.finditer(sentence):
-        say = (lexicon or {}).get(m.group(0).replace(".", ""))
+        letters = m.group(0).replace(".", "")
+        # English engines read spaced capitals letter by letter ("A I"); Vietnamese needs the lexicon's reading.
+        say = (lexicon or {}).get(letters) or (" ".join(letters) if lang == "en" else None)
         span = m.group(0)
         if sentence[m.end():m.end() + 1] == "." and sentence[m.end() + 1:].strip():
             span += "."  # mid-sentence the closing dot is part of the acronym, not a full stop
