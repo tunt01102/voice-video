@@ -355,6 +355,9 @@ def synth_sentence(
             best_score, stall = a.score, 0
         else:
             stall += 1
+    if len(attempts) > 1 and best().score > thr:
+        # Several engines/strategies already failed: further repairs continue only while they improve.
+        stall = max(stall, STALL_LIMIT - 1)
     best_score = best().score
     classes: list[str] = []
     while best().score > thr and len(attempts) < budget and stall < STALL_LIMIT:
