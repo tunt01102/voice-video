@@ -398,8 +398,12 @@ def create_app() -> FastAPI:
     # ---------------------------------------------------------------- voices
     @app.get("/api/voices")
     def list_voices():
+        from mediaforge.voice import stock
+
         default = profiles.default_voice()
-        return [{**v, "default": v["id"] == default} for v in profiles.list_voices()]
+        return [{**v, "default": v["id"] == default,
+                 **({"preview_ready": bool(stock.preview_file(v["id"]))} if v.get("kind") == "stock" else {})}
+                for v in profiles.list_voices()]
 
     @app.post("/api/voices/{vid}/default")
     def make_default(vid: str):

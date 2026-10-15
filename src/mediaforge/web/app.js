@@ -742,10 +742,11 @@ async function loadVoices() {
   voices = await api("/api/voices");
   prompts = await api("/api/voices/prompts");
   const sel = $("#voice-select"); const cur = sel.value || store.get("voice", "");
-  sel.innerHTML = `<option value="">Mặc định</option>` + voices.map((v) => `<option value="${v.id}">${esc(v.name)}${v.default ? " ★" : ""}</option>`).join("");
+  sel.innerHTML = `<option value="">Mặc định</option>` + voices.map((v) => `<option value="${v.id}">${v.kind === "stock" ? "Giọng mẫu: " : ""}${esc(v.name)}${v.default ? " ★" : ""}</option>`).join("");
   sel.value = cur; if (sel.value !== cur) sel.value = "";
   applyVoiceFx();
-  $("#voices-list").innerHTML = voices.map((v) => `<div class="voice-item ${v.id === selVoice ? "sel" : ""}" data-id="${v.id}">
+  renderStock();
+  $("#voices-list").innerHTML = voices.filter((v) => v.kind !== "stock").map((v) => `<div class="voice-item ${v.id === selVoice ? "sel" : ""}" data-id="${v.id}">
       <span>${v.default ? "★ " : ""}<b>${esc(v.name)}</b> <small class="muted">${v.id}</small></span>
       <small class="muted">${v.kind === "blend" ? `<span class="badge running">pha</span> ${esc(v.description || "")}` : `${v.samples.length} mẫu · ${Object.keys(v.refs || {}).join("/")}`}</small></div>`).join("") || `<p class="muted">Chưa có giọng nào.</p>`;
   $$(".voice-item").forEach((el) => el.onclick = () => { selVoice = el.dataset.id; loadVoices(); });
@@ -858,6 +859,49 @@ function renderBlend(v) {
   };
   $("#v-delete").onclick = async () => { if (confirm(`Xoá giọng pha ${v.name}? (Hai giọng gốc không bị ảnh hưởng.)`)) { await api(`/api/voices/${v.id}`, { method: "DELETE" }); selVoice = null; $("#voice-detail").innerHTML = ""; loadVoices(); } };
 }
+
+// ---- giọng mẫu (stock voices): pre-rendered previews play at once; "Dùng" picks the voice for new jobs
+let stockGender = "", stockAudio = null, stockPlaying = null;
+const STOCK_STYLE = { tin_tuc: "Tin tức", tu_nhien: "Tự nhiên", doc_truyen: "Kể chuyện", mc: "MC" };
+function renderStock() {
+  const all = voices.filter((v) => v.kind === "stock");
+  const region = $("#stock-region").value;
+  const list = all.filter((v) => (!stockGender || v.gender === stockGender) && (!region || v.region === region));
+  const missing = all.filter((v) => !v.preview_ready).length;
+  $("#stock-list").innerHTML = (!all.length || missing ? `<div class="warn-box" style="grid-column:1/-1">${all.length
+      ? `${missing} giọng chưa có bản nghe thử.` : "Chưa cài giọng mẫu."}
+      <button class="primary small" id="stock-build">${all.length ? "Tạo bản nghe thử" : "Cài giọng mẫu"}</button>
+      <small class="muted">chạy một lần, vài phút</small></div>` : "") +
+    list.map((v) => `<div class="stock-item" data-id="${v.id}">
+      <button class="play ghost" ${v.preview_ready ? "" : "disabled"} title="Nghe thử">${stockPlaying === v.id ? "■" : "▶"}</button>
+      <div class="meta"><b>${esc(v.name)}</b><small class="muted">${v.gender === "female" ? "Nữ" : "Nam"} · ${esc(v.region || "")} · ${STOCK_STYLE[v.style] || esc(v.style || "")}${v.engine === "voxcpm" ? " · thiết kế" : ""}</small></div>
+      <button class="ghost small use">Dùng</button></div>`).join("");
+  $$("#stock-list .play").forEach((b) => b.onclick = () => {
+    const id = b.closest(".stock-item").dataset.id;
+    if (stockAudio) stockAudio.pause();
+    if (stockPlaying === id) { stockPlaying = null; return renderStock(); }
+    stockPlaying = id; stockAudio = new Audio(`/api/voices/${id}/preview`);
+    stockAudio.onended = () => { stockPlaying = null; renderStock(); };
+    stockAudio.play().catch((e) => { stockPlaying = null; toast(e.message); renderStock(); });
+    renderStock();
+  });
+  $$("#stock-list .use").forEach((b) => b.onclick = () => {
+    const id = b.closest(".stock-item").dataset.id;
+    $("#voice-select").value = id; store.set("voice", id); applyVoiceFx();
+    toast(`Đã chọn “${voices.find((v) => v.id === id).name}” cho các video/giọng đọc mới`);
+  });
+  const build = $("#stock-build");
+  if (build) build.onclick = async () => {
+    build.disabled = true; build.textContent = "Đang tạo…";
+    const j = await api("/api/jobs", { method: "POST", body: JSON.stringify({ type: "stock_previews", source: "dashboard", params: {} }) });
+    const es = new EventSource(`/api/jobs/${j.id}/events`);
+    es.addEventListener("end", () => { es.close(); loadVoices(); });
+  };
+}
+$$("#stock-gender button").forEach((b) => b.onclick = () => {
+  stockGender = b.dataset.g; $$("#stock-gender button").forEach((x) => x.classList.toggle("on", x === b)); renderStock();
+});
+$("#stock-region").onchange = renderStock;
 
 function renderVoice(v) {
   if (!v) return;

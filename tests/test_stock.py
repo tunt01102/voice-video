@@ -101,3 +101,23 @@ def test_preview_is_built_once_and_served(monkeypatch, stock_profiles):
     assert r.status_code == 200 and r.content == b"ID3"
     profiles.update_voice("stock-nu-bac-tin-tuc", {"fx": {"pace": 1.05}})
     assert stock.preview_file("stock-nu-bac-tin-tuc") is None    # new fx → preview is stale
+
+
+def test_review_measures_pauses_pitch_and_bands():
+    from mediaforge.voice import stock_review as R
+
+    sr = A.SR
+    t = np.arange(int(0.4 * sr)) / sr
+    tone = lambda hz: (0.3 * np.sin(2 * np.pi * hz * t)).astype(np.float32)
+    gap = np.zeros(int(0.2 * sr), dtype=np.float32)
+    x = np.concatenate([tone(150), gap, tone(150), np.zeros(int(0.05 * sr), np.float32), tone(150)])
+    assert R.silent_gaps(x) == 1                    # 200 ms counts, 50 ms does not
+    f0, st = R.pitch_stats(np.concatenate([tone(150), tone(150)]))
+    assert abs(f0 - 150) < 5 and st < 0.5           # a flat tone is monotone
+    assert R.band(1.0, 0.92, 1.1, 0.7, 1.35) == 100 and R.band(0.7, 0.92, 1.1, 0.7, 1.35) == 0
+    rows = [{"cer": 0.0, "tone_err": 0.0, "first_pass": 1.0, "rate": 5.2, "st_std": 3.0, "spk_cos": 0.95,
+             "gaps_per_comma": 1.0}]
+    s = R.score(rows, 5.2)
+    assert s["composite"] == 100.0
+    s = R.score([{**rows[0], "cer": 0.25, "st_std": 0.8}], 5.2)
+    assert s["parts"]["clarity"] == 50.0 and s["parts"]["expressive"] < 30 and s["composite"] < 85

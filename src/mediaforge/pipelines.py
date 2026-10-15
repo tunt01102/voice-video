@@ -944,6 +944,10 @@ def apply_plan_edits(out: Path, edits: dict[str, Any]) -> dict[str, Any]:
 def run_eval(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
     from mediaforge import evals
 
+    if p.get("suite") == "stock":
+        from mediaforge.voice import stock_review
+
+        return stock_review.run(p, progress, job_id)
     return evals.run(p, progress, job_id)
 
 
