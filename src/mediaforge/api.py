@@ -283,7 +283,51 @@ def create_app() -> FastAPI:
 
     @app.patch("/api/voices/{vid}")
     def patch_voice(vid: str, body: dict[str, Any] = Body(...)):
-        return profiles.update_voice(vid, body)
+        try:
+            return profiles.update_voice(vid, body)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+
+    # ---------------------------------------------------------------- pha giọng (voice blends)
+    @app.get("/api/blends")
+    def list_blends():
+        from mediaforge.voice import blend
+
+        return {"blends": [v for v in profiles.list_voices() if v.get("kind") == "blend"],
+                "consent_kinds": blend.CONSENT_KINDS, "recommended": blend.RECOMMENDED, "max": blend.MAX_AMOUNT}
+
+    @app.post("/api/blends")
+    def create_blend(body: dict[str, Any] = Body(...)):
+        """{owner, partner, amount (0..0.5, default 0.25), name?} → calibration job; the result is a new voice id."""
+        from mediaforge.voice import blend
+
+        try:
+            owner, partner = profiles.get_voice(body["owner"]), profiles.get_voice(body["partner"])
+            if owner.get("kind") == "blend" or body["owner"] == body["partner"]:
+                raise ValueError("giọng chính phải là một giọng thật và khác giọng pha")
+            blend.check_partner(partner)
+            blend._amount(body.get("amount", 0.25))
+        except KeyError as e:
+            raise HTTPException(404, f"voice not found: {e}") from e
+        except PermissionError as e:
+            raise HTTPException(403, str(e)) from e
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        job = runner.submit("blend", {k: body.get(k) for k in ("owner", "partner", "amount", "name", "id")
+                                      if body.get(k) is not None}, source="dashboard")
+        return {"job": job}
+
+    @app.patch("/api/blends/{vid}")
+    def patch_blend(vid: str, body: dict[str, Any] = Body(...)):
+        """{amount} → re-map the share on the stored calibration curve (instant, no GPU)."""
+        from mediaforge.voice import blend
+
+        try:
+            return blend.set_amount(vid, body["amount"])
+        except KeyError as e:
+            raise HTTPException(404, str(e)) from e
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
 
     @app.delete("/api/voices/{vid}")
     def delete_voice(vid: str):

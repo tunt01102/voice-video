@@ -91,8 +91,8 @@ the voice's `pitch` FX. It is snapped to equal temperament so the backing shares
    **Consonant passthrough**: natural-speed unvoiced runs (s, x, ch, h, stop bursts) are copied from the spoken
    waveform with 4 ms crossfades, because they carry no pitch and WORLD renders them as plain hiss.
 5. **Self-repair.** Each sung line is transcribed back. Clarity = mean(syllables right ignoring tones,
-   syllables right with tones). Up to 6 takes are tried, alternating seed and engine (VieNeu/VoxCPM), and the
-   clearest is kept. Each take is still the owner's cloned speech. Scores are **advisory**: Whisper is trained
+   syllables right with tones). Up to 6 takes are tried, alternating seed and engine (VieNeu/VoxCPM; VieNeu only for a
+   pha giọng blend voice, see SDD-artistry-voice-blend.md §6.2), and the clearest is kept. Each take is still the owner's cloned speech. Scores are **advisory**: Whisper is trained
    on speech and under-hears held vowels.
 
 Measured on "Mình ta với cả trời sao sáng / Nâng chén sương đêm cạn hết sầu" (owner voice, 2026-10-14):

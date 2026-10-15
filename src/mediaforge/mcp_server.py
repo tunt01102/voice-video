@@ -67,6 +67,25 @@ async def speak(text: str, voice: str | None = None, lang: str = "auto", pitch: 
 
 
 @mcp.tool()
+async def blend_voices(owner: str, partner: str, amount: float = 0.25, name: str | None = None,
+                       wait_seconds: float = 180) -> dict[str, Any]:
+    """Pha giọng: create a voice that stays mostly `owner` with `amount` (0..0.5, recommended 0.2-0.3) of `partner`.
+
+    The partner voice must carry a consent record (its owner's own voice, a synthetic voice, or written permission)
+    set on the dashboard's Voices tab; otherwise this is refused. Calibration renders a few probes (~1 min).
+    The result's `voice` id works as `voice` in speak / create_video / recite_poem / sing_song.
+    """
+    from mediaforge.voice import blend
+
+    try:
+        blend.check_partner(profiles.get_voice(partner))
+        blend._amount(amount)
+    except (KeyError, ValueError, PermissionError) as e:
+        return {"error": str(e)}
+    return await _submit("blend", {"owner": owner, "partner": partner, "amount": amount, "name": name}, wait_seconds)
+
+
+@mcp.tool()
 async def generate_image(prompt: str, aspect: str = "16:9", count: int = 1, style: str = "none",
                          seed: int | None = None, wait_seconds: float = 240) -> dict[str, Any]:
     """Generate image(s) locally (Z-Image-Turbo). aspect: 16:9, 9:16, 1:1, 4:3, 3:4.
@@ -218,9 +237,18 @@ def list_jobs(limit: int = 10) -> list[dict[str, Any]]:
 
 @mcp.tool()
 def list_voices() -> list[dict[str, Any]]:
-    """Available cloned voices (id, name, languages with references, default voice settings)."""
-    return [{"id": v["id"], "name": v["name"], "languages": sorted(v.get("refs", {})), "fx": v.get("fx"),
-             "samples": len(v.get("samples", []))} for v in profiles.list_voices()]
+    """Available cloned voices (id, name, languages with references, default voice settings). Blend voices
+    (pha giọng, kind='blend') show their parts and share; consent shows whether a voice may be a blend partner."""
+    out = []
+    for v in profiles.list_voices():
+        item = {"id": v["id"], "name": v["name"], "kind": v.get("kind", "voice"), "fx": v.get("fx")}
+        if v.get("kind") == "blend":
+            item.update(parts=v["parts"], amount=v["blend"]["amount"], languages=["en", "vi"])
+        else:
+            item.update(languages=sorted(v.get("refs", {})), samples=len(v.get("samples", [])),
+                        consent=(v.get("consent") or {}).get("kind"))
+        out.append(item)
+    return out
 
 
 @mcp.tool()

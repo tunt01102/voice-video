@@ -9,7 +9,7 @@ const api = async (path, opts = {}) => {
 const toast = (msg) => { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 3500); };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const TYPE_LABEL = { tts: "Giọng nói", image: "Ảnh", subtitle: "Phụ đề", short: "Short", narrated: "Video", explainer: "Explainer", screen: "Screen", video: "Video", enrol: "Thu mẫu", rerender: "Đọc lại câu", export: "Xuất file", prepare: "Chuẩn bị kịch bản", resubtitle: "Dựng lại phụ đề", repronounce: "Sửa phát âm", sing: "Hát", recite: "Ngâm thơ" };
-const HIDDEN_TYPES = ["enrol", "rerender", "export", "prepare", "resubtitle", "repronounce"];
+const HIDDEN_TYPES = ["enrol", "rerender", "export", "prepare", "resubtitle", "repronounce", "blend"];
 
 // ------------------------------------------------------------------ tabs
 $$("#tabs button").forEach((b) => b.onclick = () => {
@@ -677,7 +677,7 @@ async function loadVoices() {
   applyVoiceFx();
   $("#voices-list").innerHTML = voices.map((v) => `<div class="voice-item ${v.id === selVoice ? "sel" : ""}" data-id="${v.id}">
       <span>${v.default ? "★ " : ""}<b>${esc(v.name)}</b> <small class="muted">${v.id}</small></span>
-      <small class="muted">${v.samples.length} mẫu · ${Object.keys(v.refs || {}).join("/")}</small></div>`).join("") || `<p class="muted">Chưa có giọng nào.</p>`;
+      <small class="muted">${v.kind === "blend" ? `<span class="badge running">pha</span> ${esc(v.description || "")}` : `${v.samples.length} mẫu · ${Object.keys(v.refs || {}).join("/")}`}</small></div>`).join("") || `<p class="muted">Chưa có giọng nào.</p>`;
   $$(".voice-item").forEach((el) => el.onclick = () => { selVoice = el.dataset.id; loadVoices(); });
   if (selVoice) renderVoice(voices.find((v) => v.id === selVoice));
 }
@@ -693,8 +693,105 @@ $("#demo-voice").onclick = async () => {
 };
 
 let recIdx = 0, recLang = "vi", mediaRec = null, chunks = [];
+// ---- pha giọng (voice blending): consent on real voices, blend panel, blend-profile view
+const CONSENT = { self: "Giọng của chính tôi", written: "Người này đã đồng ý bằng văn bản", synthetic: "Giọng tổng hợp / không phải người thật" };
+const BLEND_TEXT = "Mình ta với cả trời sao sáng, nâng chén sương đêm cạn hết sầu.";
+function consentHtml(v) {
+  const c = v.consent || {};
+  return `<h4>3. Cho phép dùng làm giọng pha</h4>
+    <p class="muted">Giọng nói là dữ liệu sinh trắc của một người thật. Chỉ giọng có ghi nhận đồng ý mới được pha vào giọng khác.</p>
+    <div class="toolbar"><select id="vc-kind"><option value="none">Chưa có đồng ý — không cho pha</option>
+      ${Object.entries(CONSENT).map(([k, t]) => `<option value="${k}">${t}</option>`).join("")}</select>
+      <input id="vc-by" placeholder="Ai đồng ý (bắt buộc với văn bản)" value="${esc(c.by || "")}" style="flex:1;min-width:160px">
+      <input id="vc-note" placeholder="Ghi chú: phạm vi, nơi lưu văn bản…" value="${esc(c.note || "")}" style="flex:1;min-width:160px">
+      <button class="ghost small" id="vc-save">Lưu</button></div>
+    ${c.kind ? `<small class="muted">Đã ghi nhận: ${CONSENT[c.kind]}${c.by ? " — " + esc(c.by) : ""} · ${c.date || ""}</small>` : ""}`;
+}
+function blendPanelHtml(v) {
+  const partners = voices.filter((x) => x.id !== v.id && x.kind !== "blend" && x.consent?.kind && (x.samples || []).length);
+  return `<h4>4. Pha giọng</h4>
+    <p class="muted">Giữ <b>${esc(v.name)}</b> là giọng chủ đạo và pha thêm một phần giọng khác. Khuyên dùng 20–30 %; tối đa 50 % để giọng chính vẫn trội.</p>
+    ${partners.length ? `<div class="toolbar"><label style="margin:0">Giọng pha <select id="vb-partner">${partners.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select></label>
+      <label style="margin:0;flex:1">Mức pha <output id="vb-out">25 %</output>
+        <input type="range" id="vb-amount" min="5" max="50" step="1" value="25" class="blend-range"></label>
+      <button class="primary" id="vb-create">Tạo giọng pha</button></div>
+      <small class="muted">Tạo giọng pha sẽ đọc thử khoảng 14 câu để đo và hiệu chỉnh mức pha thật (≈1 phút).</small>
+      <div id="vb-status" class="muted"></div>`
+    : `<div class="warn-box">Chưa có giọng nào được phép pha. Tạo hoặc chọn giọng thứ hai, thu mẫu, rồi đánh dấu đồng ý ở mục 3 của giọng đó.</div>`}`;
+}
+function wireConsentAndBlend(v) {
+  $("#vc-kind").value = v.consent?.kind || "none";
+  $("#vc-save").onclick = async () => {
+    try {
+      await api(`/api/voices/${v.id}`, { method: "PATCH", body: JSON.stringify({ consent: { kind: $("#vc-kind").value, by: $("#vc-by").value, note: $("#vc-note").value } }) });
+      toast("Đã lưu ghi nhận đồng ý"); loadVoices();
+    } catch (err) { toast(err.message); }
+  };
+  if (!$("#vb-create")) return;
+  const amt = $("#vb-amount");
+  amt.oninput = () => { $("#vb-out").textContent = amt.value + " %" + (amt.value >= 20 && amt.value <= 30 ? " · khuyên dùng" : ""); };
+  amt.oninput();
+  $("#vb-create").onclick = async () => {
+    const st = $("#vb-status"); $("#vb-create").disabled = true;
+    try {
+      const r = await api("/api/blends", { method: "POST", body: JSON.stringify({ owner: v.id, partner: $("#vb-partner").value, amount: +amt.value / 100 }) });
+      followJob(r.job.id, {
+        onProgress: (j) => { st.textContent = j.status === "queued" ? "⏳ Đang chờ GPU…" : `⏳ ${j.message || ""} ${(j.progress * 100).toFixed(0)}%`; },
+        onEnd: (j) => {
+          $("#vb-create").disabled = false;
+          if (j.status !== "done") { st.textContent = ""; toast("Chưa tạo được giọng pha: " + (j.message || j.error || j.status)); return; }
+          st.textContent = ""; toast(`Đã tạo giọng ${j.result.name}`); selVoice = j.result.voice; loadVoices();
+        },
+      });
+    } catch (err) { $("#vb-create").disabled = false; toast(err.message); }
+  };
+}
+function previewInto(el, voiceId, label, text) {
+  el.innerHTML = `<small class="muted">${label}: ⏳</small>`;
+  return api("/api/jobs", { method: "POST", body: JSON.stringify({ type: "tts", source: "dashboard", params: { text, voice: voiceId, lang: "vi", preview: true } }) })
+    .then((job) => new Promise((done) => followJob(job.id, { onEnd: (j) => {
+      const url = fileUrl(j?.files?.mp3) || fileUrl(j?.files?.audio);
+      el.innerHTML = url ? `<small class="muted">${label}</small><audio controls src="${url}"></audio>` : `<small class="muted">${label}: lỗi</small>`;
+      done();
+    } })));
+}
+function renderBlend(v) {
+  const b = v.blend, [own, other] = [voices.find((x) => x.id === b.owner), voices.find((x) => x.id === b.partner)];
+  const pct = Math.round(b.amount * 100), e = b.expected || {};
+  $("#voice-detail").innerHTML = `
+    <div class="job-head"><h3 style="margin:0">${esc(v.name)}</h3><span class="spacer"></span><span class="badge running">giọng pha</span>
+      <button class="ghost small" id="v-delete">Xoá giọng pha</button></div>
+    <div class="blend-bar"><span style="width:${100 - pct}%">${esc(own?.name || b.owner)} ${100 - pct}%</span><span style="width:${pct}%">${esc(other?.name || b.partner)} ${pct}%</span></div>
+    <p class="muted">Đo bằng bộ nhận dạng giọng của VieNeu: giống giọng chính ${(e.cos_a ?? 0).toFixed(2)} · giống giọng pha ${(e.cos_b ?? 0).toFixed(2)}
+      ${e.cos_a > e.cos_b ? "— vẫn gần giọng chính hơn ✓" : ""}. Ghi nhận đồng ý của giọng pha: ${CONSENT[b.partner_consent?.kind] || "?"}.</p>
+    <h4>Mức pha</h4>
+    <div class="toolbar"><input type="range" id="bl-amount" min="5" max="50" step="1" value="${pct}" class="blend-range" style="flex:1"><output id="bl-out">${pct} %</output>
+      <button class="ghost small" id="bl-save">Lưu mức pha</button></div>
+    <h4>Nghe so sánh</h4>
+    <div class="toolbar"><input id="bl-text" value="${esc(BLEND_TEXT)}" style="flex:1;min-width:200px"><button class="primary" id="bl-try">▶ Nghe A · Pha · B</button></div>
+    <div class="grid3" id="bl-out3"><div></div><div></div><div></div></div>
+    <p class="muted">Dùng giọng này như mọi giọng khác: chọn nó ở Tạo mới, Ngâm thơ hoặc Hát (luôn đọc bằng VieNeu). Bản ghi sửa câu được lưu vào giọng chính.</p>`;
+  $("#bl-amount").oninput = (ev) => { $("#bl-out").textContent = ev.target.value + " %"; };
+  $("#bl-save").onclick = async () => {
+    try { await api(`/api/blends/${v.id}`, { method: "PATCH", body: JSON.stringify({ amount: +$("#bl-amount").value / 100 }) }); toast("Đã lưu mức pha"); loadVoices(); }
+    catch (err) { toast(err.message); }
+  };
+  $("#bl-try").onclick = async () => {
+    const text = $("#bl-text").value.trim() || BLEND_TEXT, cells = $$("#bl-out3 > div");
+    $("#bl-try").disabled = true;
+    try {   // one after another: the GPU worker is serial anyway, and the order matches the cells
+      await previewInto(cells[0], b.owner, "A · " + (own?.name || b.owner), text);
+      await previewInto(cells[1], v.id, `Pha ${Math.round(b.amount * 100)}%`, text);
+      await previewInto(cells[2], b.partner, "B · " + (other?.name || b.partner), text);
+    } catch (err) { toast(err.message); }
+    $("#bl-try").disabled = false;
+  };
+  $("#v-delete").onclick = async () => { if (confirm(`Xoá giọng pha ${v.name}? (Hai giọng gốc không bị ảnh hưởng.)`)) { await api(`/api/voices/${v.id}`, { method: "DELETE" }); selVoice = null; $("#voice-detail").innerHTML = ""; loadVoices(); } };
+}
+
 function renderVoice(v) {
   if (!v) return;
+  if (v.kind === "blend") return renderBlend(v);
   const fx = v.fx || {};
   const ps = prompts[recLang] || [];
   $("#voice-detail").innerHTML = `
@@ -730,8 +827,11 @@ function renderVoice(v) {
     <div class="toolbar"><button class="primary" id="v-save">Lưu</button>
       <input id="v-test-text" value="Xin chào, đây là giọng nói của tôi. Hello, this is my cloned voice." style="flex:1;min-width:200px">
       <button class="ghost" id="v-test">▶ Nghe thử</button></div>
-    <div id="v-test-out"></div>`;
+    <div id="v-test-out"></div>
+    ${consentHtml(v)}
+    ${blendPanelHtml(v)}`;
   $("#rec-lang").value = recLang;
+  wireConsentAndBlend(v);
   $("#ve-vi").value = v.engines?.vi || "vieneu"; $("#ve-en").value = v.engines?.en || "voxcpm";
   $$("#voice-detail input[type=range]").forEach((r) => r.oninput = () => r.previousElementSibling.textContent = r.value);
   $("#rec-lang").onchange = (e) => { recLang = e.target.value; recIdx = 0; renderVoice(v); };

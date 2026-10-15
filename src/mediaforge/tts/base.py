@@ -9,10 +9,24 @@ import numpy as np
 
 
 @dataclass(frozen=True)
+class BlendSpec:
+    """Pha giọng: borrow part of a second voice's identity. `weight` is the engine-internal mix (already
+    calibrated from the perceived share, see voice/blend.py); the owner's reference stays the prompt."""
+    partner_audio: str   # the partner voice's reference clip
+    weight: float        # 0 = owner only, 1 = partner's speaker vector
+    partner_id: str = ""
+
+    @property
+    def key(self) -> str:
+        return f"{self.partner_audio}@{self.weight:.3f}"
+
+
+@dataclass(frozen=True)
 class VoiceRef:
     audio_path: str      # cleaned reference clip (48 kHz mono wav)
     text: str            # transcript of the clip
     lang: str            # language of the clip
+    blend: BlendSpec | None = None   # set for blend profiles; only engines with `blends = True` honour it
 
 
 class TTSEngine(Protocol):
@@ -20,6 +34,7 @@ class TTSEngine(Protocol):
     languages: set[str]
     sample_rate: int
     self_normalises: set[str]   # languages for which the engine normalises raw text itself
+    blends: bool                # can mix a second speaker into the voice (VoiceRef.blend)
 
     def synth(self, text: str, lang: str, ref: VoiceRef | None, *, seed: int, temperature: float,
               prompt: VoiceRef | None = None) -> np.ndarray: ...
@@ -52,6 +67,12 @@ def get_engine(name: str) -> TTSEngine:
 def engines_for(lang: str) -> list[str]:
     _ensure_loaded()
     return [n for n, c in _REGISTRY.items() if lang in c.languages]
+
+
+def blend_engines(lang: str) -> list[str]:
+    """Engines that can render a blend profile (VoiceRef.blend) in this language."""
+    _ensure_loaded()
+    return [n for n, c in _REGISTRY.items() if lang in c.languages and getattr(c, "blends", False)]
 
 
 DEFAULT_ROUTE = {"vi": "vieneu", "en": "voxcpm"}

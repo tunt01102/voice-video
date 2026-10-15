@@ -52,6 +52,24 @@ To restore a snapshot:
 tar -xzf data/backups/<snapshot>.tar.gz -C data/
 ```
 
+### Pha giọng (voice blending)
+
+Make a voice that stays **mostly yours** with a share (5–50 %, 20–30 % recommended) of a second voice.
+
+1. Enrol the second voice like any voice (record or upload samples).
+2. On that voice's page, section **3. Cho phép dùng làm giọng pha**, record whose voice it is and that they agreed:
+   your own voice, a synthetic voice, or written permission (with who agreed). Without this the blend is refused:
+   a voice is biometric data of a real person.
+3. On *your* voice's page, section **4. Pha giọng**: pick the partner, set **Mức pha**, click **Tạo giọng pha**.
+   It calibrates in about 30 s, so the share you set is the share you get, then opens the new voice.
+   Use **▶ Nghe A · Pha · B** to compare, and the slider to change the share later (instant).
+4. Pick the new voice anywhere: Tạo mới, Ngâm thơ, Hát, MCP, CLI. It always renders with VieNeu.
+
+```bash
+uv run mediaforge voice consent friend written --by "Tên người đồng ý"
+uv run mediaforge voice blend tu friend --amount 0.25
+```
+
 ## 2. Make things
 
 | Want | Dashboard | CLI |

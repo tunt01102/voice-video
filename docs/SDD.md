@@ -1,6 +1,6 @@
 # MediaForge — Software Design Document
 
-Status: v1.4 (implemented) · 2026-10-14 · Owner: tu.dev@block8.ai · Internal tool, localhost only
+Status: v1.5 (implemented; v1.5 adds the artistry/blend design) · 2026-10-15 · Owner: tu.dev@block8.ai · Internal tool, localhost only
 
 MediaForge is the single local service on this Mac that every other task (and every
 Claude Code session) calls to produce **voice, audio, subtitles, images and videos**.
@@ -19,6 +19,7 @@ cloned voice**, in **English and Vietnamese**.
 | Subtitles: SRT, VTT, karaoke ASS, burned-in or soft | Multi-user auth |
 | Image generation (local diffusion) | |
 | **Hát & Ngâm thơ**: singing / poetry chanting in the cloned voice, traditional accompaniment, illustrated video ([SDD-sing-recite.md](SDD-sing-recite.md)) | |
+| **Artistry upgrade + pha giọng (voice blending)** — measured ngâm/hát parameters, reference-melody singing, RVC re-voicing, storyboard hoạt cảnh, consent-gated blend of two voice profiles ([SDD-artistry-voice-blend.md](SDD-artistry-voice-blend.md), design) | |
 | Video styles: **narrated + AI visuals (16:9)**, **vertical shorts (9:16)**, **slide / screen explainer** | |
 | Optional AI video clips (LTX-2 MLX), off by default | |
 | REST API + SSE, MCP server for Claude sessions, web dashboard | |
@@ -73,7 +74,7 @@ and step count are the effective levers (`image.QUALITY`).
 |---|---|---|---|
 | VI voice clone (default) | VieNeu-TTS v3 Turbo | pnnbao97/VieNeu-TTS (2.9k) | Apache-2.0 |
 | EN voice clone (default), VI alternate | VoxCPM2 via mlx-audio | OpenBMB/VoxCPM (39k), Blaizzy/mlx-audio (8k) | Apache-2.0 / MIT |
-| Fallback TTS | OmniVoice (k2-fsa) | k2-fsa/OmniVoice (14.5k) | Apache-2.0 |
+| Fallback TTS (not installed) | OmniVoice (k2-fsa) | k2-fsa/OmniVoice (14.5k) | Apache-2.0 code, **CC-BY-NC weights** (checked 2026-10-15) → do not install; see SDD-artistry-voice-blend.md §8 |
 | ASR, word timings, QA | mlx-whisper large-v3-turbo | ml-explore/mlx-examples (9k) | MIT |
 | VI text normalisation | vietnormalizer + own lexicon | PyPI vietnormalizer | MIT |
 | Singing / chanting resynthesis (f0 replace, syllable re-timing) | WORLD via pyworld | JeremyCCHsu/Python-Wrapper-for-World-Vocoder (1.3k), mmorise/World | MIT / modified BSD |
@@ -139,6 +140,7 @@ src/mediaforge/
   voice/profiles.py  voice profile CRUD, reference preparation
   voice/fx.py        pitch/formant, pace, clarity chain, loudness
   voice/speak.py     sentence-level synth + QA + self-repair loop
+  voice/blend.py     pha giọng: consent, speaker-vector blend calibration, blend profiles (SDD-artistry-voice-blend.md §6)
   asr.py             transcribe, word timings, script alignment, similarity score
   subtitles.py       cue building, SRT/VTT/ASS karaoke writers
   image.py           image generation
@@ -296,7 +298,7 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 | `GET/POST /api/voices`, `GET/PATCH/DELETE /api/voices/{id}` | voice profiles |
 | `POST /api/voices/{id}/samples` | multipart upload/recording → processed sample |
 | `GET/PUT /api/voices/{id}/lexicon`, `GET/PUT /api/lexicon` | pronunciation lexicons |
-| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip, prepare, sing, recite` (+ internal `rerender`, `export`, `resubtitle`, `repronounce`) |
+| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip, prepare, sing, recite` (+ internal `rerender`, `export`, `resubtitle`, `repronounce`, `blend`) |
 | `GET /api/poems`, `GET /api/sing/moods` | Tang poem catalogue (Ngâm thơ tab); moods/styles for sing/recite |
 | `POST /api/jobs/{id}/sentences/{i}/rerender` | `{file?, lang?}` — AI re-renders sentence *i* as a take (recording = guide) |
 | `POST /api/jobs/{id}/repronounce` | `{readings: {term: reading}, format?}` — re-read every sentence containing a term, export (no re-render); `GET /api/jobs/{id}/occurrences?terms=` previews matches |
@@ -311,11 +313,12 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 | `POST /api/uploads` | upload media for later jobs |
 | `POST /api/documents` | multipart Word/PDF → `{text with [ảnh N] markers, images, title, warnings}`; video params take `doc_images` |
 | `GET /api/music`, `GET /api/music/{id}/audio` | background-music library / preview |
+| `GET/POST /api/blends`, `PATCH /api/blends/{id}` | pha giọng: blend profiles (`{owner, partner, amount}` → calibration job); partner needs `consent` (`PATCH /api/voices/{id}`) |
 
 `?wait=true` on `POST /api/jobs` blocks until completion (≤ 600 s) for simple clients.
 
 ### 9.2 MCP (streamable HTTP at `http://127.0.0.1:8765/mcp`)
-Tools: `speak`, `generate_image`, `prepare_video`, `create_video`, `resubtitle_video`, `repronounce_video`, `recite_poem`, `sing_song`, `list_poems`,
+Tools: `speak`, `blend_voices`, `generate_image`, `prepare_video`, `create_video`, `resubtitle_video`, `repronounce_video`, `recite_poem`, `sing_song`, `list_poems`,
 `transcribe_subtitles`, `job_status`, `list_voices`, `list_jobs`, `list_music`. Long jobs return a job id
 immediately plus a `wait_seconds` option; results return absolute file paths (sessions
 run on the same machine). `create_video`/`prepare_video` take `document` (+ `document_as` brief|script) to use a
@@ -323,7 +326,7 @@ Word/PDF and its pictures; voice settings left unset come from the voice profile
 `claude mcp add -s user --transport http mediaforge http://127.0.0.1:8765/mcp`.
 
 ### 9.3 CLI
-`mediaforge serve | speak | image | video | short | explainer | subtitle | recite | sing | poems | voice … | music list|sync | doctor`.
+`mediaforge serve | speak | image | video | short | explainer | subtitle | recite | sing | poems | voice … (incl. `voice consent`, `voice blend`) | music list|sync | doctor`.
 CLI talks to the running server when available, otherwise runs in-process.
 
 ## 10. Phases
@@ -334,7 +337,8 @@ CLI talks to the running server when available, otherwise runs in-process.
 | P2 Service | FastAPI + jobs + SSE, MCP, `claude mcp add`, launchd | Done 2026-10-14 |
 | P3 Dashboard | record/enrol voice, lexicon editor, job launcher, gallery | Done 2026-10-14 |
 | P3b Hát & Ngâm thơ | tone-aware melody, WORLD resynthesis of the cloned voice, đàn tranh/sáo accompaniment, video hoạt cảnh, dashboard tabs | Done 2026-10-14 |
-| P4 Later | install ltx-2-mlx and enable clips; OmniVoice adapter; music generation (ACE-Step, Apache-2.0 — evaluate); speaker-similarity score (WavLM-SV) to auto-pick the best reference and check take timbre; fine-tune on `corrections/`; broader automated tests (unit tests for guided repair/export exist in `tests/`); React upgrade | Open |
+| P5 Artistry + pha giọng | **pha giọng done 2026-10-15** (VieNeu speaker-vector blend, calibrated: 25 % target → 25.5 % measured; consent-gated). Designed: measured ngâm/hát parameters, reference-melody mode, RVC re-voicing, storyboard hoạt cảnh — [SDD-artistry-voice-blend.md](SDD-artistry-voice-blend.md) §9 | P1a done, rest open |
+| P4 Later | install ltx-2-mlx and enable clips; music generation (ACE-Step, Apache-2.0 — evaluate); speaker-similarity score (WavLM-SV) to auto-pick the best reference and check take timbre; fine-tune on `corrections/`; broader automated tests (unit tests for guided repair/export exist in `tests/`); React upgrade | Open |
 
 **Owner action required:** record real samples (dashboard → Voices → Record). Until then
 a placeholder voice (macOS `say`) proves the pipeline; "sounds like me" can only be

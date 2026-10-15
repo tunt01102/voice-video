@@ -229,6 +229,7 @@ def rerender(p: dict[str, Any], progress: Progress, job_id: str | None = None) -
     sent = r["sentences"][idx]
     text, lang = sent["text"], p.get("lang") or sent.get("lang") or "vi"
     voice_id = job_voice(job)
+    store_id = profiles.base_voice(voice_id)  # a blend's recordings belong to its owner's voice
 
     guide = None
     if p.get("file"):
@@ -236,7 +237,7 @@ def rerender(p: dict[str, Any], progress: Progress, job_id: str | None = None) -
             raise ValueError("no voice profile to store the recording under")
         progress(0.05, "lưu bản ghi làm mẫu hướng dẫn")
         # The backup is taken once the clip is also enrolled as a sample (below), not twice per recording.
-        guide = profiles.add_correction(voice_id, p["file"], text=text, lang=lang, job=src_id, index=idx, backup=False)
+        guide = profiles.add_correction(store_id, p["file"], text=text, lang=lang, job=src_id, index=idx, backup=False)
 
     progress(0.15, "AI đang đọc lại câu")
     n_prev = len(sent.get("takes") or [])
@@ -244,14 +245,14 @@ def rerender(p: dict[str, Any], progress: Progress, job_id: str | None = None) -
     audio, rep = S.synth_sentence(text, lang, voice_id, engine=job["params"].get("engine"), seed=seed,
                                   ref_path=sent.get("ref"), guide=guide, phrase_first=True)
     if guide:
-        profiles.update_correction(voice_id, text, guide["id"], strategy=rep["strategy"], score=rep["score"],
+        profiles.update_correction(store_id, text, guide["id"], strategy=rep["strategy"], score=rep["score"],
                                    passed=rep["passed"])
         try:  # every recording also grows the voice's sample pool (ranked below dedicated enrolment reads)
-            profiles.add_sample(voice_id, settings.data_dir / guide["raw"], lang=lang, text=text,
+            profiles.add_sample(store_id, settings.data_dir / guide["raw"], lang=lang, text=text,
                                 source="correction")
         except Exception as e:  # noqa: BLE001
             log.warning("could not enrol correction %s as a sample: %s", guide["id"], e)
-            profiles.backup_voices(f"correction-{voice_id}")
+            profiles.backup_voices(f"correction-{store_id}")
 
     progress(0.8, "khớp giọng với các câu xung quanh")
     spans = ensure_spans(job)

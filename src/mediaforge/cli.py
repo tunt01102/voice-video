@@ -213,7 +213,12 @@ def voice_list() -> None:
 
     d = profiles.default_voice()
     for v in profiles.list_voices():
-        typer.echo(f"{'*' if v['id'] == d else ' '} {v['id']:<16} {v['name']:<28} samples={len(v['samples'])} refs={v.get('refs')}")
+        if v.get("kind") == "blend":
+            typer.echo(f"  {v['id']:<16} {v['name']:<28} blend {v['description']} (w={v['blend']['weight']})")
+            continue
+        consent = (v.get("consent") or {}).get("kind", "-")
+        typer.echo(f"{'*' if v['id'] == d else ' '} {v['id']:<16} {v['name']:<28} samples={len(v['samples'])} "
+                   f"consent={consent} refs={v.get('refs')}")
 
 
 @voice_app.command("create")
@@ -281,6 +286,23 @@ def voice_set(voice_id: str, pitch: Optional[float] = None, pace: Optional[float
     engines = {k: v for k, v in {"vi": vi_engine, "en": en_engine}.items() if v}
     v = profiles.update_voice(voice_id, {"fx": _fx(pitch, pace, warmth, clarity) or {}, "engines": engines})
     _print({"fx": v["fx"], "engines": v["engines"]})
+
+
+@voice_app.command("consent")
+def voice_consent(voice_id: str, kind: str = typer.Argument(..., help="self | written | synthetic | none"),
+                  by: Optional[str] = None, note: Optional[str] = None) -> None:
+    """Record whether a voice may be a blend partner (pha giọng). 'written' needs --by (who agreed)."""
+    from mediaforge.voice import profiles
+
+    v = profiles.update_voice(voice_id, {"consent": {"kind": kind, "by": by, "note": note}})
+    _print({"id": v["id"], "consent": v.get("consent")})
+
+
+@voice_app.command("blend")
+def voice_blend(owner: str, partner: str, amount: float = typer.Option(0.25, help="partner share 0..0.5 (0.2-0.3 recommended)"),
+                name: Optional[str] = None, local: bool = False) -> None:
+    """Pha giọng: a new voice that stays mostly OWNER with AMOUNT of PARTNER (partner needs a consent record)."""
+    _run("blend", {"owner": owner, "partner": partner, "amount": amount, "name": name}, local)
 
 
 # ------------------------------------------------------------------ ops

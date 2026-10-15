@@ -16,6 +16,7 @@ class VoxCPMEngine:
     languages = {"en", "vi"}
     sample_rate = 48_000
     self_normalises: set[str] = set()
+    blends = False   # conditions on reference audio only: no speaker vector to mix
 
     def __init__(self) -> None:
         from mlx_audio.tts.utils import load_model
