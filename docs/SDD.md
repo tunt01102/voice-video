@@ -311,7 +311,8 @@ result exposes as `report.music_credit` and the dashboard shows under the video.
   karaoke subtitles, music and cards are unchanged; clips are re-rendered only when a slot length changes
   (revoice/repronounce). Layout per scene comes from the planner (`layout`, `stat`, `shape`) or, in slide markdown, from `@layout` /
   `@stat` / `@shape` / `@fx` / `@mood` lines (2026-10-16, `slides.parse_markdown_slides`; bad values → `report.warnings`);
-  default = `3d` opener then `bullets`. Measured (E2E 2026-10-16, M4 Max): ≈ 1–1.5 s of render per 1 s of slide at 1080p;
+  default = `3d` opener then `bullets`. On 9:16 the 3D canvas is a band at 7–28 % of the height with the text
+  below (2026-10-16; it used to sit across the subtitle band at 60–73 %), and the text block shrinks to fit its box. Measured (E2E 2026-10-16, M4 Max): ≈ 1–1.5 s of render per 1 s of slide at 1080p;
   slides are rendered after all background images, because an open WebGL (Metal) context slowed mflux ~3×. Falls back to Pillow slides (with a
   warning) when Playwright is missing. Agent skills for this stack: `.claude/skills/` (SKILLS-REVIEW.md).
 

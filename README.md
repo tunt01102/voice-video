@@ -70,6 +70,15 @@ uv run mediaforge voice consent friend written --by "Tên người đồng ý"
 uv run mediaforge voice blend tu friend --amount 0.25
 ```
 
+### Giọng mẫu (ready-made voices) and the default voice
+
+Voices tab → **Giọng mẫu**: 12 ready-made Vietnamese presenter voices (Nữ/Nam · Bắc/Trung/Nam · Tin tức / Tự nhiên
+/ Kể chuyện / MC) with a sample that plays at once (▶). **Dùng** picks one for the next jobs; **★** makes it the
+**default voice** — the one every request without a voice uses (dashboard "Mặc định", MCP `speak`/`create_video`,
+CLI). The two Central voices (Nữ/Nam · Trung · Tự nhiên) are new; press **Tạo bản nghe thử** once to render their
+samples. Other ways to set the default: `mediaforge voice default <id>`, MCP `set_default_voice(voice_id)`,
+or **Đặt mặc định** on one of your own voices.
+
 ## 2. Make things
 
 | Want | Dashboard | CLI |
@@ -192,6 +201,7 @@ claude mcp add -s user --transport http mediaforge http://127.0.0.1:8765/mcp
 | `generate_image` | Prompt → image(s) |
 | `prepare_video` | Writes the script and lists terms the TTS may misread, before rendering. Returns `plan_file` + `candidates`. |
 | `create_video` | `kind`: `narrated`, `short` or `explainer`. Input is a brief, your own script, slide markdown, or a `plan_file` from `prepare_video` with `pronunciations` (`{"PNJ": "Pi En Di"}`). Returns a `job_id`. |
+| `list_voices` / `set_default_voice` | Voices with their `default` flag; make a voice (yours or a giọng mẫu) the default |
 | `revoice_video` | Reads a finished video again in another voice (clone, blend or stock); keeps script and pictures |
 | `resubtitle_video` | Rebuilds a finished video's subtitles (fit-to-frame, karaoke) without re-rendering voice or images |
 | `repronounce_video` | Fixes how words are read in a finished video (`{"PNJ": "Pi En Di"}`): re-reads only those sentences and exports a new MP4, no re-render |

@@ -293,11 +293,12 @@ def list_voices() -> list[dict[str, Any]]:
     """Available cloned voices (id, name, languages with references, default voice settings). Blend voices
     (pha giọng, kind='blend') show their parts and share; consent shows whether a voice may be a blend partner.
     Stock voices (giọng mẫu, kind='stock') are ready-made presenter voices: gender, region, style and a preview URL."""
-    out = []
+    out, default = [], profiles.default_voice()
     for v in profiles.list_voices():
-        item = {"id": v["id"], "name": v["name"], "kind": v.get("kind", "voice"), "fx": v.get("fx")}
+        item = {"id": v["id"], "name": v["name"], "kind": v.get("kind", "voice"), "fx": v.get("fx"),
+                "default": v["id"] == default}
         if v.get("kind") == "blend":
-            item.update(parts=v["parts"], amount=v["blend"]["amount"], languages=["en", "vi"])
+            item.update(parts=v.get("parts"), amount=(v.get("blend") or {}).get("amount"), languages=["en", "vi"])
         elif v.get("kind") == "stock":
             item.update(gender=v.get("gender"), region=v.get("region"), style=v.get("style"), languages=["vi"],
                         preview_url=f"http://127.0.0.1:8765/api/voices/{v['id']}/preview")
@@ -306,6 +307,15 @@ def list_voices() -> list[dict[str, Any]]:
                         consent=(v.get("consent") or {}).get("kind"))
         out.append(item)
     return out
+
+
+@mcp.tool()
+def set_default_voice(voice_id: str) -> dict[str, Any]:
+    """Make a voice (cloned, blend or stock giọng mẫu) the default for every request that names no voice.
+    Only when the owner asks for it: it changes the voice of all later speak/create_video calls without `voice`."""
+    before = profiles.default_voice()
+    profiles.set_default_voice(voice_id)
+    return {"default": voice_id, "previous": before}
 
 
 @mcp.tool()

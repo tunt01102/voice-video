@@ -47,6 +47,12 @@ CATALOGUE: list[dict[str, Any]] = [
      "style": "tu_nhien", "engine": "vieneu", "preset": "Hải Đăng"},
     {"id": "stock-nam-bac-ke-chuyen", "fx": {"pitch": 0.0, "pace": 1.1, "warmth": 0.2, "clarity": 0.8}, "name": "Nam · Bắc · Kể chuyện", "gender": "male", "region": "Bắc",
      "style": "doc_truyen", "engine": "vieneu", "preset": "Thiện Minh"},
+    # Miền Trung (added 2026-10-16): the only two Trung presets in VieNeu-TTS-v3-Turbo; fx = the common tuned
+    # setting of run 2 until their own review (docs/SDD-stock-voices.md §5.4).
+    {"id": "stock-nu-trung-tu-nhien", "fx": {"pitch": 0.0, "pace": 1.1, "warmth": 0.2, "clarity": 0.8}, "name": "Nữ · Trung · Tự nhiên", "gender": "female", "region": "Trung",
+     "style": "tu_nhien", "engine": "vieneu", "preset": "Ngọc Trân"},
+    {"id": "stock-nam-trung-tu-nhien", "fx": {"pitch": 0.0, "pace": 1.1, "warmth": 0.2, "clarity": 0.8}, "name": "Nam · Trung · Tự nhiên", "gender": "male", "region": "Trung",
+     "style": "tu_nhien", "engine": "vieneu", "preset": "Quang Sơn"},
     {"id": "stock-nu-mc-thiet-ke", "fx": {"pitch": 0.0, "pace": 1.1, "warmth": 0.2, "clarity": 0.8}, "name": "Nữ · MC (thiết kế)", "gender": "female", "region": "Bắc",
      "style": "mc", "engine": "voxcpm",
      "instruct": "A professional Vietnamese female television presenter, clear and confident, warm bright voice, "

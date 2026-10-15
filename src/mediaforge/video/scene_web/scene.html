@@ -19,7 +19,8 @@
   #content { position: absolute; left: 7.5%; top: 15%; right: 7.5%; bottom: 14%; }
   body.split #content { right: 46%; }
   body.vertical #content { left: 8%; right: 8%; top: 12%; bottom: 40%; }
-  body.vertical.split #content { right: 8%; top: 9%; }
+  /* 9:16 3D: the object takes a band at the top, text below; subtitles (MarginV 520/1920) own 60–73 % */
+  body.vertical.split #content { right: 8%; top: 29%; }
   #bar { height: calc(10 * var(--u)); width: calc(120 * var(--u)); background: var(--accent); border-radius: 99px; transform-origin: left center; margin-bottom: calc(30 * var(--u)); }
   #title { color: var(--title); font-weight: 700; font-size: calc(76 * var(--u)); line-height: 1.16; letter-spacing: -.01em; }
   /* hidden until their tween starts: an anime.js tween only applies its from-value once reached */
@@ -31,6 +32,7 @@
   .caret { display: inline-block; width: .08em; height: .95em; margin-left: .06em; vertical-align: -.1em; background: var(--accent); }
   #bullets { list-style: none; margin-top: calc(48 * var(--u)); }
   #bullets li { position: relative; color: var(--text); font-size: calc(44 * var(--u)); line-height: 1.3; padding-left: calc(56 * var(--u)); margin-bottom: calc(28 * var(--u)); }
+  #bullets li:last-child { margin-bottom: 0; }  /* the fit-to-box loop measures real text, not a trailing gap */
   #bullets li .dot { position: absolute; left: calc(4 * var(--u)); top: calc(18 * var(--u)); width: calc(20 * var(--u)); height: calc(20 * var(--u)); border-radius: 50%; background: var(--accent); box-shadow: 0 0 calc(18 * var(--u)) var(--accent); }
   #stat { margin-top: calc(70 * var(--u)); display: flex; align-items: center; gap: calc(48 * var(--u)); }
   #stat svg { width: calc(300 * var(--u)); height: calc(300 * var(--u)); flex: none; }
@@ -45,7 +47,7 @@
   body.vertical #stat .lab { font-size: calc(50 * var(--u)); }
   body.vertical #foot { font-size: calc(30 * var(--u)); }
   #three { position: absolute; right: 2%; top: 8%; width: 46%; height: 84%; }
-  body.vertical #three { left: 0; right: 0; top: auto; bottom: 18%; width: 100%; height: 44%; }
+  body.vertical #three { left: 0; right: 0; top: 7%; width: 100%; height: 21%; }
   /* top right: burned-in subtitles own the bottom band, chapter labels (subtitles.chapter ass) the top left */
   #foot { position: absolute; left: 38%; right: 7.5%; top: 5%; display: flex; align-items: center; gap: calc(24 * var(--u)); color: var(--text); font-size: calc(24 * var(--u)); opacity: .8; }
   body.vertical #foot { top: 4%; left: 34%; right: 6%; }
@@ -195,7 +197,23 @@ window.__setup = async (data) => {
     li.innerHTML = '<span class="dot"></span><span class="txt"></span>';
     li.querySelector(".txt").textContent = b; ul.appendChild(li);
   }
-  await document.fonts.ready;  // split only once the real font is measured
+  const statMatch = (layout === "stat" && data.stat) ? String(data.stat.value).match(/^([^\d-]*)(-?[\d.,]+)(.*)$/) : null;
+  if (layout === "stat" && data.stat) {
+    $("#stat").innerHTML = `<svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="10"/>
+      <circle id="arc" cx="60" cy="60" r="52" fill="none" stroke="${data.colors.accent}" stroke-width="10" stroke-linecap="round"
+      transform="rotate(-90 60 60)" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"/></svg>
+      <div><div class="num"></div><div class="lab"></div></div>`;
+    $("#stat .lab").textContent = data.stat.label || "";
+    $("#stat .num").textContent = data.stat.value;  // widest form while measuring
+  } else {
+    $("#stat").style.display = "none";  // before measuring: its margin would count as overflow
+  }
+  await document.fonts.ready;  // measure and split only once the real font is loaded
+  // Shrink the text block until it fits its box, so a long title or many bullets never run into the subtitle
+  // band. Deterministic: depends only on the text and the frame size.
+  const box = $("#content");
+  for (let fit = 1; fit > 0.55 && box.scrollHeight > box.clientHeight + 1; fit -= 0.04)
+    box.style.setProperty("--u", `${u * (fit - 0.04)}px`);
   const fx = TEXT_FX[data.text_fx] || TEXT_FX.rise;
   gt = gsap.timeline({ paused: true });
   const S = data.seconds * 1000;
@@ -214,13 +232,7 @@ window.__setup = async (data) => {
   });
 
   if (layout === "stat" && data.stat) {
-    const st = $("#stat");
-    const m = String(data.stat.value).match(/^([^\d-]*)(-?[\d.,]+)(.*)$/);
-    st.innerHTML = `<svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="10"/>
-      <circle id="arc" cx="60" cy="60" r="52" fill="none" stroke="${data.colors.accent}" stroke-width="10" stroke-linecap="round"
-      transform="rotate(-90 60 60)" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"/></svg>
-      <div><div class="num"></div><div class="lab"></div></div>`;
-    st.querySelector(".lab").textContent = data.stat.label || "";
+    const st = $("#stat"), m = statMatch;
     const num = st.querySelector(".num");
     const target = m ? parseFloat(m[2].replace(/,/g, "")) : null;
     const decimals = m && m[2].includes(".") ? m[2].split(".")[1].length : 0;
@@ -233,8 +245,6 @@ window.__setup = async (data) => {
       .add("#arc", { strokeDashoffset: [100, 100 - pct], duration: 1800, ease: "inOutQuart" }, 800);
     if (m) tl.add(counter, { v: [0, target], duration: 1800, ease: "inOutQuart",
       onUpdate: () => { num.textContent = `${m[1]}${counter.v.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}${m[3]}`; } }, 800);
-  } else {
-    $("#stat").style.display = "none";
   }
   if (layout === "3d") three = setupThree(data.shape || "globe", data.colors.accent, data.width, data.height);
   else $("#three").style.display = "none";

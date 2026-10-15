@@ -139,3 +139,24 @@ def test_designed_voice_is_anchored_once_then_cloned(monkeypatch, stock_profiles
     assert [n for n, _ in FakeEngine.seen] == ["voxcpm"] and FakeEngine.seen[0][1].audio_path == ref.audio_path
     stock.build_previews({"voices": ["stock-nu-mc-thiet-ke"], "force": True}, lambda *a: None)
     assert not [r for n, r in FakeEngine.seen if r.instruct]           # not re-designed while the instruct is unchanged
+
+
+def test_central_voices_are_real_vieneu_presets(stock_profiles):
+    import json
+    from importlib.resources import files
+    presets = json.loads(files("vieneu").joinpath("assets/voices_v3_turbo.json").read_text("utf-8"))["presets"]
+    trung = {v["gender"]: v for v in stock_profiles.values() if v["region"] == "Trung"}
+    assert set(trung) == {"male", "female"}
+    for v in trung.values():
+        meta = presets[v["preset"]]  # a preset the engine ships, with the same gender and region
+        assert meta["region"] == "Trung" and meta["gender"] == v["gender"] and v["engine"] == "vieneu"
+
+
+def test_a_stock_voice_can_be_the_default(stock_profiles):
+    from mediaforge import mcp_server
+    vid = "stock-nu-trung-tu-nhien"
+    r = mcp_server.set_default_voice(vid)
+    assert r["default"] == vid and profiles.default_voice() == vid
+    assert [v["id"] for v in mcp_server.list_voices() if v["default"]] == [vid]
+    with pytest.raises(KeyError):
+        profiles.set_default_voice("no-such-voice")

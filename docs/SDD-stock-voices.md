@@ -32,13 +32,13 @@ automatically.
 
 | Piece | Where |
 |---|---|
-| Catalogue (10 voices: 8 VieNeu presets in the news / natural / storytelling styles, 2 VoxCPM2 designs) | `voice/stock.py` `CATALOGUE` |
+| Catalogue (12 voices: 10 VieNeu presets in the news / natural / storytelling styles — Bắc, Trung, Nam — and 2 VoxCPM2 designs) | `voice/stock.py` `CATALOGUE` |
 | Profile `kind: "stock"`: `engine`, `preset` or `instruct`, `gender`, `region`, `style`, `fx`, `preview{file,key}` | `stock.ensure_profiles`, `profiles.voice_ref` |
 | Speaker reaches the engine | `VoiceRef.preset` → `VieNeu.infer(voice=…)`; `VoiceRef.instruct` → `VoxCPM2.generate(instruct=…)` |
 | One engine only (no `best`, no alternates) | `speak.synth_sentence` (`stock` branch) |
 | Preview job | type `stock_previews` (resumable). It re-renders only when `sha(engine, preset/instruct, fx, text)` changes. |
 | Instant preview | `GET /api/voices/{id}/preview` (mp3); `GET /api/voices` adds `preview_ready` |
-| Dashboard | Voices tab → **Giọng mẫu** card: Tất cả/Nữ/Nam, region filter, ▶ / ■, **Dùng** (selects the voice for new jobs), **Cài giọng mẫu** / **Tạo bản nghe thử** |
+| Dashboard | Voices tab → **Giọng mẫu** card: Tất cả/Nữ/Nam, region filter, ▶ / ■, **Dùng** (selects the voice for new jobs), **Cài giọng mẫu** / **Tạo bản nghe thử**, **★** (make it the default voice: `voices/DEFAULT`, same as `mediaforge voice default <id>`, MCP `set_default_voice`) |
 | MCP | `list_voices` returns `kind: "stock"` with `gender`, `region`, `style`, `preview_url` |
 
 ## 4. Multi-dimensional review (`mediaforge eval stock`)
@@ -126,3 +126,23 @@ with a rating sheet. **Deployed 2026-10-15 at the owner's request** (first from 
 (`scripts/service.sh update`). The `stock_previews` job then ran on the live store and created the 10 profiles,
 2 anchors and 10 previews; the owner's voice is still the default. To roll back, run `scripts/service.sh update`
 from `main`; the stock profiles stay in `voices/stock-*`, and main's dashboard does not list them correctly.
+
+### 5.4 Miền Trung (2026-10-16, data-store copy, 393 s)
+
+VieNeu-TTS-v3-Turbo ships exactly two Central presets (`voices_v3_turbo.json`, region `Trung`, style `tu_nhien`).
+Both were added as **Nữ · Trung · Tự nhiên** and **Nam · Trung · Tự nhiên** with the common tuned fx (pace 1.1,
+warmth 0.2, clarity 0.8); `eval stock --apply` kept it. Nữ · Bắc · Tự nhiên was re-run as the yardstick.
+
+| Voice | Composite | Clarity | Tones | Stability | Pace (syll/s) | Pitch std (st) | Speaker cos | Gaps/comma |
+|---|---|---|---|---|---|---|---|---|
+| Nữ · Bắc · Tự nhiên (yardstick) | 96.5 | 97.4 | 97.7 | 93.8 | 4.9 | 3.6 | 0.91 | 0.7 |
+| Nữ · Trung · Tự nhiên | 74.0 | 83.5 | 63.6 | 62.5 | 4.0 | 3.8 | 0.93 | 1.3 |
+| Nam · Trung · Tự nhiên | 69.2 | 83.5 | 59.4 | 43.8 | ≈ 4.0 | — | ≈ 0.88 | — |
+
+- Most "tone errors" are the Northern-trained judge hearing Central tones the Northern way ("thời sự" → "thơi sửa",
+  "số liệu" → "sổ liệu"), the same bias seen on the Southern presets in §5.1, only stronger. The composite is not a
+  verdict on these voices; the owner's listening decides.
+- Side effect of that bias: more first takes fail QA (stability 44–63 %), so Central voices cost more repair
+  attempts per sentence. Learned readings stay scoped to the stock voice that produced them (lessons are per voice).
+- Both read slower than the band (4.0 vs 4.8–5.7 syll/s) even at pace 1.1, the top of the grid.
+
