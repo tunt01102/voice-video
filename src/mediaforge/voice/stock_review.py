@@ -94,16 +94,38 @@ def band(value: float, lo: float, hi: float, floor: float, ceil: float) -> float
     return max(0.0, 100 * (ceil - value) / (ceil - hi))
 
 
-def take_metrics(text: str, x: np.ndarray, heard: str) -> dict[str, Any]:
-    from mediaforge import asr
+def tone_errors(text: str, heard: str, groups: tuple[frozenset[str], ...] = ()) -> tuple[float, float, list[str]]:
+    """(raw, regional) tone error rate and the tone swaps seen ("số→sổ"). Raw = syllables heard with the right
+    letters but not the right spelling (the measure of runs 1–2, sing.pipeline.clarity); regional = raw minus the
+    swaps inside the voice's region groups (voice/region.py)."""
+    import difflib
+
     from mediaforge.sing import tones
     from mediaforge.sing.pipeline import clarity
+    from mediaforge.voice.region import regional_variant, strip_tone
 
     cl = clarity(text, heard)
     base, full = (int(cl[k].split("/")[0]) for k in ("syllables", "with_tones"))
+    exp, got = [x.lower() for x in tones.syllables(text)], [x.lower() for x in tones.syllables(heard)]
+    swaps = []
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(a=[strip_tone(x) for x in exp], b=[strip_tone(x) for x in got],
+                                                      autojunk=False).get_opcodes():
+        if op == "equal":
+            swaps += [(a, b) for a, b in zip(exp[i1:i2], got[j1:j2]) if a != b]
+    forgiven = sum(regional_variant(a, b, groups) for a, b in swaps)
+    raw = (base - full) / max(base, 1)
+    return round(raw, 3), round(max(0.0, raw - forgiven / max(base, 1)), 3), [f"{a}→{b}" for a, b in swaps]
+
+
+def take_metrics(text: str, x: np.ndarray, heard: str, groups: tuple[frozenset[str], ...] = ()) -> dict[str, Any]:
+    from mediaforge import asr
+    from mediaforge.sing import tones
+
+    raw, regional, swaps = tone_errors(text, heard, groups)
     f0, st = pitch_stats(x)
     commas = len(re.findall(r"[,;:]", text))
-    return {"cer": asr.error_rate(text, heard, "vi")["score"], "tone_err": round((base - full) / max(base, 1), 3),
+    return {"cer": asr.error_rate(text, heard, "vi", tone_groups=groups)["score"], "tone_err": regional,
+            "tone_err_raw": raw, "tone_swaps": swaps,
             "rate": round(len(tones.syllables(text)) / max(len(x) / A.SR, 0.1), 2), "f0": f0, "st_std": st,
             "gaps_per_comma": round(silent_gaps(x) / commas, 2) if commas else None, "heard": heard}
 
@@ -121,7 +143,8 @@ def score(rows: list[dict[str, Any]], ref_rate: float) -> dict[str, Any]:
     }
     return {"composite": round(sum(WEIGHTS[k] * v for k, v in parts.items()), 1),
             "parts": {k: round(v, 1) for k, v in parts.items()},
-            "means": {k: round(m(k), 3) for k in ("cer", "tone_err", "first_pass", "rate", "f0", "st_std", "spk_cos")},
+            "means": {k: round(m(k), 3) for k in ("cer", "tone_err", "tone_err_raw", "first_pass", "rate", "f0", "st_std",
+                                                  "spk_cos")},
             "gaps_per_comma": round(float(np.mean(gaps)), 2) if gaps else None}
 
 
@@ -131,6 +154,7 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
     from mediaforge.voice import fx as FX
     from mediaforge.voice import profiles, stock
     from mediaforge.voice import speak as S
+    from mediaforge.voice.region import tone_groups
 
     stock.ensure_profiles()
     ids = p.get("voices") or [v["id"] for v in stock.stock_voices()]
@@ -159,7 +183,7 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
             for text, audio, rep in takes:
                 x = FX.shape(audio, fxp)
                 heard = asr.transcribe(x, lang="vi", temperature=0.0)["text"]
-                row = take_metrics(text, x, heard)
+                row = take_metrics(text, x, heard, tone_groups(v))
                 row["first_pass"] = float(rep["attempts"][0]["score"] <= thr)
                 row["attempts"] = len(rep["attempts"])
                 embs.append(spk.speaker_embedding(x, A.SR))
