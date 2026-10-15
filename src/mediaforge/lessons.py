@@ -24,6 +24,10 @@ KINDS = ("reading", "judge_accept", "lint", "engine_route", "visual_pref", "moti
 STATUSES = ("candidate", "active", "retired")
 # A reading must win in this many different sentences (same voice, language, engine) before it is applied.
 READING_EVIDENCE = 2
+# An engine must repair a failure class in this many different sentences before it is tried first for that class;
+# this many repairs by another engine retire the route.
+ROUTE_EVIDENCE = 3
+ROUTE_CONTRA = 2
 # Retire an applied lesson that does not help: after this many uses with a win rate below RETIRE_WIN_RATE.
 RETIRE_AFTER_USES = 6
 RETIRE_WIN_RATE = 0.5
@@ -243,6 +247,46 @@ def readings(voice: str | None, lang: str, engine: str) -> dict[str, tuple[str, 
         if sc.get("lang") == lang and sc.get("engine") in (None, engine) and sc.get("voice") in (None, voice):
             out[l["key"]] = (l["value"]["say"], l["id"])
     return out
+
+
+def propose_route(voice: str | None, lang: str, cls: str, engine: str, failed_on: str, sentence: str,
+                  job_id: str | None = None) -> dict[str, Any]:
+    """A sentence that failed with class `cls` on `failed_on` passed on `engine`. Becomes an active engine_route once
+    it has happened in ROUTE_EVIDENCE different sentences; a repair by another engine counts against it."""
+    from mediaforge.voice.profiles import sentence_key
+
+    signal("route_win", {"voice": voice, "lang": lang, "class": cls, "engine": engine, "failed_on": failed_on,
+                         "sentence": sentence}, job_id)
+    scope, sk = {"voice": voice, "lang": lang}, sentence_key(sentence)
+    old = get(lesson_id("engine_route", scope, cls))
+    if old and old["value"].get("engine") != engine:
+        # Contradicting evidence: another engine fixed this class. Retire after ROUTE_CONTRA (unless owner-pinned).
+        lesson = upsert("engine_route", scope, cls, {}, origin="auto", evidence=0, contra=1)
+        if lesson["contra"] >= ROUTE_CONTRA and lesson["status"] != "retired" and lesson.get("origin") != "owner":
+            lesson = set_status(lesson["id"], "retired", "máy khác cũng sửa được lớp lỗi này", by_owner=False)
+        return lesson
+
+    def merge(o: dict[str, Any], n: dict[str, Any]) -> dict[str, Any]:
+        return {"engine": n["engine"], "sentences": list(dict.fromkeys([*o.get("sentences", []), *n["sentences"]]))[-20:]}
+
+    lesson = upsert("engine_route", scope, cls, {"engine": engine, "sentences": [sk]}, origin="auto", merge=merge,
+                    evidence=0)
+    distinct = len(lesson["value"].get("sentences", []))
+    with db.connect() as c:
+        c.execute("UPDATE lessons SET evidence=? WHERE id=?", (distinct, lesson["id"]))
+    if lesson["status"] == "candidate" and distinct >= ROUTE_EVIDENCE:
+        lesson = set_status(lesson["id"], "active", f"{engine} sửa được lỗi “{cls}” ở {distinct} câu", by_owner=False)
+    return get(lesson["id"])  # type: ignore[return-value]
+
+
+def route(voice: str | None, lang: str, cls: str | None) -> tuple[str, str] | None:
+    """Active engine_route for this voice/language/failure class: (engine, lesson id)."""
+    if not cls:
+        return None
+    for l in active("engine_route", voice=voice, lang=lang):
+        if l["key"] == cls and l["value"].get("engine"):
+            return l["value"]["engine"], l["id"]
+    return None
 
 
 def judge_terms(voice: str | None, lang: str) -> set[str]:

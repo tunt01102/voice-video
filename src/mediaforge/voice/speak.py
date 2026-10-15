@@ -169,6 +169,17 @@ def classify(att: Attempt, sentence: str, lang: str) -> str:
     return "other"
 
 
+def expected_class(sentence: str, lang: str) -> str | None:
+    """The failure class a sentence is likely to hit before any synthesis: terms (acronyms, non-Vietnamese words) or
+    truncated (long sentences); None when nothing stands out."""
+    from mediaforge.text.pronounce import is_vi_syllable
+
+    words = [w.strip(",.;:!?\"'()") for w in sentence.split()]
+    if any(sum(c.isupper() for c in w) >= 2 or (lang == "vi" and w.isalpha() and not is_vi_syllable(w)) for w in words):
+        return "terms"
+    return "truncated" if L.is_long(sentence, lang) else None
+
+
 # Which repair strategy to try next for each failure class; each strategy has a use limit per sentence.
 REPAIR_ORDER = {
     "repeat": ["reseed", "engine", "phrases", "respell"],
@@ -222,6 +233,13 @@ def synth_sentence(
         preferred = DEFAULT_ROUTE[lang]
     plan_engines = capable if preferred == "best" else [preferred]
     alternates = [e for e in capable if e not in plan_engines]
+    # An active engine_route lesson for the class this sentence is likely to fail with puts that engine first; with
+    # "best", a pass on it ends the first pass early (SDD-review-upgrade §5.1.3).
+    route = lessons.route(base_id, lang, expected_class(sentence, lang)) if len(plan_engines) > 1 and not guide else None
+    if route and route[0] in plan_engines:
+        plan_engines = [route[0]] + [e for e in plan_engines if e != route[0]]
+    else:
+        route = None
 
     # What the engine is given: lint's TTS-only readings (acronym runs, domains) < learned readings (lessons,
     # per engine) < the owner's lexicon. Subtitles keep the written sentence.
@@ -318,6 +336,8 @@ def synth_sentence(
         if phrase_first and len(p_phrases) > 1:
             first.append(make(plan_engines[0], seed + 29, 0.7, phrases=p_phrases, pauses=p_pauses, strategy="phrases"))
     for att in first:
+        if route and attempts and attempts[0].score <= thr:
+            break  # the routed engine passed: the other engines are not needed
         attempts.append(run(att))
         if guide and attempts[-1].score <= thr and (attempts[-1].prompt is None or attempts[-1].strategy == learned):
             break  # a guided candidate with the canonical timbre (or the strategy that worked before) passes
@@ -344,11 +364,14 @@ def synth_sentence(
         ok = {"reseed": True, "engine": bool(alternates), "phrases": not tried_phrases and len(p_phrases) > 1,
               "respell": True}
         strat = next((k for k in REPAIR_ORDER[cls] if ok[k] and used[k] < REPAIR_LIMIT[k]), "reseed")
+        fix = lessons.route(base_id, lang, cls)
+        if fix and fix[0] in alternates and fix[0] != b.engine and used["engine"] < REPAIR_LIMIT["engine"]:
+            strat = "engine"  # this engine has repaired this class before
         used[strat] += 1
         if strat == "reseed":
             att = derive(b, b.engine, seed + 17 + 101 * step, 0.55, b.respell)
         elif strat == "engine":
-            att = derive(b, alternates[0], seed, 0.7, b.respell)
+            att = derive(b, fix[0] if fix and fix[0] in alternates else alternates[0], seed, 0.7, b.respell)
         elif strat == "phrases":  # long sentences truncate/babble: synthesise phrase by phrase
             att = make(b.engine, seed + 29, 0.7, b.respell, phrases=p_phrases, pauses=p_pauses, strategy="phrases")
             tried_phrases = True
@@ -384,8 +407,15 @@ def synth_sentence(
             else:
                 lessons.signal("reading_not_causal", {"voice": base_id, "lang": lang, "respell": new, "sentence": sentence})
     applied = [lid for t, (_, lid) in lesson_readings.get(attempts[0].engine, {}).items()]
+    if route:
+        applied.append(route[1])
     if learn:  # evaluations (learn=False) must not feed the lessons they measure
         lessons.record_use(applied, attempts[0].score <= thr)
+        # A plain take of another engine passed where the first engine failed: evidence for an engine_route.
+        if passed and attempts[0].score > thr and chosen.engine != attempts[0].engine and chosen.strategy == "whole" \
+                and not chosen.respell:
+            lessons.propose_route(base_id, lang, classify(attempts[0], sentence, lang), chosen.engine,
+                                  attempts[0].engine, sentence)
     if not passed and learn:
         lessons.signal("qa_fail", {"voice": base_id, "lang": lang, "engine": chosen.engine, "text": sentence,
                                    "heard": chosen.heard, "score": chosen.score,

@@ -219,6 +219,24 @@ def test_repair_stops_when_nothing_improves(monkeypatch):
     assert sig and sig[0]["payload"]["class"] in ("other", "terms")
 
 
+def test_engine_route_is_learned_after_three_sentences_and_tried_first(monkeypatch):
+    calls = _fake_loop(monkeypatch, lambda a: (0.0, "ok") if a.engine == "voxcpm" else (0.4, "xáp"))
+    for k in range(3):
+        _, rep = S.synth_sentence(f"Câu {k} dùng SAP.", "vi", "vr", engine="best", cache=False)
+        assert rep["passed"] and rep["engine"] == "voxcpm"
+        assert (lessons.route("vr", "vi", "terms") is None) == (k < 2)
+    assert lessons.route("vr", "vi", "terms")[0] == "voxcpm"
+    calls.clear()
+    _, rep = S.synth_sentence("Câu mới dùng SAP.", "vi", "vr", engine="best", cache=False)
+    assert [c.engine for c in calls] == ["voxcpm"] and rep["passed"]   # routed first; vieneu not needed
+    assert lessons.route("vr", "vi", "terms")[1] in rep["lessons"]
+    # Another engine repairing the class twice retires the route.
+    _fake_loop(monkeypatch, lambda a: (0.0, "ok") if a.engine == "vieneu" else (0.4, "xáp"))
+    for k in range(2):
+        S.synth_sentence(f"Câu ngược {k} dùng SAP.", "vi", "vr", engine="best", cache=False)
+    assert lessons.route("vr", "vi", "terms") is None
+
+
 def test_best_engine_first_pass_counts_towards_the_stall_rule(monkeypatch):
     # Both engines fail alike → one class-directed repair, not two more blind tries (≤ 3 attempts).
     calls = _fake_loop(monkeypatch, lambda a: (0.5, "sai"))
