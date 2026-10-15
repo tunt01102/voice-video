@@ -81,9 +81,34 @@ def stock_voices() -> list[dict[str, Any]]:
     return [v for v in profiles.list_voices() if v.get("kind") == "stock"]
 
 
+# A designed voice (VoxCPM2 instruct) is a different speaker on every call (review 2026-10-15: speaker cosine 0.69
+# across sentences vs 0.90+ for presets). It is anchored once: the clearest of a few designed takes of this text
+# becomes its synthetic reference clip, and later sentences clone that clip.
+# Under the phrase-first length (lint.LONG), so the clip is one continuous take.
+ANCHOR_TEXT = "Xin chào quý vị. Hôm nay, tôi sẽ cùng quý vị điểm lại những tin tức đáng chú ý, ngắn gọn và rõ ràng."
+ANCHOR_SEEDS = (11, 23, 37, 41)
+
+
+def anchor_designed(v: dict[str, Any]) -> dict[str, Any]:
+    from mediaforge import audio as A
+    from mediaforge.voice import speak as S
+
+    takes = []
+    for sd in ANCHOR_SEEDS:
+        audio, rep = S.synth_sentence(ANCHOR_TEXT, "vi", v["id"], seed=sd, learn=False, cache=False)
+        takes.append((rep["score"], sd, audio))
+    score, sd, audio = min(takes, key=lambda t: t[0])
+    f = settings.sub("voices", v["id"]) / "anchor.wav"
+    A.save(f, audio)
+    v = profiles.get_voice(v["id"])
+    v["anchor"] = {"file": str(f.relative_to(settings.data_dir)), "text": ANCHOR_TEXT, "seed": sd, "score": score,
+                   "instruct": v.get("instruct")}
+    return profiles.save_voice(v)
+
+
 def preview_key(p: dict[str, Any], text: str = PREVIEW_TEXT) -> str:
-    src = json.dumps([p.get("engine"), p.get("preset"), p.get("instruct"), p.get("fx"), text], ensure_ascii=False,
-                     sort_keys=True)
+    src = json.dumps([p.get("engine"), p.get("preset"), p.get("instruct"), (p.get("anchor") or {}).get("seed"),
+                      p.get("fx"), text], ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(src.encode()).hexdigest()[:16]
 
 
@@ -108,6 +133,8 @@ def build_previews(p: dict[str, Any], progress: Progress, job_id: str | None = N
     built, kept = [], []
     for i, v in enumerate(voices):
         progress(i / max(1, len(voices)), f"{v['name']}")
+        if v.get("instruct") and (v.get("anchor") or {}).get("instruct") != v["instruct"]:
+            v = anchor_designed(v)
         if preview_file(v["id"]) and not p.get("force"):
             kept.append(v["id"])
             continue

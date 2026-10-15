@@ -224,7 +224,7 @@ def synth_sentence(
         if engine and engine not in capable:
             log.info("blend voice %s: engine %s cannot blend, using %s", voice_id, engine, capable[0])
             engine = None
-    stock = ref is not None and bool(ref.preset or ref.instruct)
+    stock = (voice or {}).get("kind") == "stock"
     if stock:
         # A stock voice (preset speaker / designed voice) exists in one engine only: no alternates, no "best".
         capable, engine = [voice["engine"]], voice["engine"]  # type: ignore[index]

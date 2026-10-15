@@ -121,3 +121,21 @@ def test_review_measures_pauses_pitch_and_bands():
     assert s["composite"] == 100.0
     s = R.score([{**rows[0], "cer": 0.25, "st_std": 0.8}], 5.2)
     assert s["parts"]["clarity"] == 50.0 and s["parts"]["expressive"] < 30 and s["composite"] < 85
+
+
+def test_designed_voice_is_anchored_once_then_cloned(monkeypatch, stock_profiles):
+    _fake_engines(monkeypatch)
+    monkeypatch.setattr(S, "speak", lambda text, *, voice, out_dir, name, **kw: (
+        (out_dir / f"{name}.mp3").write_bytes(b"ID3"),
+        {"mp3": str(out_dir / f"{name}.mp3"), "duration": 9.0, "sentences": []})[1])
+    stock.build_previews({"voices": ["stock-nu-mc-thiet-ke"]}, lambda *a: None)
+    anchors = [r for n, r in FakeEngine.seen if r.instruct]
+    assert len(anchors) >= len(stock.ANCHOR_SEEDS)                       # designed takes (+ repairs of the fake 0.5 s audio)
+    v = profiles.get_voice("stock-nu-mc-thiet-ke")
+    ref = profiles.voice_ref(v["id"], "vi")
+    assert ref.audio_path.endswith("anchor.wav") and ref.instruct is None and ref.text == stock.ANCHOR_TEXT
+    FakeEngine.seen.clear()
+    _, rep = S.synth_sentence("Xin chào.", "vi", v["id"], cache=False, learn=False)
+    assert [n for n, _ in FakeEngine.seen] == ["voxcpm"] and FakeEngine.seen[0][1].audio_path == ref.audio_path
+    stock.build_previews({"voices": ["stock-nu-mc-thiet-ke"], "force": True}, lambda *a: None)
+    assert not [r for n, r in FakeEngine.seen if r.instruct]           # not re-designed while the instruct is unchanged

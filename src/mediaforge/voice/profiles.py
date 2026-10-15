@@ -294,6 +294,10 @@ def voice_ref(voice_id: str | None, lang: str) -> VoiceRef | None:
     if p.get("kind") == "blend":
         return _blend_ref(p, lang)
     if p.get("kind") == "stock":
+        anchor = p.get("anchor") or {}
+        if anchor.get("file") and (settings.data_dir / anchor["file"]).exists():
+            # A designed voice is anchored to one synthetic take of itself, so every sentence is the same "person".
+            return VoiceRef(audio_path=str(settings.data_dir / anchor["file"]), text=anchor["text"], lang="vi")
         return VoiceRef(audio_path="", text="", lang=lang, preset=p.get("preset"), instruct=p.get("instruct"))
     # A clip can vanish under us (deleted on the Voices tab mid-job, restored backup): only use files that exist.
     present = [s for s in p["samples"] if (settings.data_dir / s["file"]).exists()]

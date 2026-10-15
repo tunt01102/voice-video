@@ -47,6 +47,7 @@ FX_GRID = [  # around the defaults: presenters sit slightly brighter and a touch
     {"pace": 1.05, "warmth": 0.2, "clarity": 0.8},
     {"pace": 0.95, "warmth": 0.4, "clarity": 0.6},
     {"pace": 1.0, "warmth": 0.4, "clarity": 0.8},
+    {"pace": 1.1, "warmth": 0.2, "clarity": 0.8},   # added after run 1: every voice chose the fastest variant
 ]
 
 
