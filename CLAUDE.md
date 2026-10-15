@@ -10,3 +10,6 @@
 - MCP SDK is v2 (`from mcp.server import MCPServer`); do not copy v1 FastMCP snippets.
 - Service: scripts/service.sh install|restart|status|logs. Server binds 127.0.0.1:8765 only.
 - Licences: only Apache/MIT/BSD engines; see SDD §3 "Rejected" before adding any model.
+- Project skills in .claude/skills (review: docs/SKILLS-REVIEW.md). Animated slides = anime.js + three.js in
+  video/scene_web, rendered by video/animate.py (Playwright → FFmpeg). The gsap-* skills are for timing concepts
+  only: write anime.js, not GSAP (GSAP licence not approved); Remotion stays rejected (SDD §3).

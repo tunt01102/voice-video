@@ -89,6 +89,7 @@ and step count are the effective levers (`image.QUALITY`).
 | API | FastAPI + native SSE, SQLite | — | MIT |
 | MCP | `mcp` Python SDK, streamable HTTP | modelcontextprotocol/python-sdk | MIT |
 | Dashboard | Build-free single-page HTML/JS served by FastAPI (React+Vite upgrade path) | — | — |
+| Animated slides (explainer `slides_engine=animated`) | anime.js 4.5 timelines + three.js r186 (3D layout), vendored in `video/scene_web/`; rendered frame-exact by Playwright headless Chromium → FFmpeg | juliangarnier/anime (74k), mrdoob/three.js (116k), microsoft/playwright-python | MIT / MIT / Apache-2.0 |
 
 Pattern references (studied, not vendored): MoneyPrinterTurbo (130k — script→TTS→
 material→subtitle→compose pipeline shape), NarratoAI, whisper.cpp karaoke output.
@@ -98,7 +99,9 @@ F5-TTS weights and all VI fine-tunes (CC-BY-NC), viXTTS/XTTS (CPML, unmaintained
 Fish-Speech S2 (research licence), Higgs Audio (non-commercial), IndexTTS (bilibili
 licence), vinorm (non-commercial, Linux binary), WhisperX VI aligners and
 ctc-forced-aligner default model (CC-BY-NC-4.0), Wav2Lip (non-commercial models),
-Remotion (company licence), aeneas (AGPL), VibeVoice (TTS removed upstream),
+Remotion + remotion-dev/skills (company licence; re-checked 2026-10-15, docs/SKILLS-REVIEW.md), GSAP library (GSAP Standard
+licence, not OSI — its MIT agent skills are kept for timing concepts only), motiondivision/ai-kit (no licence file),
+Satori / Mediabunny (MPL-2.0, deferred), aeneas (AGPL), VibeVoice (TTS removed upstream),
 CosyVoice/Chatterbox/Qwen3-TTS/Kokoro (no Vietnamese), DiffusionKit (archived), Seed-VC (GPL-3.0 singing
 voice conversion), SoulX-Singer / YingMusic-Singer (no Vietnamese; licences unclear), WavLM-SV / UniSpeech
 checkpoints (CC BY-SA 3.0 — use SpeechBrain ECAPA (Apache-2.0) or VieNeu's speaker encoder instead).
@@ -151,6 +154,8 @@ src/mediaforge/
   video/compose.py   FFmpeg composition (Ken Burns, xfade, subs, music ducking)
   video/slides.py    slide rendering (Pillow)
   video/clips.py     optional LTX-2 clips
+  video/animate.py   animated slides: scene_web/scene.html (anime.js + three.js) stepped per frame in headless
+                     Chromium (Playwright) → FFmpeg clip per slide (docs/SKILLS-REVIEW.md)
   pipelines.py       narrated / short / explainer orchestrations (stages; `voice_stage`, `recompose`, `fit_clips`)
   restage.py         redo one stage of a finished video (new picture, new music)
   revoice.py         đổi giọng: read a finished video again in another voice (voice + compose stages only)
@@ -297,6 +302,15 @@ result exposes as `report.music_credit` and the dashboard shows under the video.
 - **Explainer**: input = markdown slides (`# title` / bullets per slide, `> note` =
   narration) or a brief the LLM turns into slides; slides rendered by Pillow; or
   input = a screen recording + script → voice-over + subtitles laid over the recording.
+- **Animated explainer** (`slides_engine="animated"`, 2026-10-15): each slide is an HTML scene — word-by-word title,
+  bullets arriving across the narration, count-up `stat` slides, rotating three.js `3d` slides, ambient drift,
+  deck progress bar — rendered at 30 fps by stepping an anime.js timeline (`__seek(t)`, never the clock) in
+  headless Chromium and piping JPEG frames into FFmpeg. Clip length = slot + 0.5 s cross-fade, so compose,
+  karaoke subtitles, music and cards are unchanged; clips are re-rendered only when a slot length changes
+  (revoice/repronounce). Layout per scene comes from the planner (`layout`, `stat`, `shape`); default = `3d`
+  opener then `bullets`. Measured (E2E 2026-10-16, M4 Max): ≈ 1–1.5 s of render per 1 s of slide at 1080p;
+  slides are rendered after all background images, because an open WebGL (Metal) context slowed mflux ~3×. Falls back to Pillow slides (with a
+  warning) when Playwright is missing. Agent skills for this stack: `.claude/skills/` (SKILLS-REVIEW.md).
 
 ## 8. LLM layer
 `llm.complete(prompt, json_schema=None)`:

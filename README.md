@@ -78,6 +78,7 @@ uv run mediaforge voice blend tu friend --amount 0.25
 | Vertical short | 📱 Short | `mediaforge short "5 mẹo bảo mật mật khẩu" --lang vi` |
 | 16:9 video | 🎬 Video | `mediaforge video "How MFA stops account takeover" --lang en --seconds 60` |
 | Slide explainer | 🧑‍🏫 Explainer | `mediaforge explainer --slides deck.md` |
+| Animated presentation (moving titles, count-up numbers, 3D) | 🧑‍🏫 Explainer → Kiểu slide: Động | `mediaforge explainer "brief" --animated` |
 | Voice-over on a screen recording | — | `mediaforge screen demo.mov "@script.txt"` |
 | Video from a Word/PDF (pictures kept) | 📄 Nhập từ Word/PDF | `mediaforge video --document report.pdf --style chibi` |
 | Images | 🖼 Ảnh | `mediaforge image "a cozy café in Hanoi" --count 4 --style chibi` |
@@ -114,6 +115,11 @@ Notes on the inputs:
   - `# Title` starts a slide
   - `- bullet` lines are bullet points
   - `> narration` lines are what the voice says
+- **Animated slides** (`--animated`, dashboard "Kiểu slide: Động", MCP `slides_engine="animated"`): titles and
+  bullets move in time with the narration, a slide about one number counts it up, and big-idea slides get a
+  rotating 3D object. From a brief, Claude picks each slide's layout; with markdown slides the first slide is 3D and
+  the rest are bullets. It adds about 1–1.5 s of rendering per second of video. Needs Playwright's Chromium
+  once: `uv run playwright install chromium --only-shell` (installed Google Chrome is used if it's missing).
 - Add `--music bg.mp3` for background music. It's automatically ducked under the voice.
 - Or pick from the built-in library of calm, free tracks: `mediaforge music sync` downloads them once,
   `mediaforge music list` shows their ids, then pass `--music <id>` (or choose in the dashboard's
