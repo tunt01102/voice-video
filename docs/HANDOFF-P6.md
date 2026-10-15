@@ -29,9 +29,9 @@ SDD-review-upgrade §11.2–11.4):
    the letter judge would forgive real errors). On the copy's grown corpus (40 rows): 29/40.
 3. ✅ **`engine_route` lessons** — `lessons.propose_route`/`route`; applied in engine order and in repair.
 4. ✅ **Sing/recite checkpoints** — interpret, each sung line, mix, each drawn shot.
-5. ◐ **P6-D owner A/B** — 3 topics rendered old vs new on the data-store copy, copied (random A/B order) to
-   `~/.local/share/mediaforge/outputs/ab-p6d/`. The owner rates with ⭐ in `DANH-GIA.md`; `.key.json` holds the
-   mapping. Do not rate on the owner's behalf.
+5. ✅ **P6-D owner A/B** — 3 topics rendered old vs new on the data-store copy (random A/B order per topic,
+   `~/.local/share/mediaforge/outputs/ab-p6d/`). The owner picked B in all 3 topics (pairwise choice, no stars);
+   the key shows B = new style every time → **new wins 3/3** (exit criterion ≥ 2/3). Recorded in `ket-qua.json`.
 6. ✅ **P6-E licence review** — SigLIP (Apache-2.0) allowed; WavLM-SV rejected (CC BY-SA 3.0); SpeechBrain ECAPA
    a candidate [VERIFY: VoxCeleb training-data terms]. No model added.
 
