@@ -71,12 +71,116 @@ async function ratingBox(job) {
   return box;
 }
 
+// ---- 🎙 Đổi giọng (revoice): read the whole video again in another voice; script and pictures are kept
+// (docs/SDD-review-upgrade.md §11.5). Stock voices play their pre-rendered preview at once, like the Giọng mẫu card.
+let rvAudio = null;
+const fmtSec = (s) => s >= 90 ? `${Math.floor(s / 60)} phút ${Math.round(s % 60)} giây` : `${Math.round(s)} giây`;
+
+function revoiceBox(job) {
+  const r = job.result || {}, box = document.createElement("div");
+  box.className = "revoice";
+  const last = (r.report?.revoiced || []).at(-1);
+  const warns = last?.warnings || [], dropped = last?.dropped || {};
+  const nTakes = (dropped.takes || []).reduce((n, t) => n + t.takes, 0) + (dropped.recordings || []).length;
+  box.innerHTML = `<div class="rv-head"><button class="ghost small rv-open" aria-expanded="false">🎙 Đổi giọng</button>
+      <small class="muted">đọc lại cả video bằng giọng khác — giữ kịch bản và hình; phụ đề, card và nhạc khớp theo lời mới</small></div>
+    ${last ? `<div class="rv-last muted">Đã đổi giọng ${new Date(last.at * 1000).toLocaleString()}: ${esc(last.from?.voice || "?")} → <b>${esc(last.to?.name || last.to?.voice)}</b>
+      · ${last.duration?.before ?? "?"} s → ${last.duration?.after ?? "?"} s${last.seconds?.total ? ` · mất ${fmtSec(last.seconds.total)}` : ""}
+      ${nTakes ? ` · bỏ ${nTakes} bản đọc lại/ghi âm của giọng cũ` : ""}${Object.keys(last.readings_kept || {}).length ? ` · giữ ${Object.keys(last.readings_kept).length} cách đọc` : ""}
+      ${warns.length ? `<ul class="rv-warn">${warns.map((w) => `<li>⚠ ${esc(w)}</li>`).join("")}</ul>` : ""}</div>` : ""}
+    <div class="rv-panel" hidden>
+      <div class="rv-tabs" role="tablist"><button class="chip on" data-k="own" role="tab">Giọng của bạn</button><button class="chip" data-k="stock" role="tab">Giọng mẫu</button></div>
+      <div class="rv-list stock-grid" role="radiogroup" aria-label="Chọn giọng mới"><p class="muted">Đang tải giọng…</p></div>
+      <label class="rv-pitch">Cao độ <input type="range" min="-6" max="6" step="1" value="0"> <span>0</span> nửa cung</label>
+      <div class="actions"><button class="primary small rv-go" disabled>🎙 Đổi sang giọng này</button><span class="muted rv-status">Chọn một giọng</span></div>
+    </div>`;
+  const panel = $(".rv-panel", box), list = $(".rv-list", box), st = $(".rv-status", box), go = $(".rv-go", box);
+  const pitch = $(".rv-pitch input", box);
+  let all = [], tab = "own", pick = null, playing = null;
+  pitch.oninput = () => { $(".rv-pitch span", box).textContent = pitch.value; };
+  const stopAudio = () => { rvAudio?.pause(); rvAudio = null; playing = null; };
+  const paint = () => {
+    const cur = r.voice_id;
+    const shown = all.filter((v) => (tab === "stock") === (v.kind === "stock") && v.id !== cur && v.id !== "demo");
+    list.innerHTML = shown.map((v) => {
+      const sub = v.kind === "stock" ? (v.engine === "voxcpm" ? "giọng thiết kế" : "giọng có sẵn") + (v.preview_ready ? "" : " · chưa có bản nghe thử")
+        : v.kind === "blend" ? "giọng pha" : v.default ? "giọng của bạn ★" : v.consent ? "đã có đồng ý" : "cần ghi nhận đồng ý";
+      return `<div class="stock-item rv-item ${pick === v.id ? "sel" : ""}" data-id="${v.id}" role="radio" aria-checked="${pick === v.id}" tabindex="0">
+        ${v.kind === "stock" ? `<button class="play ghost" ${v.preview_ready ? "" : "disabled"} title="Nghe thử">${playing === v.id ? "■" : "▶"}</button>` : ""}
+        <div class="meta"><b>${esc(v.name)}</b><small class="muted">${esc(sub)}</small></div></div>`;
+    }).join("") || `<p class="muted">${tab === "stock" ? "Chưa cài giọng mẫu (tab Giọng nói → Giọng mẫu)." : "Chưa có giọng nào khác."}</p>`;
+    $$(".rv-item", list).forEach((el) => {
+      const choose = () => { pick = el.dataset.id; paint(); estimate(); };
+      el.onclick = (e) => { if (!e.target.closest(".play")) choose(); };
+      el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(); } };
+    });
+    $$(".rv-item .play", list).forEach((b) => b.onclick = () => {
+      const id = b.closest(".rv-item").dataset.id, was = playing;
+      stopAudio();
+      if (was !== id) {
+        playing = id; rvAudio = new Audio(`/api/voices/${id}/preview`);
+        rvAudio.onended = () => { playing = null; paint(); };
+        rvAudio.play().catch((e) => { playing = null; toast(e.message); paint(); });
+      }
+      paint();
+    });
+  };
+  const estimate = async () => {
+    go.disabled = !pick;
+    if (!pick) return;
+    st.textContent = "Đang ước lượng…";
+    try {
+      const e = await api(`/api/jobs/${job.id}/revoice/estimate?voice=${encodeURIComponent(pick)}`);
+      st.textContent = `Ước lượng ≈ ${fmtSec(e.seconds)} (${e.sentences} câu, đọc ${fmtSec(e.voice)} + ghép ${fmtSec(e.compose)}) · không vẽ lại hình`;
+    } catch (err) { st.textContent = err.message; }
+  };
+  $$(".rv-tabs .chip", box).forEach((b) => b.onclick = () => {
+    tab = b.dataset.k; $$(".rv-tabs .chip", box).forEach((x) => x.classList.toggle("on", x === b)); paint();
+  });
+  $(".rv-open", box).onclick = async (ev) => {
+    panel.hidden = !panel.hidden; ev.currentTarget.setAttribute("aria-expanded", String(!panel.hidden));
+    if (!panel.hidden && !all.length) {
+      try { all = await api("/api/voices"); } catch (err) { list.innerHTML = `<p class="qa-bad">${esc(err.message)}</p>`; return; }
+      paint();
+    }
+    if (panel.hidden) stopAudio();
+  };
+  go.onclick = async () => {
+    const v = all.find((x) => x.id === pick);
+    if (!v || !confirm(`Đổi giọng video này sang “${v.name}”? Bản cũ và các file đã xuất chuyển vào thùng rác; bản đọc lại từng câu của giọng cũ sẽ bỏ.`)) return;
+    stopAudio(); go.disabled = true; st.textContent = "Đang gửi…";
+    const body = { voice: pick, ...(+pitch.value ? { fx: { pitch: +pitch.value } } : {}) };
+    try {
+      const res = await api(`/api/jobs/${job.id}/revoice`, { method: "POST", body: JSON.stringify(body) });
+      const t0 = Date.now(), eta = res.estimate?.seconds || 0;
+      followJob(res.job.id, {
+        onProgress: (j) => {
+          const el = Math.round((Date.now() - t0) / 1000);
+          st.textContent = j.status === "queued" ? "Đang chờ GPU…" : `${j.message} · ${(j.progress * 100).toFixed(0)}% · ${fmtSec(el)}${eta ? ` / ≈ ${fmtSec(eta)}` : ""}`;
+        },
+        onEnd: async (j) => {
+          if (j?.status !== "done") { go.disabled = false; st.textContent = ""; toast("Không đổi được giọng: " + (j?.message || "")); return; }
+          const w = j.result?.warnings || [];
+          toast(`Đã đổi sang ${v.name}` + (w.length ? ` · ${w.length} cảnh báo về clip` : ""));
+          await refreshJob(job.id);
+        },
+      });
+    } catch (err) { go.disabled = false; st.textContent = ""; toast(err.message); }
+  };
+  return box;
+}
+
 function fillPage(job, page) {
   const out = $(".job-out", page);
   renderOutputs(job, out);
   const player = $("video, audio", out);
   const tl = timeline(job, player);
   if (tl) player.after(tl);
+  const r = job.result || {};
+  if (job.status === "done" && r.video && r.plan && Array.isArray(r.words) && !["sing", "recite"].includes(job.type)) {
+    const anchor = $(".resub-row", out);
+    anchor ? anchor.after(revoiceBox(job)) : out.append(revoiceBox(job));
+  }
 }
 // app.js updateJob() delegates here when the job is shown on its page (after ✓ Nghe đúng rồi, a take, an export…).
 window.refreshJobPage = (job, page) => fillPage(job, page);

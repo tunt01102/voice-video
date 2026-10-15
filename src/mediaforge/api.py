@@ -299,6 +299,46 @@ def create_app() -> FastAPI:
         params = {"job": jid, **({"karaoke": bool(body["karaoke"])} if "karaoke" in body else {})}
         return {"job": _public_job(runner.submit("resubtitle", params, source="dashboard"))}
 
+    @app.post("/api/jobs/{jid}/revoice")
+    def revoice_job(jid: str, body: dict[str, Any] = Body(...)):
+        """Read a finished video again in another voice (clone, blend or stock): {voice, fx?, engine?}. Only the voice
+        and compose stages run; script and pictures are kept, subtitles/cards/music follow the new timing."""
+        from mediaforge import revoice
+
+        voice = body.get("voice")
+        if not voice:
+            raise HTTPException(400, "voice is required")
+        job = db.get_job(jid)
+        try:
+            r = revoice.check_source(job)
+        except ValueError as e:
+            raise HTTPException(409, str(e)) from e
+        try:
+            revoice.check_voice(voice, current=r.get("voice_id") or job["params"].get("voice"))
+            est = revoice.estimate(job, voice, body.get("engine"))
+        except KeyError as e:
+            raise HTTPException(404, str(e)) from e
+        except PermissionError as e:
+            raise HTTPException(403, str(e)) from e
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        fx = body.get("fx") if isinstance(body.get("fx"), dict) else None
+        params = {"job": jid, "voice": voice, **({"fx": fx} if fx else {}),
+                  **({"engine": body["engine"]} if body.get("engine") else {})}
+        return {"job": _public_job(runner.submit("revoice", params, source=body.get("source", "dashboard"))),
+                "estimate": est}
+
+    @app.get("/api/jobs/{jid}/revoice/estimate")
+    def revoice_estimate(jid: str, voice: str, engine: str | None = None):
+        from mediaforge import revoice
+
+        try:
+            return revoice.estimate(db.get_job(jid), voice, engine)
+        except KeyError as e:
+            raise HTTPException(404, str(e)) from e
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+
     @app.post("/api/jobs/{jid}/export")
     def export_job(jid: str, body: dict[str, Any] = Body(default={})):
         """Export with a chosen voice per sentence ({"selection": {index: take_id|"original"}, "format": "mp4"})."""

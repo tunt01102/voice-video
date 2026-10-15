@@ -15,14 +15,14 @@ log = logging.getLogger(__name__)
 
 JOB_TYPES = {"tts", "image", "subtitle", "video", "short", "explainer", "narrated", "screen", "enrol", "rerender", "export",
              "prepare", "resubtitle", "repronounce", "sing", "recite", "blend", "eval", "restage",
-             "stock_previews"}
+             "stock_previews", "revoice"}
 # Jobs that can simply run again after the server died mid-way (their outputs are keyed by job id; videos skip the
 # stages they already finished — SDD-review-upgrade §5.3).
 RESUMABLE = {"tts", "image", "video", "short", "explainer", "narrated", "screen", "sing", "recite", "eval", "restage",
-             "stock_previews"}
+             "stock_previews", "revoice"}
 MAX_RESUMES = 2
 # Small interactive jobs jump ahead of long renders.
-PRIORITY = {"enrol": 0, "tts": 1, "image": 1, "rerender": 1, "prepare": 1, "subtitle": 2, "export": 2, "resubtitle": 2, "repronounce": 1, "blend": 1, "restage": 1, "eval": 3}
+PRIORITY = {"enrol": 0, "tts": 1, "image": 1, "rerender": 1, "prepare": 1, "subtitle": 2, "export": 2, "resubtitle": 2, "repronounce": 1, "blend": 1, "restage": 1, "revoice": 1, "eval": 3}
 
 
 class Cancelled(Exception):

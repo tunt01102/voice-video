@@ -171,6 +171,23 @@ async def restage_video(job_id: str, scene: int | None = None, prompt: str | Non
 
 
 @mcp.tool()
+async def revoice_video(job_id: str, voice: str, pitch: float | None = None,
+                        wait_seconds: float = 0) -> dict[str, Any]:
+    """Read a finished video again in another voice — the owner's clone, a blend, or a stock voice (list_voices,
+    kind=stock) — without rewriting the script or redrawing pictures. Subtitles, karaoke, cards and music follow
+    the new timing; the old render goes to trash. pitch: semitones -6..+6 on top of the voice's saved settings.
+    Voices of other people need recorded consent. Returns the revoice job (its result has warnings and timings)."""
+    from mediaforge import revoice
+
+    try:
+        r = revoice.check_source(db.get_job(job_id))
+        revoice.check_voice(voice, current=r.get("voice_id"))
+    except (KeyError, PermissionError, ValueError) as e:
+        return {"error": str(e)}
+    return await _submit("revoice", {"job": job_id, "voice": voice, "fx": _fx(pitch=pitch)}, wait_seconds)
+
+
+@mcp.tool()
 async def recite_poem(text: str | None = None, poem_id: str | None = None, version: str | None = None,
                       voice: str | None = None, mood: str = "auto", spirit: str | None = None,
                       title: str | None = None, author: str | None = None, tempo: float = 1.0,

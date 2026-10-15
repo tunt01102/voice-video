@@ -604,3 +604,80 @@ creative features (P6-D) need ratings to learn from.
 Next step (not done): measure SigLIP on the scene images of 10 finished videos (score vs the owner's redraws)
 before wiring an auto-reject.
 
+
+### 11.5 Revoice — Đổi giọng (v1.3, 2026-10-15)
+
+A finished video (narrated / short / explainer / screen) is read again in another voice — the owner's clone, a
+blend or a stock voice (`kind=stock`) — with no LLM call, no new picture and no new clip. It is the §5.3 "voice
+stage re-run" applied to the whole script.
+
+**Flow** (`revoice.py`, job type `revoice`, `RESUMABLE`, priority 1):
+
+1. Check the target voice: stock (synthetic, fixed engine — `engine` is ignored with a warning, never `best`); a
+   blend only if its partner still has `consent`; otherwise the owner's voice (default or the job's current voice)
+   or a voice with recorded `consent` (`blend.consent_of`). Anything else → 403. Checked again in the job.
+2. `pipelines.voice_stage` (the same function `run_video` now calls) writes the new narration to
+   `out/.revoice-<job>/`: per-scene `speak` → `synth_sentence` (QA + repair loop), card silence, Whisper word
+   timings, subtitles, `voice.json`. Same per-scene seeds as the original. The old voice's `overrides`, `takes` and
+   `regen` are **not** passed (they belong to the old voice) and are listed in `dropped`. The owner's readings for
+   this script (pre-render `pronunciations`, Sửa phát âm readings, take readings, the old voice's manual/verified
+   lexicon entries for terms in the script) are kept: any the new voice would not already apply are saved to its
+   base voice's lexicon (`origin: revoice`).
+3. `recompose(voice_dir=, words=, trash=, new_subtitles=True)` builds the scenes again from the **new** scene audio
+   (`reuse=True`: pictures/clips reused, Ken Burns lengths and mood motion/transitions recomputed), cards keep their
+   length (the end card moves to the new end), `chapter_ass` moves the lower-thirds, karaoke uses the new word
+   timings, music fades follow the new length. A missing `cards` key stays "no cards" (videos from before cards).
+4. Only after the new `final.mp4` exists: old `voice/`, `voice.wav`, `voice.json`, `takes/` join the old render,
+   subtitles and exports in `data/trash/<src>-revoice-<job>/`. The source job is updated in place (voice, fx,
+   words, sentences, spans; params drop `overrides/regen/takes/fx/engine`); `report.revoiced[]` and the revoice
+   job's result hold `source_job`, from/to, timings, durations, QA counts, `dropped`, `readings_kept/saved`,
+   `clip_fit` and `warnings`. A failure before the swap leaves the source untouched and removes the work folder;
+   a killed server resumes the job (the work folder and the sentence cache make the redo cheap).
+
+**Fixed-length video** (`pipelines.fit_clips`, applied in every `build_visuals`): an LTX clip, the owner's media or a
+screen recording longer than its narration slot is **cut**; shorter by ≤ max(1.5 s, 25 %) it **holds** the last
+frame (`Scene.fill="hold"`: no `-stream_loop`, `tpad` clone); shorter by more it **loops** the whole clip (the old
+behaviour). Within 0.15 s nothing is done. Each case is written to `report.clip_fit` and `report.warnings`
+("cảnh 2: lời đọc 6.43 s, clip 4.0 s → lặp lại clip"). Clips made earlier are reused even when ltx-2-mlx is no
+longer installed (before, `reuse=True` silently fell back to Ken Burns).
+
+**Interfaces:** `POST /api/jobs/{id}/revoice {voice, fx?, engine?}` → `{job, estimate}`;
+`GET /api/jobs/{id}/revoice/estimate?voice=`; MCP `revoice_video(job_id, voice, pitch?, wait_seconds?)`; dashboard
+job page `🎙 Đổi giọng` (own voices / Giọng mẫu tabs, ▶ instant stock previews, pitch, estimate, SSE progress, the last
+revoice and its warnings).
+
+**Fixed on the way:** `recompose` passed the literal `music="auto"` to FFmpeg ("Error opening input file auto"),
+so re-subtitling or restaging any `music=auto` video failed; it now uses the track `run_video` picked
+(`report.music_id`). `visuals.json` is rewritten only after a successful re-compose.
+
+**Measured** (data-store copy, dev server :8766, M4 Max; TTS sentence cache emptied before each run unless noted;
+models warm unless noted):
+
+| Video | Target | Voice stage | Compose | Total | Length | QA failed (before → after) |
+|---|---|---|---|---|---|---|
+| explainer 16:9, 14 sentences, title/end card, 2 chapters (`4013319fd405`) | stock VieNeu `stock-nam-bac-tin-tuc` | 47.3 s | 15.9 s | **63.2 s** | 66.9 → 66.1 s | 0 → 1 |
+| same | stock VieNeu (sentences cached by a failed first run) | 11.4 s | 17.8 s | 29.2 s | 66.9 → 63.1 s | 0 → 1 |
+| same | clone `gi-ng-t` (route `best`: both engines + QA) | 158.7 s | 16.1 s | **174.8 s** | 63.1 → 66.9 s | 1 → 0 |
+| short 9:16, 12 sentences, music, no cards (`ae6b513ea40d`, made before word timings were stored) | stock VoxCPM2 `stock-nam-mc-thiet-ke` (cold model load) | 62.4 s | 8.1 s | **70.4 s** | 40.1 → 31.8 s | 0 → 0 |
+| same | clone `gi-ng-t`, server killed at scene 3/6 and restarted | 71.9 s after restart (incl. model reload) | 9.4 s | 81.4 s after restart | 31.8 → 36.9 s | 0 → 0 |
+| same, with synthetic testsrc clips (10 s / 4 s / 1.5 s) | stock VieNeu (cached) | 21.5 s | 7.7 s | 29.2 s | 36.9 → 33.9 s | — |
+
+For comparison, the explainer's original render took 405 s (plan 58 + voice 127 + visuals 204 + compose 17).
+Revoicing to a stock voice therefore costs about a minute for a one-minute video; to the clone voice with `best`
+routing about three minutes, because `best` synthesises with both engines and keeps the better take. The
+"tens of seconds" target is met only with warm sentences (e.g. switching back to a voice whose sentences are
+cached; the clone run reproduced the original timeline exactly, 66.87 s, from the same seeds).
+
+**Checked frame by frame:** title card at 0–2.5 s, chapter lower-thirds at intro + new scene lengths
+(2.7 s and 50.1 s with the stock voice vs 53.3 s with the clone), end card at the new end (60.0 s vs 63.9 s);
+an independent Whisper pass over each new `final.mp4` matched **18/18** subtitle cues in all four renders (mean
+word overlap 0.90–0.95); music level under the end card −35 dB (stock) / −32 dB (clone), same as the original
+(−32 dB); the title card is near-silent (−64 dB) in the original too (2 s music fade-in). The first cue starts
+≈ 0.2 s before the title card ends, and the last ends ≈ 0.25 s into the end card — unchanged from the original
+renders. Clip modes with real FFmpeg (testsrc counter): cut (10 s clip, 5.5 s slot), hold (5.5 s clip frozen on its
+last frame for 0.9 s), loop (1.5 s clip restarting through a 6.5 s slot), each listed in `clip_fit`.
+
+**Open:** the dashboard estimate uses fixed rates (VieNeu 0.8, VoxCPM 1.4, best 2.8 s per second of speech, plus
+the original compose time) and does not know about cached sentences. A stock voice's QA can differ from the clone's
+(1 judged failure in 14 with `stock-nam-bac-tin-tuc`): the sentence shows in the QA panel as usual; ✓ Nghe đúng
+rồi judgements live per base voice and do not carry over.

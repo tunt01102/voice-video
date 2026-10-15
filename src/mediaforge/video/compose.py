@@ -48,15 +48,16 @@ class Scene:
     motion: str | None = None  # Ken Burns style for images; None = auto
     transition: str | None = None  # xfade style INTO this scene; None = auto
     card: str | None = None        # "title" | "end" for the cards around the narration scenes
+    fill: str = "loop"             # a video shorter than its slot: "loop" it or "hold" its last frame
 
     def as_dict(self) -> dict:
         return {"visual": self.visual, "duration": self.duration, "kind": self.kind, "motion": self.motion,
-                "transition": self.transition, "card": self.card}
+                "transition": self.transition, "card": self.card, "fill": self.fill}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Scene":
         return cls(d["visual"], d["duration"], kind=d.get("kind", "image"), motion=d.get("motion"),
-                   transition=d.get("transition"), card=d.get("card"))
+                   transition=d.get("transition"), card=d.get("card"), fill=d.get("fill") or "loop")
 
 
 def assign_styles(scenes: list[Scene], moods: list[str | None], *, gentle: bool = False) -> None:
@@ -98,7 +99,9 @@ def render_segment(scene: Scene, length: float, out: Path, w: int, h: int, fps: 
     if scene.kind == "video":
         vf = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},fps={fps},setsar=1,format=yuv420p,"
               f"tpad=stop_mode=clone:stop_duration={length}")
-        args = ["-stream_loop", "-1", "-i", scene.visual, "-t", f"{length:.3f}", "-vf", vf]
+        # A clip longer than its slot is cut by -t; a shorter one loops, or (fill="hold") freezes on its last frame.
+        loop = ["-stream_loop", "-1"] if scene.fill == "loop" else []
+        args = [*loop, "-i", scene.visual, "-t", f"{length:.3f}", "-vf", vf]
     else:
         vf = _kenburns_filter(motion, w, h, fps, frames)
         args = ["-loop", "1", "-framerate", str(fps), "-i", scene.visual, "-vf", vf, "-frames:v", str(frames)]

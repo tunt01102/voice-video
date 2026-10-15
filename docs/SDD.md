@@ -151,7 +151,9 @@ src/mediaforge/
   video/compose.py   FFmpeg composition (Ken Burns, xfade, subs, music ducking)
   video/slides.py    slide rendering (Pillow)
   video/clips.py     optional LTX-2 clips
-  pipelines.py       narrated / short / explainer orchestrations
+  pipelines.py       narrated / short / explainer orchestrations (stages; `voice_stage`, `recompose`, `fit_clips`)
+  restage.py         redo one stage of a finished video (new picture, new music)
+  revoice.py         đổi giọng: read a finished video again in another voice (voice + compose stages only)
   takes.py           guided sentence re-render ("takes"), sentence spans, splice
   export.py          export formats table + remux/recompose export job
   music.py           background-music library (music_catalog.json metadata; audio in data/music/)
@@ -256,6 +258,9 @@ to 48 kHz on exit; ASR always receives 16 kHz mono.
 - Writers: SRT, VTT, ASS (styles per aspect; `WrapStyle: 0` safety net; karaoke word *pop* — spoken word turns
   yellow and grows 8 % — on by default for every aspect).
 - `resubtitle` job rebuilds a finished video's subtitles from its stored word timings, voice track and images.
+- `revoice` job (Đổi giọng) re-runs only the voice stage of a finished video in another voice (clone, blend or
+  stock) and re-composes it with new subtitles: scene durations, karaoke, cards and chapter lower-thirds follow the
+  new narration; fixed-length clips are cut / held / looped with a warning ([SDD-review-upgrade.md](SDD-review-upgrade.md) §11.5).
 - `subtitle` job also works on arbitrary user audio/video (transcribe → cues), with
   optional translation EN↔VI via the LLM.
 
@@ -310,12 +315,13 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 | `GET/POST /api/voices`, `GET/PATCH/DELETE /api/voices/{id}` | voice profiles |
 | `POST /api/voices/{id}/samples` | multipart upload/recording → processed sample |
 | `GET/PUT /api/voices/{id}/lexicon`, `GET/PUT /api/lexicon` | pronunciation lexicons |
-| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip, prepare, sing, recite, eval` (+ internal `rerender`, `export`, `resubtitle`, `repronounce`, `blend`, `restage`); video params `review: [plan, visuals]` pause the job in status `waiting` |
+| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip, prepare, sing, recite, eval` (+ internal `rerender`, `export`, `resubtitle`, `repronounce`, `blend`, `restage`, `revoice`); video params `review: [plan, visuals]` pause the job in status `waiting` |
 | `POST /api/jobs/{id}/approve`, `/restage`, `/sentences/{i}/accept`, `GET/POST /api/jobs/{id}/rating`, `GET /api/lessons`, `PATCH /api/lessons/{id}`, `GET /api/insights`, `GET /api/incidents`, `POST /api/lint` | review steps, partial re-renders, owner judgement and the lessons store ([SDD-review-upgrade.md](SDD-review-upgrade.md) §11.1) |
 | `GET /api/poems`, `GET /api/sing/moods` | Tang poem catalogue (Ngâm thơ tab); moods/styles for sing/recite |
 | `POST /api/jobs/{id}/sentences/{i}/rerender` | `{file?, lang?}` — AI re-renders sentence *i* as a take (recording = guide) |
 | `POST /api/jobs/{id}/repronounce` | `{readings: {term: reading}, format?}` — re-read every sentence containing a term, export (no re-render); `GET /api/jobs/{id}/occurrences?terms=` previews matches |
 | `POST /api/jobs/{id}/resubtitle` | rebuild subtitles of a finished video (no TTS/image work) |
+| `POST /api/jobs/{id}/revoice` | `{voice, fx?, engine?}` → a `revoice` job (+ `estimate`): read the video again in another voice; 403 without consent, 409 if not a finished video. `GET /api/jobs/{id}/revoice/estimate?voice=` — seconds before submitting |
 | `POST /api/lexicon/terms` | `{lang, terms: {term: reading}, verified: [term]}` — merge pre-scan answers |
 | `POST /api/jobs/{id}/export` | `{selection: {i: take_id}, format}` — mp4 (default), mov, mkv, webm, mp3, wav, m4a |
 | `GET /api/export-formats`, `GET /api/voices/{id}/corrections` | format catalogue; a voice's sentence guides |
@@ -331,7 +337,7 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 `?wait=true` on `POST /api/jobs` blocks until completion (≤ 600 s) for simple clients.
 
 ### 9.2 MCP (streamable HTTP at `http://127.0.0.1:8765/mcp`)
-Tools: `speak`, `blend_voices`, `restage_video`, `rate_job`, `list_lessons`, `generate_image`, `prepare_video`, `create_video`, `resubtitle_video`, `repronounce_video`, `recite_poem`, `sing_song`, `list_poems`,
+Tools: `speak`, `blend_voices`, `restage_video`, `revoice_video`, `rate_job`, `list_lessons`, `generate_image`, `prepare_video`, `create_video`, `resubtitle_video`, `repronounce_video`, `recite_poem`, `sing_song`, `list_poems`,
 `transcribe_subtitles`, `job_status`, `list_voices`, `list_jobs`, `list_music`. Long jobs return a job id
 immediately plus a `wait_seconds` option; results return absolute file paths (sessions
 run on the same machine). `create_video`/`prepare_video` take `document` (+ `document_as` brief|script) to use a

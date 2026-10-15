@@ -425,8 +425,7 @@ def build_visuals(p: dict[str, Any], plan_data: dict[str, Any], out: Path, durat
     img_aspect = aspect if aspect in image.ASPECTS else "16:9"
     media = p.get("media") or []
     use_clips = bool(p.get("clips")) and clips.available()
-    if p.get("clips") and not use_clips:
-        report["warning"] = "clips requested but ltx-2-mlx is not installed; used Ken Burns stills"
+    fallback = False
     for i, sc in enumerate(scenes_in):
         progress(i / len(scenes_in), f"visual {i + 1}/{len(scenes_in)}")
         if kind == "screen":
@@ -461,19 +460,61 @@ def build_visuals(p: dict[str, Any], plan_data: dict[str, Any], out: Path, durat
             sl = slides.render_slide(out / "slides" / f"slide_{i + 1:02d}.png", sc.get("slide_title") or plan_data["title"],
                                      sc.get("bullets") or [], width=W, height=H, theme=p.get("theme", "midnight"), background=bg)
             visuals.append(compose.Scene(str(sl), durations[i], motion="static" if not bg else "zoom_in"))
-        elif use_clips and bg:
+        elif p.get("clips") and bg and ((reuse and clip_path.exists()) or use_clips):
+            # A clip made earlier is reused even when ltx-2-mlx is gone (re-subtitle, restage, revoice).
             clip = clip_path if reuse and clip_path.exists() else clips.image_to_video(
                 bg, sc["visual_prompt"], clip_path, seconds=min(durations[i], 6))
             visuals.append(compose.Scene(str(clip), durations[i], kind="video"))
         else:
+            fallback = fallback or bool(p.get("clips") and bg)
             visuals.append(compose.Scene(bg or str(slides.render_slide(out / "slides" / f"slide_{i + 1:02d}.png", sc["narration"][:80], [], width=W, height=H)),
                                          durations[i]))
     for v, sc in zip(visuals, scenes_in):  # owner overrides from the storyboard
         v.motion = sc.get("motion") or v.motion
         v.transition = sc.get("transition") or v.transition
+    if fallback:
+        report["warning"] = "clips requested but ltx-2-mlx is not installed; used Ken Burns stills"
     if kind != "screen":
         compose.assign_styles(visuals, [sc.get("mood") for sc in scenes_in], gentle=_gentle_motion(kind))
+    fit_clips(visuals, report)
     return add_cards(p, plan_data, out, visuals, width=W, height=H)
+
+
+CLIP_TOLERANCE = 0.15  # s: a clip this close to its slot needs nothing
+HOLD_MAX = 1.5         # s: a clip short by at most this much (or 25 %) freezes on its last frame; beyond, it loops
+
+
+def fit_clips(visuals: list[compose.Scene], report: dict[str, Any]) -> None:
+    """Fixed-length videos (LTX clips, the owner's media, a screen recording) against their narration slot.
+
+    Longer than the slot → cut; a little shorter → hold the last frame; much shorter → loop the whole clip.
+    Every adjustment is written to report["clip_fit"] (and report["warnings"]) — never silently.
+    """
+    fits = []
+    for i, v in enumerate(visuals):
+        if v.kind != "video":
+            continue
+        try:
+            have = A.probe_duration(v.visual)
+        except Exception:  # noqa: BLE001 — an unreadable clip fails later in compose with a clearer error
+            continue
+        need = v.duration
+        if abs(need - have) <= CLIP_TOLERANCE:
+            continue
+        if need < have:
+            mode = "cut"
+        else:
+            mode = "hold" if need - have <= max(HOLD_MAX, 0.25 * have) else "loop"
+        v.fill = "hold" if mode == "hold" else "loop"
+        fits.append({"scene": i, "clip": Path(v.visual).name, "clip_seconds": round(have, 2),
+                     "voice_seconds": round(need, 2), "mode": mode})
+    report["clip_fit"] = fits
+    if fits:
+        words = {"cut": "cắt bớt {d:.1f} s cuối clip", "hold": "giữ khung hình cuối thêm {d:.1f} s",
+                 "loop": "lặp lại clip ({d:.1f} s thiếu)"}
+        report.setdefault("warnings", []).extend(
+            f"cảnh {f['scene'] + 1}: lời đọc {f['voice_seconds']} s, clip {f['clip_seconds']} s → "
+            + words[f["mode"]].format(d=abs(f["voice_seconds"] - f["clip_seconds"])) for f in fits)
 
 
 def _gentle_motion(kind: str) -> bool:
@@ -580,6 +621,44 @@ def invalidate(out: Path, after: str) -> None:
     save_stage_state(out, state)
 
 
+def voice_stage(p: dict[str, Any], plan_data: dict[str, Any], out: Path, *, lang: str, voice: str | None,
+                width: int, height: int, progress: Progress) -> dict[str, Any]:
+    """Narration per scene → out/voice/scene_NN.wav, out/voice.wav (with silence under the cards), word timings,
+    out/subtitles.* and out/voice.json. Every sentence goes through speak → synth_sentence (QA + repair).
+    Missing `cards` in the plan means no cards (a video made before cards existed keeps its timeline)."""
+    scenes_in = plan_data["scenes"]
+    scene_audio, scene_reports = [], []
+    vprog = _sub(progress, 0.05, 0.40)
+    for i, sc in enumerate(scenes_in):
+        vprog(i / len(scenes_in), f"voice {i + 1}/{len(scenes_in)}")
+        r = S.speak(sc["narration"], voice=voice, lang=lang, engine=p.get("engine"), fx=p.get("fx"),
+                    out_dir=out / "voice", name=f"scene_{i + 1:02d}", seed=int(p.get("seed", 1234)) + 100 * i,
+                    timings=False, overrides=p.get("overrides"), regen=p.get("regen"), takes=p.get("takes"))
+        scene_audio.append(A.load(r["audio"]))
+        scene_reports.append(r)
+    voice_track = A.crossfade_concat(scene_audio, [SCENE_GAP] * (len(scene_audio) - 1), fade=0.005)
+    cards = plan_data.get("cards") or {}
+    if cards.get("intro") or cards.get("outro"):  # silence under the title/end cards keeps one timeline for all
+        voice_track = np.concatenate([np.zeros(int(cards.get("intro", 0) * A.SR), dtype=np.float32), voice_track,
+                                      np.zeros(int(cards.get("outro", 0) * A.SR), dtype=np.float32)])
+    A.save(out / "voice.wav", voice_track)
+    durations = [len(a) / A.SR + (SCENE_GAP if i < len(scene_audio) - 1 else 0) for i, a in enumerate(scene_audio)]
+    progress(0.42, "subtitle timing")
+    full_text = " ".join(sc["narration"] for sc in scenes_in)
+    tr = asr.transcribe(out / "voice.wav", lang=lang)
+    words = [w.as_dict() for w in asr.align_script(full_text, tr["words"], len(voice_track) / A.SR)]
+    subs = subtitles.write_all(words, out / "subtitles", width=width, height=height, karaoke=p.get("karaoke"))
+    vs = {"scene_reports": scene_reports, "durations": durations, "words": words, "subs": subs}
+    (out / "voice.json").write_text(json.dumps(vs, ensure_ascii=False))
+    return vs
+
+
+def scene_sentences(scene_reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every sentence of the video, in order, with its scene and global index."""
+    return [{**sen, "scene": si, "index": k} for k, (si, sen) in enumerate(
+        (si, sen) for si, r in enumerate(scene_reports) for sen in r["sentences"])]
+
+
 def storyboard(plan_data: dict[str, Any], out: Path, visuals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     visuals = [v for v in visuals if not v.get("card")]  # title/end cards are not scenes
     return [{"scene": i, "narration": sc.get("narration", ""), "visual_prompt": sc.get("visual_prompt", ""),
@@ -660,29 +739,9 @@ def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
         if "cards" not in plan_data:
             plan_data["cards"] = card_plan(p, plan_data, kind=kind, aspect=aspect, music_id=music_id)
             (out / "plan.json").write_text(json.dumps(plan_data, ensure_ascii=False, indent=2))
-        scene_audio, scene_reports = [], []
-        vprog = _sub(progress, 0.05, 0.40)
-        for i, sc in enumerate(scenes_in):
-            vprog(i / len(scenes_in), f"voice {i + 1}/{len(scenes_in)}")
-            r = S.speak(sc["narration"], voice=voice, lang=lang, engine=p.get("engine"), fx=p.get("fx"),
-                        out_dir=out / "voice", name=f"scene_{i + 1:02d}", seed=int(p.get("seed", 1234)) + 100 * i,
-                        timings=False, overrides=p.get("overrides"), regen=p.get("regen"), takes=p.get("takes"))
-            scene_audio.append(A.load(r["audio"]))
-            scene_reports.append(r)
-        voice_track = A.crossfade_concat(scene_audio, [SCENE_GAP] * (len(scene_audio) - 1), fade=0.005)
-        cards = plan_data.get("cards") or {}
-        if cards.get("intro") or cards.get("outro"):  # silence under the title/end cards keeps one timeline for all
-            voice_track = np.concatenate([np.zeros(int(cards.get("intro", 0) * A.SR), dtype=np.float32), voice_track,
-                                          np.zeros(int(cards.get("outro", 0) * A.SR), dtype=np.float32)])
-        voice_wav = A.save(out / "voice.wav", voice_track)
-        durations = [len(a) / A.SR + (SCENE_GAP if i < len(scene_audio) - 1 else 0) for i, a in enumerate(scene_audio)]
-        progress(0.42, "subtitle timing")
-        full_text = " ".join(sc["narration"] for sc in scenes_in)
-        tr = asr.transcribe(voice_wav, lang=lang)
-        words = [w.as_dict() for w in asr.align_script(full_text, tr["words"], len(voice_track) / A.SR)]
-        subs = subtitles.write_all(words, out / "subtitles", width=W, height=H, karaoke=p.get("karaoke"))
-        (out / "voice.json").write_text(json.dumps({"scene_reports": scene_reports, "durations": durations,
-                                                    "words": words, "subs": subs}, ensure_ascii=False))
+        vs = voice_stage(p, plan_data, out, lang=lang, voice=voice, width=W, height=H, progress=progress)
+        scene_reports, durations, words, subs = vs["scene_reports"], vs["durations"], vs["words"], vs["subs"]
+        voice_wav = out / "voice.wav"
         timings["voice"] = round(time.time() - ts, 1)
         done("voice")
 
@@ -718,8 +777,7 @@ def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
         "qa_failed_sentences": [s for r in scene_reports for s in r["qa_failed_sentences"]], "stages": timings,
     })
     done("compose")
-    sentences = [{**sen, "scene": si, "index": k} for k, (si, sen) in enumerate(
-        (si, sen) for si, r in enumerate(scene_reports) for sen in r["sentences"])]
+    sentences = scene_sentences(scene_reports)
     result = {"video": str(final), "thumbnail": str(thumb), "title": plan_data.get("title"),
               "sentences": sentences, "voice_id": scene_reports[0]["voice"] if scene_reports else voice,
               "qa_failed_sentences": report["qa_failed_sentences"],
@@ -764,16 +822,30 @@ def run_resubtitle(p: dict[str, Any], progress: Progress, job_id: str | None = N
     return recompose(p, progress, new_subtitles=True)
 
 
+def to_trash(src: str | Path, trash: Path) -> None:
+    """Move into trash, never over something already there (a resumed job reuses its trash folder)."""
+    src = Path(src)
+    if src.exists():
+        dest = trash / src.name
+        if dest.exists():
+            dest = trash / f"{src.stem}.{time.strftime('%H%M%S')}-{time.time_ns() % 10**6}{src.suffix}"
+        shutil.move(str(src), dest)
+
+
 def recompose(p: dict[str, Any], progress: Progress, *, new_subtitles: bool,
-              param_changes: dict[str, Any] | None = None) -> dict[str, Any]:
+              param_changes: dict[str, Any] | None = None, trash: Path | None = None,
+              voice_dir: Path | None = None, words: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Re-compose a finished video in place from its voice track and pictures (missing pictures are generated) and
-    swap it in; the old render and its exports go to trash. Used by resubtitle and restage."""
+    swap it in; the old render and its exports go to trash. Used by resubtitle, restage and revoice.
+    Scene durations come from voice/scene_NN.wav, so a new voice moves pictures, cards and chapters with it.
+    voice_dir/words: compose from a new voice that is not swapped in yet (revoice: its voice/, voice.wav, timings);
+    the job's own voice files are left for the caller to swap."""
     from mediaforge import takes as T
 
     src_id = p["job"]
     job = T.load_done_job(src_id)
     r, jp = job["result"], {**job["params"], **(param_changes or {})}
-    if not T.is_video(r) or not r.get("words") or not r.get("plan"):
+    if not T.is_video(r) or not (words or r.get("words")) or not r.get("plan"):
         raise ValueError(f"job {src_id} is not a finished video with word timings")
     out = Path(r["video"]).parent
     kind = r.get("report", {}).get("kind") or jp.get("kind") or job["type"]
@@ -784,7 +856,8 @@ def recompose(p: dict[str, Any], progress: Progress, *, new_subtitles: bool,
     if param_changes and "music" in param_changes and plan_data.get("cards", {}).get("outro"):
         plan_data["cards"]["credit"] = music.credit(param_changes["music"]) or ""  # the end card names the new track
         Path(r["plan"]).write_text(json.dumps(plan_data, ensure_ascii=False, indent=2))
-    scene_wavs = sorted((out / "voice").glob("scene_*.wav"))
+    vdir = voice_dir or out
+    scene_wavs = sorted((vdir / "voice").glob("scene_*.wav"))
     scene_wavs = [w for w in scene_wavs if w.stem.count("_") == 1]  # scene_01.wav, not scene_01_take…
     if len(scene_wavs) != len(plan_data["scenes"]):
         raise ValueError(f"job {src_id}: {len(scene_wavs)} scene voice files for {len(plan_data['scenes'])} scenes")
@@ -798,7 +871,7 @@ def recompose(p: dict[str, Any], progress: Progress, *, new_subtitles: bool,
     work.mkdir()
     try:
         if new_subtitles:
-            subs = subtitles.write_all(r["words"], work / "subtitles", width=W, height=H, karaoke=karaoke)
+            subs = subtitles.write_all(words or r["words"], work / "subtitles", width=W, height=H, karaoke=karaoke)
         else:
             subs = {}
             for ext in ("srt", "vtt", "ass"):
@@ -808,31 +881,35 @@ def recompose(p: dict[str, Any], progress: Progress, *, new_subtitles: bool,
         visuals = build_visuals(jp, plan_data, out, durations, kind=kind, aspect=aspect,
                                 style=jp.get("style", "cinematic"), report=report,
                                 progress=_sub(progress, 0.05, 0.5 if not new_subtitles else 0.15), reuse=True)
-        (out / "visuals.json").write_text(json.dumps([v.as_dict() for v in visuals], ensure_ascii=False, indent=2))
+        vis_json = json.dumps([v.as_dict() for v in visuals], ensure_ascii=False, indent=2)
         burn = jp.get("burn_subtitles", True)
+        music_id = jp.get("music")
+        if music_id == "auto":  # run_video picked a library track; recompose keeps the same one
+            music_id = (r.get("report") or {}).get("music_id")
         final_new = compose.compose(
-            visuals, r["voice"], work / "final.mp4", aspect=aspect, music=music.resolve(jp.get("music")),
+            visuals, (vdir / "voice.wav") if voice_dir else r["voice"], work / "final.mp4", aspect=aspect, music=music.resolve(music_id),
             music_volume=float(jp.get("music_volume", 0.18)),
             subtitles_ass=chapter_ass(subs["ass"], plan_data, durations, work, height=H) if burn else None,
             soft_srt=None if burn else subs["srt"], transition=0.0 if kind == "screen" else 0.5,
             progress=_sub(progress, 0.5 if not new_subtitles else 0.15, 0.95))
         # Swap in: the old render and every export made from it (they carry the old burned subtitles) go to trash.
-        trash = settings.sub("trash", f"{src_id}-resub-{stamp}")
+        trash = trash or settings.sub("trash", f"{src_id}-resub-{stamp}")
+        trash.mkdir(parents=True, exist_ok=True)
         fresh = T.load_done_job(src_id)["result"]
         for e in fresh.get("exports") or []:
-            if Path(e["file"]).exists():
-                shutil.move(e["file"], trash / Path(e["file"]).name)
-        shutil.move(str(out / "final.mp4"), trash / "final.mp4")
+            to_trash(e["file"], trash)
+        to_trash(out / "final.mp4", trash)
         for ext in ("srt", "vtt", "ass"):
-            if (out / f"subtitles.{ext}").exists():
-                shutil.move(str(out / f"subtitles.{ext}"), trash / f"subtitles.{ext}")
+            to_trash(out / f"subtitles.{ext}", trash)
             shutil.move(subs[ext], out / f"subtitles.{ext}")
         shutil.move(str(final_new), out / "final.mp4")
+        (out / "visuals.json").write_text(vis_json)  # only once the new render exists
     finally:
         shutil.rmtree(work, ignore_errors=True)
     final = out / "final.mp4"
     compose.thumbnail(final, out / "thumbnail.jpg", at=min(1.5, sum(durations) / 2))
     fresh["subtitles"] = {ext: str(out / f"subtitles.{ext}") for ext in ("srt", "vtt", "ass")}
+    fresh.setdefault("report", {})["clip_fit"] = report.get("clip_fit", [])
     fresh["duration"] = round(A.probe_duration(final), 2)
     fresh["exports"] = []
     fresh["rendered_at"] = time.time()  # dashboard cache-bust for the swapped final.mp4
@@ -851,7 +928,8 @@ def recompose(p: dict[str, Any], progress: Progress, *, new_subtitles: bool,
             fresh.setdefault("report", {})["music_credit"] = music.credit(param_changes["music"])
     T.save_result(src_id, fresh)
     progress(1.0, "done")
-    return {"job": src_id, "video": str(final), "subtitles": fresh["subtitles"], "trash": str(trash)}
+    return {"job": src_id, "video": str(final), "subtitles": fresh["subtitles"], "trash": str(trash),
+            "clip_fit": report.get("clip_fit", []), "warnings": report.get("warnings", [])}
 
 
 def run_enrol(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
@@ -909,6 +987,12 @@ def run_restage(p: dict[str, Any], progress: Progress, job_id: str | None = None
     return restage.run(p, progress, job_id)
 
 
+def run_revoice(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
+    from mediaforge import revoice
+
+    return revoice.run(p, progress, job_id)
+
+
 def apply_plan_edits(out: Path, edits: dict[str, Any]) -> dict[str, Any]:
     """The owner edited the script at the plan gate: {title?, scenes: [{narration?, visual_prompt?}], hook?}.
     Narration is linted again; every later stage is invalidated."""
@@ -962,6 +1046,7 @@ RUNNERS: dict[str, Callable[..., dict[str, Any]]] = {
     "rerender": run_rerender, "export": run_export, "prepare": run_prepare, "resubtitle": run_resubtitle,
     "repronounce": run_repronounce, "sing": run_sing, "recite": run_recite,
     "blend": run_blend, "eval": run_eval, "restage": run_restage, "stock_previews": run_stock_previews,
+    "revoice": run_revoice,
 }
 
 
