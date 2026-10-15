@@ -21,12 +21,11 @@ SDD-review-upgrade §11.2–11.4):
 
 1. ✅ **Repair budget ≤ 3** — 3.0 mean attempts on failing sentences (was 4.27), passes unchanged at 21/36, eval
    time 466 s → 296 s.
-2. ◐ **Corpus ≥ 80 %** — **27/36 (75 %)** on the original 36 rows (was 21); **35/36 (97 %)** once the owner gives
-   ✓ Nghe đúng rồi to the 8 "thoăn thoắt" rows, which must not be "fixed" in code. Done in code: phrase-first for
-   VI > 25 words, dotted acronyms (lexicon; letters in English), Whisper outro hallucinations ("subscribe … Ghiền
-   Mì Gõ") and decoder loops ("lư lư lư …") re-judged. Left besides "thoăn thoắt": the broken script fragment
-   "ệu PNJ … goép … năm hai n" and "Ây Ai - ét-em-i - chấm Vi En" heard as "AI SMI.VM" (one letter off; loosening
-   the letter judge would forgive real errors). On the copy's grown corpus (40 rows): 29/40.
+2. ✅ **Corpus ≥ 80 %** — **32/36 (89 %)** on the original rows, 34/40 (85 %) on the copy's grown corpus, mean
+   attempts on failing sentences 3.0. The owner listened and confirmed "thoăn thoắt" is read right (✓ Nghe đúng
+   rồi → `judge_accept`, live store, 2026-10-15). Still failing: the misspelt variants "thoằn thoắt" / "thoăng
+   thoắt" (not confirmed by the owner), the broken fragment "ệu PNJ … goép …", and "Ây Ai - ét-em-i - chấm Vi En"
+   heard as "AI SMI.VM".
 3. ✅ **`engine_route` lessons** — `lessons.propose_route`/`route`; applied in engine order and in repair.
 4. ✅ **Sing/recite checkpoints** — interpret, each sung line, mix, each drawn shot.
 5. ✅ **P6-D owner A/B** — 3 topics rendered old vs new on the data-store copy (random A/B order per topic,

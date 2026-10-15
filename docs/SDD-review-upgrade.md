@@ -471,7 +471,7 @@ SDD §10, because none of the above needs it. CSS gets design tokens (`:root` va
 
 | Phase | Scope | Exit criterion | Status |
 |---|---|---|---|
-| **P6-A Learning hygiene + lint** | §5.1.4 gate + migration, §5.2.1 lint, §5.2.3 judge hardening + repetition detector + class-aware budget, "✓ Nghe đúng rồi", regression corpus + `eval` | 0 harmful active readings; corpus ≥ 80 %; unit tests for gate and lint | Done 2026-10-15 — 0 harmful active readings; corpus 20/36 (56 %) pass + 8 awaiting the owner's ✓ (see §11.2) |
+| **P6-A Learning hygiene + lint** | §5.1.4 gate + migration, §5.2.1 lint, §5.2.3 judge hardening + repetition detector + class-aware budget, "✓ Nghe đúng rồi", regression corpus + `eval` | 0 harmful active readings; corpus ≥ 80 %; unit tests for gate and lint | Done 2026-10-15 — 0 harmful active readings; corpus 32/36 (89 %) after v1.2 and the owner's ✓ on "thoăn thoắt" (see §11.2) |
 | **P6-B Lessons store + review** | §5.1.1–5.1.3, 5.1.5; ratings; job page (§5.5.2 step 6); Kinh nghiệm tab; undo toasts; app.js modules | Lessons visible and applied with chips; rating stored; digest prints | Done 2026-10-15 |
 | **P6-C Staged pipeline** | §5.3 stages, resume, gates, restage, stage timings, upload validation; Studio flow steps 1–5 | Kill the server mid-visuals → job resumes at visuals; restage one scene ≤ 60 s + compose | Done 2026-10-15 (resume unit-tested with a simulated crash; live restage measured, §11.2) |
 | **P6-D Creative direction** | §5.4.1–5.4.4 art direction, structure templates, hook variants, self-critique, mood motion table, cards, mood music + envelopes | Blind A/B of 3 topics (old vs new) rated by the owner; new wins ≥ 2/3 | Done 2026-10-15 — owner's blind A/B: new style preferred in 3/3 topics |
@@ -543,7 +543,7 @@ creative features (P6-D) need ratings to learn from.
 - **Corpus, v1.2b** (+ Whisper outro hallucinations and decoder loops count as judge errors, English dotted
   acronyms spelled): **27/36** on the original rows ("chấm Vi En.", "A.I." and the two "lưu lư lư…" long
   sentences now pass), 29/40 with 4 new `qa_fail` rows from the A/B renders; mean attempts on failing sentences
-  3.0. With the owner's ✓ on the 8 "thoăn thoắt" rows: 35/36.
+  3.0. After the owner's ✓ Nghe đúng rồi on "thoăn thoắt": **32/36 (89 %)**, 34/40 (85 %) — target ≥ 80 % met.
 - **Gated 16:9 video, end to end** (copy of the data store, 25 s brief, chibi, 3 scenes): plan 38 s (with
   self-critique) → voice 47 s → visuals 85 s → compose 7.5 s. Redrawing one scene at the storyboard took ≈ 25 s.
   Changing the music of the finished video (compose-only restage) took ≈ 10 s. The art direction kept one
