@@ -66,3 +66,35 @@ def test_speak_one_voice_uses_one_engine_for_every_sentence(monkeypatch, tmp_pat
 def test_one_voice_default_on_for_vietnamese_videos():
     assert P.one_voice({}, "vi") and not P.one_voice({}, "en")
     assert not P.one_voice({"one_voice": False}, "vi") and P.one_voice({"one_voice": True}, "en")
+
+
+class _Stop(Exception):
+    pass
+
+
+def _rerender_engine(monkeypatch, params, sent_engine):
+    from mediaforge import takes as T
+
+    job = {"id": "j", "type": "narrated", "params": params,
+           "result": {"lang": "vi", "sentences": [{"text": "Câu một.", "lang": "vi", "engine": sent_engine}]}}
+    monkeypatch.setattr(T, "load_done_job", lambda jid: job)
+    monkeypatch.setattr(T, "job_voice", lambda j: _voice("best"))
+    seen = {}
+
+    def synth(text, lang, voice, *, engine=None, lock_engine=False, **kw):
+        seen.update(engine=engine, lock=lock_engine)
+        raise _Stop
+
+    monkeypatch.setattr(T.S, "synth_sentence", synth)
+    try:
+        T.rerender({"job": "j", "index": 0}, lambda *a: None)
+    except _Stop:
+        pass
+    return seen
+
+
+def test_rerender_keeps_the_jobs_engine(monkeypatch):
+    assert _rerender_engine(monkeypatch, {"one_voice": True}, "voxcpm") == {"engine": "vieneu", "lock": True}
+    # a video made before one_voice existed keeps the engine this sentence was read with
+    assert _rerender_engine(monkeypatch, {}, "voxcpm") == {"engine": "voxcpm", "lock": True}
+    assert _rerender_engine(monkeypatch, {"one_voice": False}, "voxcpm") == {"engine": None, "lock": False}
