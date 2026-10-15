@@ -225,7 +225,7 @@ def synth_sentence(
 
     # What the engine is given: lint's TTS-only readings (acronym runs, domains) < learned readings (lessons,
     # per engine) < the owner's lexicon. Subtitles keep the written sentence.
-    lint_readings = L.tts_readings(sentence, lang)
+    lint_readings = L.tts_readings(sentence, lang, lexicon)
     lesson_readings = {e: {t: v for t, v in lessons.readings(base_id, lang, e).items() if N.terms_in(sentence, [t])}
                        for e in capable}
 

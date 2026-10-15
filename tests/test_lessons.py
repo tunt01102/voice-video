@@ -145,6 +145,18 @@ def test_tts_readings_keep_subtitle_text():
         "Học ây ai, ét em i tại aisme chấm vi en nhé"
 
 
+def test_dotted_acronyms_read_like_the_lexicon_term():
+    lex = {"AI": "ây ai", "SME": "Ét Em I"}
+    assert L.tts_readings("A.I.", "vi", lex) == {"A.I": "ây ai"}
+    assert N.apply_lexicon("Học S.M.E. nhé.", L.tts_readings("Học S.M.E. nhé.", "vi", lex)) == "Học Ét Em I nhé."
+    assert L.tts_readings("dot V.N.", "vi", lex) == {}          # no lexicon entry: left as written
+    assert L.tts_readings("Mr. A. Smith", "en", lex) == {}
+
+
+def test_vietnamese_sentences_over_25_words_are_read_phrase_first():
+    assert L.is_long(" ".join(["chữ"] * 26), "vi") and not L.is_long(" ".join(["chữ"] * 25), "vi")
+
+
 def test_long_unpunctuated_sentence_is_split_before_conjunctions():
     s = " ".join(["một"] * 20 + ["nhưng"] + ["hai"] * 20)
     assert L.is_long(s, "vi") and len(L.conj_phrases(s, "vi")) == 2
