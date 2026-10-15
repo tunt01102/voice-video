@@ -17,6 +17,16 @@ from fastapi import Body, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+
+class _DashboardFiles(StaticFiles):
+    """Dashboard assets must revalidate on every load (ETag makes it cheap): otherwise browsers keep running the
+    old app.js after `service.sh update` and new features look missing."""
+
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
 from mediaforge import __version__, db, models, music
 from mediaforge.config import settings
 from mediaforge.jobs import JOB_TYPES, runner
@@ -452,7 +462,7 @@ def create_app() -> FastAPI:
     # ---------------------------------------------------------------- MCP + dashboard
     for route in mcp_app.routes:
         app.router.routes.append(route)
-    app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
+    app.mount("/", _DashboardFiles(directory=WEB_DIR, html=True), name="web")
 
     @app.exception_handler(KeyError)
     async def key_error(_, exc: KeyError):
