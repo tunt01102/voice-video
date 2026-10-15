@@ -26,8 +26,12 @@ class Word:
         return {"text": self.text, "start": round(self.start, 3), "end": round(self.end, 3)}
 
 
-def transcribe(src: str | Path | np.ndarray, lang: str | None = None, sr: int = A.SR, initial_prompt: str | None = None) -> dict[str, Any]:
-    """Returns {"text", "language", "words": [Word]} with word-level timestamps."""
+def transcribe(src: str | Path | np.ndarray, lang: str | None = None, sr: int = A.SR, initial_prompt: str | None = None,
+               temperature: float | None = None) -> dict[str, Any]:
+    """Returns {"text", "language", "words": [Word]} with word-level timestamps.
+
+    temperature=0.0 decodes greedily with no fallback sampling (QA judging: the fallback is where Whisper
+    hallucinates CJK on Vietnamese audio)."""
     import mlx_whisper
 
     if isinstance(src, np.ndarray):
@@ -39,6 +43,8 @@ def transcribe(src: str | Path | np.ndarray, lang: str | None = None, sr: int = 
         kw["language"] = lang
     if initial_prompt:
         kw["initial_prompt"] = initial_prompt
+    if temperature is not None:
+        kw["temperature"] = temperature
     r = mlx_whisper.transcribe(audio16, **kw)
     words = [
         Word(w["word"].strip(), float(w["start"]), float(w["end"]))
@@ -49,12 +55,85 @@ def transcribe(src: str | Path | np.ndarray, lang: str | None = None, sr: int = 
     return {"text": r.get("text", "").strip(), "language": r.get("language", lang), "words": words}
 
 
+FOREIGN_SCRIPT = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\u0400-\u04ff\u0600-\u06ff]")
+
+
+def judge_error(heard: str, lang: str) -> bool:
+    """ASR output that cannot be a reading of Vietnamese/English speech (CJK, Cyrillic, …): the judge failed."""
+    return lang in ("vi", "en") and bool(FOREIGN_SCRIPT.search(heard))
+
+
+def _count(seq: list[str], sub: list[str]) -> int:
+    n = len(sub)
+    return sum(seq[i:i + n] == sub for i in range(len(seq) - n + 1))
+
+
+def repetition(expected: str, heard: str, lang: str) -> str | None:
+    """A word group the engine said twice close together ("lưu lưu lưu", "2025 andra 2025") more often than the
+    script has it — engine hallucination (F4): the fix is a new seed, not a respelling."""
+    ref, hyp = qa_tokens(expected, lang), qa_tokens(heard, lang)
+    for n in range(8, 0, -1):
+        for i in range(len(hyp) - 2 * n + 1):
+            a = hyp[i:i + n]
+            if n == 1 and len(a[0]) < 2:
+                continue
+            for gap in ((0,) if n == 1 else (0, 1, 2)):
+                if hyp[i + n + gap:i + 2 * n + gap] == a and _count(hyp, a) > _count(ref, a):
+                    return " ".join(a)
+    return None
+
+
 def lenient_terms(text: str, lexicon_terms: set[str] | None = None) -> set[str]:
     """Tokens ASR cannot be expected to spell back exactly: lexicon terms and brand-like words
     (internal capitals or digits, e.g. MediaForge, Block8, iPhone)."""
     terms = set(lexicon_terms or ())
     terms |= {w.strip(".,!?;:()\"'") for w in text.split() if re.search(r"[a-z][A-Z]|[A-Za-z]\d|^[A-Z]{2,}", w.strip(".,!?;:()\"'"))}
     return {t for t in terms if t}
+
+
+# Vietnamese/English letter names → the letter (how a spelled acronym or domain is read aloud).
+LETTER_NAMES = {
+    "a": "a", "ây": "a", "ă": "a", "â": "a", "bê": "b", "bi": "b", "bờ": "b", "xê": "c", "xi": "c", "cờ": "c",
+    "dê": "d", "đê": "d", "đi": "d", "di": "d", "đ": "d", "e": "e", "ê": "e", "i": "i", "ai": "i", "ép": "f",
+    "ép phờ": "f", "gờ": "g", "giê": "g", "gi": "g", "hát": "h", "hắt": "h", "ca": "k", "kê": "k", "eo": "l",
+    "lờ": "l", "em": "m", "mờ": "m", "en": "n", "nờ": "n", "o": "o", "ô": "o", "ơ": "o", "pê": "p", "pi": "p",
+    "quy": "q", "cu": "q", "rờ": "r", "ét": "s", "xì": "", "tê": "t", "ti": "t", "u": "u", "ư": "u", "diu": "u",
+    "vê": "v", "vi": "v", "kép": "w", "ích": "x", "dét": "z", "zét": "z", "chấm": "", "dot": "", "chấm,": "",
+}
+SPELLED_MIN_SIMILARITY = 0.8
+
+
+def _letter_key(tokens: list[str], *, strict: bool = False) -> tuple[str, float]:
+    """Letters a token run spells, and the share of tokens that looked spelled. Letter names and single letters
+    always count; other short ASCII tokens count only if not strict (the heard side: Whisper writes "aisme") or,
+    when strict (the script side), only vowel-less clusters such as "vn", "pnj" — so ordinary English words in the
+    script are never letter-compared ("cat" vs "cats" must still fail)."""
+    key, spelled = [], 0
+    for t in tokens:
+        if t in LETTER_NAMES or (len(t) == 1 and t.isalpha()):
+            key.append(LETTER_NAMES.get(t, t))
+            spelled += 1
+        elif t.isascii() and t.isalpha() and len(t) <= 6 and (not strict or not set(t) & set("aeiouy")):
+            key.append(t)
+            spelled += 1
+        else:
+            key.append(t)
+    folded = "".join(key).translate(str.maketrans("eyo", "iiu"))
+    return folded, spelled / max(len(tokens), 1)
+
+
+def spelled_match(ref_seg: list[str], hyp_seg: list[str]) -> bool:
+    """A spelled-out acronym/domain in the script ("ây ai ét em i chấm vi en") heard back in written form
+    ("AISME.vn" → "a i ét em ê vn"): compare the letters, not the words (judge fix, SDD-review-upgrade §5.2.3)."""
+    if not ref_seg or not hyp_seg:
+        return False
+    rk, rs = _letter_key(ref_seg, strict=True)
+    hk, hs = _letter_key(hyp_seg)
+    if rs < 0.6 or hs < 0.6 or not rk:
+        return False
+    if len(rk) < 3:  # one or two letters: only an exact match counts ("S" heard as "F" must still fail)
+        return rk == hk
+    return difflib.SequenceMatcher(a=rk, b=hk, autojunk=False).ratio() >= SPELLED_MIN_SIMILARITY
 
 
 def error_rate(expected: str, heard: str, lang: str, lenient: set[str] | None = None) -> dict[str, Any]:
@@ -73,6 +152,9 @@ def error_rate(expected: str, heard: str, lang: str, lenient: set[str] | None = 
         r_seg, h_seg = ref[i1:i2], hyp[j1:j2]
         if op != "equal" and r_seg and all(t in soft for t in r_seg):
             ignored.append(f"{' '.join(r_seg)} → {' '.join(h_seg)}")
+            continue
+        if op == "replace" and spelled_match(r_seg, h_seg):
+            ignored.append(f"{' '.join(r_seg)} ≈ {' '.join(h_seg)} (đánh vần)")
             continue
         keep_ref += r_seg
         keep_hyp += h_seg

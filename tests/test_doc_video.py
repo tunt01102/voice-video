@@ -28,7 +28,7 @@ def test_script_pictures_land_on_the_scene_after_their_marker():
 
 
 def test_make_plan_script_maps_images_and_never_speaks_markers(tmp_path, monkeypatch):
-    monkeypatch.setattr(P, "visual_prompts_for", lambda parts, style: ["vp"] * len(parts))
+    monkeypatch.setattr(P, "visual_plan_for", lambda parts, style, kind="narrated": {"prompts": ["vp"] * len(parts), "moods": [None] * len(parts), "art_direction": {}})
     imgs = _imgs(tmp_path, 2)
     p = {"script": "Mở đầu.\n\n[ảnh 2]\n\nThân bài.", "doc_images": imgs, "lang": "vi"}
     plan, lang = P.make_plan(p, "narrated", style="chibi", seconds=30)
@@ -41,7 +41,7 @@ def test_brief_images_are_validated(tmp_path, monkeypatch):
     seen = {}
 
     def fake(prompt, timeout=0):
-        seen["prompt"] = prompt
+        seen.setdefault("prompt", prompt)  # the planner's prompt (a self-critique call may follow)
         return {"title": "T", "scenes": [
             {"narration": "A [ảnh 1] mở đầu.", "visual_prompt": "x", "image": 1},
             {"narration": "B.", "visual_prompt": "x", "image": 1},      # duplicate → dropped

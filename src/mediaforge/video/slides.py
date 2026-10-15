@@ -95,6 +95,45 @@ def render_slide(
     return Path(out)
 
 
+def render_card(
+    out: str | Path, title: str, subtitle: str = "", *, width: int = 1920, height: int = 1080,
+    background: str | Path | None = None, theme: str = "midnight", small: str = "",
+) -> Path:
+    """Title / end card (SDD-review-upgrade §5.4.3): big centred title over a blurred, dimmed picture of the video."""
+    t = THEMES.get(theme, THEMES["midnight"])
+    if background and Path(background).exists():
+        img = ImageOps.fit(Image.open(background).convert("RGB"), (width, height)).filter(ImageFilter.GaussianBlur(18))
+        img = Image.blend(img, Image.new("RGB", (width, height), (8, 10, 18)), 0.55)
+    else:
+        img = _gradient(width, height, *t["bg"])
+    d = ImageDraw.Draw(img)
+    unit = height / (1920 if height > width else 1080)
+    tf, sf, mf = _font(True, int(84 * unit)), _font(False, int(40 * unit)), _font(False, int(24 * unit))
+    lines = _wrap(d, title, tf, int(width * 0.8))[:3]
+    sub = _wrap(d, subtitle, sf, int(width * 0.7))[:2] if subtitle else []
+    block = len(lines) * tf.size * 1.15 + (len(sub) * sf.size * 1.3 + 30 * unit if sub else 0)
+    y = (height - block) / 2
+    for line in lines:
+        d.text(((width - d.textlength(line, font=tf)) / 2 + 3, y + 3), line, font=tf, fill=(0, 0, 0))
+        d.text(((width - d.textlength(line, font=tf)) / 2, y), line, font=tf, fill=(255, 255, 255))
+        y += tf.size * 1.15
+    if sub:
+        y += 42 * unit
+        bar = int(110 * unit)
+        d.rectangle([(width - bar) / 2, y - 6 * unit, (width + bar) / 2, y - 2 * unit], fill=t["accent"])
+        y += 22 * unit
+        for line in sub:
+            d.text(((width - d.textlength(line, font=sf)) / 2, y), line, font=sf, fill=(232, 234, 240))
+            y += sf.size * 1.3
+    if small:
+        for k, line in enumerate(_wrap(d, small, mf, int(width * 0.9))[:2][::-1]):
+            d.text(((width - d.textlength(line, font=mf)) / 2, height - (60 + 34 * k) * unit), line, font=mf,
+                   fill=(200, 204, 214))
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    img.save(out)
+    return Path(out)
+
+
 def figure_frame(
     src: str | Path, out: str | Path, *, width: int = 1920, height: int = 1080, title: str | None = None,
     theme: str = "midnight", pad: float = 0.08,

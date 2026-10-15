@@ -58,6 +58,20 @@ def _public_job(job: dict[str, Any] | None) -> dict[str, Any] | None:
     return out
 
 
+def _readable_audio(path: Path) -> bool:
+    """At least 1 KB and ffprobe finds an audio stream with a duration."""
+    import subprocess
+
+    if path.stat().st_size < 1024:
+        return False
+    proc = subprocess.run([settings.ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+                          capture_output=True, text=True)
+    try:
+        return proc.returncode == 0 and float(proc.stdout.strip() or 0) > 0.3
+    except ValueError:
+        return proc.returncode == 0  # webm from MediaRecorder often has no duration header ("N/A") but is readable
+
+
 def create_app() -> FastAPI:
     from mediaforge.mcp_server import mcp
 
@@ -154,6 +168,128 @@ def create_app() -> FastAPI:
         params = {"job": jid, "index": index, "file": body.get("file"), "lang": body.get("lang")}
         return {"job": _public_job(runner.submit("rerender", params, source="dashboard"))}
 
+    @app.post("/api/jobs/{jid}/sentences/{index}/accept")
+    def accept_sentence(jid: str, index: int):
+        """✓ Nghe đúng rồi: the owner heard sentence `index` and it is right — ASR misheard it. Marks it passed and
+        records a judge_accept lesson so QA stops retrying those terms for this voice (SDD-review-upgrade §5.2.3)."""
+        from mediaforge import lessons
+
+        job = db.get_job(jid)
+        if not job or job["status"] != "done":
+            raise HTTPException(409, "job must be finished")
+        sents = (job.get("result") or {}).get("sentences") or []
+        if not 0 <= index < len(sents):
+            raise HTTPException(404, "sentence not found")
+        return {"sentence": lessons.accept_sentence(job, index), "job": _public_job(db.get_job(jid))}
+
+    # ---------------------------------------------------------------- lessons (Kinh nghiệm)
+    @app.get("/api/lessons")
+    def list_lessons(status: str | None = None, kind: str | None = None, limit: int = 500):
+        from mediaforge import lessons
+
+        return lessons.list_lessons(status, kind, limit)
+
+    @app.patch("/api/lessons/{lid}")
+    def patch_lesson(lid: str, body: dict[str, Any] = Body(...)):
+        """{status: candidate|active|retired, note?} — the owner approves, rejects or restores a lesson."""
+        from mediaforge import lessons
+
+        try:
+            return lessons.set_status(lid, body["status"], body.get("note"))
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+
+    @app.get("/api/jobs/{jid}/rating")
+    def get_rating(jid: str):
+        from mediaforge import lessons
+
+        return lessons.get_rating(jid) or {}
+
+    @app.post("/api/jobs/{jid}/rating")
+    def rate_job(jid: str, body: dict[str, Any] = Body(...)):
+        """{stars 1..5, tags?: [giọng|phát âm|nhịp|hình|chuyển cảnh|phụ đề|nhạc|nội dung], note?}"""
+        from mediaforge import lessons
+
+        job = db.get_job(jid)
+        if not job or job["status"] != "done":
+            raise HTTPException(409, "job must be finished")
+        try:
+            return lessons.rate(job, body.get("stars", 0), body.get("tags") or [], body.get("note") or "")
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+
+    @app.get("/api/incidents")
+    def incidents(days: int = 30):
+        from mediaforge import lessons
+
+        return lessons.signals("incident", time.time() - days * 86400, 200)
+
+    @app.get("/api/insights")
+    def insights(days: int = 30):
+        from mediaforge import lessons
+
+        return lessons.insights(days)
+
+    @app.post("/api/lint")
+    def lint_text(body: dict[str, Any] = Body(...)):
+        """{text, lang?} → script lint findings and the fixed text (no GPU)."""
+        from mediaforge.text import lint as L
+
+        fixed, findings = L.fix_text(body.get("text") or "", body.get("lang") or "auto")
+        return {"text": fixed, "findings": findings, "summary": L.summary(findings)}
+
+    @app.post("/api/jobs/{jid}/approve")
+    def approve_stage(jid: str, body: dict[str, Any] = Body(default={})):
+        """Continue a job waiting at a review step (SDD-review-upgrade §5.3).
+
+        body: {stage: plan|visuals, plan?: {title?, scenes?: [{narration?, visual_prompt?, from?}], art_direction?, hook?},
+               pronunciations?: {term: reading}, verified_terms?: [term], lexicon_voice?, skip_rest?: bool}
+        """
+        from mediaforge import pipelines
+
+        job = db.get_job(jid)
+        if not job or job["status"] != "waiting":
+            raise HTTPException(409, "job is not waiting for approval")
+        stage = body.get("stage") or job["result"].get("stage")
+        if stage != job["result"].get("stage"):
+            raise HTTPException(409, f"job is waiting at {job['result'].get('stage')}, not {stage}")
+        params = dict(job["params"])
+        approved = list(dict.fromkeys([*(params.get("approved") or []), stage]))
+        if body.get("skip_rest"):
+            approved = list(dict.fromkeys([*approved, *(params.get("review") or [])]))
+        params["approved"] = approved
+        for k in ("pronunciations", "verified_terms", "lexicon_voice"):
+            if body.get(k):
+                params[k] = body[k]
+        out = Path(job["result"]["out"])
+        if stage == "plan" and body.get("plan"):
+            try:
+                plan_data = pipelines.apply_plan_edits(out, body["plan"])
+            except (ValueError, KeyError, IndexError) as e:
+                raise HTTPException(400, f"bad plan edit: {e}") from e
+            if not plan_data["scenes"]:
+                raise HTTPException(400, "the script has no scenes left")
+        return _public_job(runner.requeue(jid, params, message=f"đã duyệt {stage}"))
+
+    @app.post("/api/jobs/{jid}/restage")
+    def restage_job(jid: str, body: dict[str, Any] = Body(...)):
+        """Redo one stage without a full render: {stage: visuals, scene, prompt?, seed?} (new picture) or
+        {stage: compose, music?, music_volume?}. Works on a finished video, or on one waiting at the storyboard."""
+        job = db.get_job(jid)
+        if not job or job["status"] not in ("done", "waiting"):
+            raise HTTPException(409, "job must be finished or waiting at the storyboard")
+        if body.get("stage", "visuals") == "visuals" and body.get("scene") is None:
+            raise HTTPException(400, "scene is required")
+        if body.get("music") and body["music"] != "__none":
+            from mediaforge import music as M
+
+            try:
+                M.resolve(body["music"])
+            except Exception as e:  # noqa: BLE001
+                raise HTTPException(400, str(e)) from e
+        params = {"job": jid, **{k: body[k] for k in ("stage", "scene", "prompt", "seed", "music", "music_volume") if k in body}}
+        return {"job": _public_job(runner.submit("restage", params, source="dashboard"))}
+
     @app.post("/api/jobs/{jid}/resubtitle")
     def resubtitle(jid: str, body: dict[str, Any] = Body(default={})):
         """Rebuild a finished video's subtitles (fit-to-frame, karaoke) without re-rendering voice or images."""
@@ -233,7 +369,7 @@ def create_app() -> FastAPI:
                 if snap != last:
                     last = snap
                     yield f"event: progress\ndata: {json.dumps(_public_job(job), ensure_ascii=False)}\n\n"
-                if not job or job["status"] in ("done", "failed", "cancelled"):
+                if not job or job["status"] in ("done", "failed", "cancelled", "waiting"):
                     yield f"event: end\ndata: {json.dumps({'status': job['status'] if job else 'missing'})}\n\n"
                     return
                 await asyncio.sleep(0.5)
@@ -351,6 +487,12 @@ def create_app() -> FastAPI:
         up = settings.sub("uploads") / f"{uuid.uuid4().hex[:8]}{Path(file.filename or 'rec.webm').suffix or '.webm'}"
         with up.open("wb") as f:
             shutil.copyfileobj(file.file, f)
+        if not _readable_audio(up):
+            # An empty or cut-off browser recording (seen: webm "EBML … End of file") — reject before queuing.
+            from mediaforge import lessons
+
+            lessons.signal("incident", {"type": "enrol", "error": "unreadable recording upload", "bytes": up.stat().st_size})
+            raise HTTPException(422, "Bản ghi trống hoặc bị hỏng — hãy ghi lại (giữ nút ghi ít nhất 2 giây).")
         job = runner.submit("enrol", {"voice": vid, "file": str(up), "lang": lang or None, "text": text or None,
                                       "denoise": denoise}, source="dashboard")
         if wait:

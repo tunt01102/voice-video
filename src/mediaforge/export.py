@@ -73,7 +73,11 @@ def ffmpeg_args(fmt: str, base: str | Path, out: str | Path, *, voice: str | Pat
         args += ["-i", str(voice)]
         if music_file:
             args += ["-stream_loop", "-1", "-i", str(music_file)]
-        args += ["-filter_complex", ";".join(compose.audio_graph(1, 2 if music_file else None, music_volume))]
+        from mediaforge import audio as A
+
+        # Same music fades as the original render (compose passes the voice length + 0.6 s tail).
+        total = A.probe_duration(voice) + 0.6 if music_file and Path(voice).exists() else None
+        args += ["-filter_complex", ";".join(compose.audio_graph(1, 2 if music_file else None, music_volume, total=total))]
         amap = ["-map", "[aout]"]
     elif voice is not None:
         args = ["-i", str(voice)]

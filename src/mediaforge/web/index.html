@@ -17,6 +17,7 @@
     <button data-tab="jobs">Jobs</button>
     <button data-tab="voices">Giọng nói</button>
     <button data-tab="lexicon">Phát âm</button>
+    <button data-tab="lessons">📘 Kinh nghiệm</button>
     <button data-tab="system">Hệ thống</button>
   </nav>
 </header>
@@ -85,7 +86,7 @@
         <select name="theme"><option>midnight</option><option>ocean</option><option>paper</option><option>block8</option></select>
       </label>
       <label class="f-video">Nhạc nền (tuỳ chọn)
-        <select name="music"><option value="">Không dùng nhạc</option><option value="__upload">Tải file của tôi lên…</option></select>
+        <select name="music"><option value="">Không dùng nhạc</option><option value="auto">🎵 Tự chọn theo không khí video</option><option value="__upload">Tải file của tôi lên…</option></select>
         <input type="file" name="music_file" accept="audio/*" hidden>
         <audio id="music-preview" controls preload="none" hidden></audio>
         <small id="music-info" class="muted"></small>
@@ -123,6 +124,7 @@
     </details>
 
     <div class="actions">
+      <label class="f-video check" title="Dừng sau khi viết kịch bản và sau khi vẽ xong ảnh để bạn sửa trước khi dựng"><input type="checkbox" id="gates"> Duyệt từng bước</label>
       <button type="button" class="primary f-video" id="prepare-btn" title="Viết kịch bản, quét từ AI có thể đọc sai để bạn ghi cách đọc trước khi dựng">1 · Viết kịch bản &amp; kiểm tra phát âm</button>
       <button type="submit" class="primary" id="submit-btn">Tạo</button>
       <span class="hint" id="create-hint"></span>
@@ -140,7 +142,8 @@
 <!-- ============================== JOBS -->
 <section id="tab-jobs" class="tab">
   <div class="toolbar">
-    <select id="jobs-filter"><option value="">Tất cả</option><option>queued</option><option>running</option><option>done</option><option>failed</option></select>
+    <select id="jobs-filter"><option value="">Tất cả</option><option>queued</option><option>running</option><option>waiting</option><option>done</option><option>failed</option></select>
+    <input id="jobs-search" type="search" placeholder="Tìm theo tiêu đề / nội dung…" aria-label="Tìm job">
     <button id="jobs-refresh" class="ghost">↻ Làm mới</button>
   </div>
   <div id="jobs-list" class="jobs"></div>
@@ -179,11 +182,21 @@
   </div>
 </section>
 
+<!-- ============================== KINH NGHIỆM (js/lessons.js) -->
+<section id="tab-lessons" class="tab">
+  <p class="muted">Những gì MediaForge học được từ lỗi đã gặp, từ nút <b>✓ Nghe đúng rồi</b> và từ điểm bạn chấm. Bài học chỉ là chữ (không có âm thanh), lưu trên máy này.</p>
+  <div id="lessons-body"></div>
+</section>
+
+<!-- ============================== TRANG DUYỆT JOB (js/jobpage.js, #job/<id>) -->
+<section id="tab-job" class="tab"></section>
+
 <!-- ============================== SYSTEM -->
 <section id="tab-system" class="tab">
   <div class="grid2">
     <div class="card"><h3>Trạng thái</h3><pre id="health"></pre>
-      <button id="unload" class="ghost small">Giải phóng model khỏi bộ nhớ</button></div>
+      <button id="unload" class="ghost small">Giải phóng model khỏi bộ nhớ</button>
+      <h3>Sự cố (30 ngày)</h3><div id="incidents"></div></div>
     <div class="card">
       <h3>Dùng từ session Claude khác</h3>
       <p>MCP (đăng ký một lần):</p>
@@ -200,8 +213,10 @@
 <template id="tpl-job">
   <div class="job card">
     <div class="job-head">
-      <span class="badge"></span><b class="job-type"></b><span class="job-title"></span>
+      <img class="job-thumb" alt="" hidden><span class="badge"></span><b class="job-type"></b><span class="job-title"></span>
       <span class="spacer"></span><small class="job-time muted"></small>
+      <button class="ghost small job-open" title="Mở trang duyệt: dòng thời gian từng câu, sửa lỗi, chấm điểm">↗ Duyệt</button>
+      <button class="ghost small job-clone" title="Điền lại form Tạo mới với các thiết lập của job này">⧉ Làm thêm bản như vầy</button>
       <button class="ghost small job-cancel">Huỷ</button><button class="ghost small job-del">Xoá</button>
     </div>
     <div class="progress"><div></div></div>
@@ -268,5 +283,8 @@
 </template>
 
 <script src="/app.js"></script>
+<script type="module" src="/js/studio.js"></script>
+<script type="module" src="/js/lessons.js"></script>
+<script type="module" src="/js/jobpage.js"></script>
 </body>
 </html>

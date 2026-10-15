@@ -8,14 +8,15 @@ const api = async (path, opts = {}) => {
 };
 const toast = (msg) => { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 3500); };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const TYPE_LABEL = { tts: "Giọng nói", image: "Ảnh", subtitle: "Phụ đề", short: "Short", narrated: "Video", explainer: "Explainer", screen: "Screen", video: "Video", enrol: "Thu mẫu", rerender: "Đọc lại câu", export: "Xuất file", prepare: "Chuẩn bị kịch bản", resubtitle: "Dựng lại phụ đề", repronounce: "Sửa phát âm", sing: "Hát", recite: "Ngâm thơ" };
-const HIDDEN_TYPES = ["enrol", "rerender", "export", "prepare", "resubtitle", "repronounce", "blend"];
+const TYPE_LABEL = { tts: "Giọng nói", image: "Ảnh", subtitle: "Phụ đề", short: "Short", narrated: "Video", explainer: "Explainer", screen: "Screen", video: "Video", enrol: "Thu mẫu", rerender: "Đọc lại câu", export: "Xuất file", prepare: "Chuẩn bị kịch bản", resubtitle: "Dựng lại phụ đề", repronounce: "Sửa phát âm", sing: "Hát", recite: "Ngâm thơ", restage: "Dựng lại cảnh", eval: "Kiểm thử giọng" };
+const HIDDEN_TYPES = ["enrol", "rerender", "export", "prepare", "resubtitle", "repronounce", "blend", "restage"];
 
 // ------------------------------------------------------------------ tabs
 $$("#tabs button").forEach((b) => b.onclick = () => {
   $$("#tabs button").forEach((x) => x.classList.toggle("active", x === b));
   $$(".tab").forEach((t) => t.classList.toggle("active", t.id === "tab-" + b.dataset.tab));
-  ({ jobs: loadJobs, voices: loadVoices, lexicon: loadLexicon, system: loadHealth, recite: syncSongForms, sing: syncSongForms })[b.dataset.tab]?.();
+  ({ jobs: loadJobs, voices: loadVoices, lexicon: loadLexicon, system: () => { loadHealth(); window.loadIncidents?.(); },
+     lessons: () => window.loadLessons?.(), recite: syncSongForms, sing: syncSongForms })[b.dataset.tab]?.();
   history.replaceState(null, "", "#" + b.dataset.tab);
 });
 
@@ -54,12 +55,21 @@ function applyKind() {
     : src === "slides" ? "# Tiêu đề slide\n- ý 1\n- ý 2\n> Lời thuyết minh cho slide này"
     : "Kịch bản lời đọc của bạn…";
   $("#create-hint").textContent = isVideo ? "Video mất vài phút — theo dõi ở tab Jobs." : "";
-  const sb = $("#submit-btn");
-  sb.textContent = isVideo ? "Dựng ngay (bỏ qua kiểm tra)" : "Tạo";
-  sb.className = isVideo ? "ghost" : "primary";
   if (!isVideo) $("#prescan").hidden = true;
+  if (isVideo) $("#gates").checked = store.get("gates." + kind, kind === "short" ? "0" : "1") === "1";
+  gateUI();
   renderDocImages();
 }
+// Owner decision 2026-10-15: review steps on by default for Video 16:9 and Explainer, off for Short.
+function gateUI() {
+  const isVideo = VIDEO_KINDS.includes(kind), gated = isVideo && $("#gates").checked;
+  const sb = $("#submit-btn");
+  sb.textContent = gated ? "1 · Viết kịch bản →" : isVideo ? "Dựng ngay (bỏ qua kiểm tra)" : "Tạo";
+  sb.className = gated || !isVideo ? "primary" : "ghost";
+  $("#prepare-btn").style.display = isVideo && !gated ? "" : "none";
+  $("#create-hint").textContent = gated ? "Dừng ở kịch bản và storyboard để bạn duyệt." : isVideo ? "Video mất vài phút — theo dõi ở tab Jobs." : "";
+}
+$("#gates").onchange = () => { store.set("gates." + kind, $("#gates").checked ? "1" : "0"); gateUI(); };
 $$("#create-kind button").forEach((b) => b.onclick = () => {
   $$("#create-kind button").forEach((x) => x.classList.toggle("active", x === b));
   kind = b.dataset.kind; applyKind();
@@ -110,6 +120,7 @@ async function buildParams(f) {
       if (doc.title && src === "script") params.title = doc.title;
       if (f.music.value === "__upload") { if (f.music_file.files[0]) params.music = await upload(f.music_file.files[0]); }
       else if (f.music.value) params.music = f.music.value;
+      if ($("#gates").checked) params.review = ["plan", "visuals"];
     }
     if ((params.text ?? params.prompt ?? params.brief ?? params.script ?? params.slides_markdown ?? params.media ?? "").length === 0) throw new Error("Thiếu nội dung");
     return { type, params };
@@ -258,6 +269,12 @@ function markTerms(text, terms) {
   for (const m of text.matchAll(re)) { out += esc(text.slice(last, m.index)) + `<mark>${esc(m[0])}</mark>`; last = m.index + m[0].length; }
   return out + esc(text.slice(last));
 }
+const LINT_FIX = { join: "đã tự nối câu", strip: "đã tự bỏ", phrases: "sẽ đọc theo cụm", tts: "sẽ đọc như mô tả" };
+function lintHtml(findings) {
+  if (!findings || !findings.length) return "";
+  return `<div class="lint"><b>Kiểm tra kịch bản:</b> ${findings.length} điểm (máy tự xử lý, không cần làm gì)<ul>${findings.map((f) =>
+    `<li><span class="badge">${esc(f.code)}</span> ${f.scene != null ? `cảnh ${f.scene + 1}: ` : ""}${esc(f.message)}${f.fix ? ` <small class="muted">— ${esc(LINT_FIX[f.fix] || f.fix)}</small>` : ""}</li>`).join("")}</ul></div>`;
+}
 function renderPrescan(job, type, params) {
   const r = job.result, box = $("#prescan"), cands = r.candidates || [];
   const terms = cands.map((c) => c.term);
@@ -273,6 +290,7 @@ function renderPrescan(job, type, params) {
     <p class="muted">“${esc(r.title || "")}” · ${r.scenes.length} cảnh. Ghi cách đọc cho từ có thể bị đọc sai (VD: <b>PNJ</b> → <i>Pi En Di</i>),
       hoặc tick <b>đúng</b> nếu AI đọc đúng như viết. Bỏ trống = để AI tự đọc. Câu trả lời được lưu vào <b>Từ điển phát âm</b> để dùng cho các lần sau.</p>
     <details><summary>Xem kịch bản (${r.scenes.length} cảnh)</summary><ol class="ps-scenes">${r.scenes.map((s) => `<li>${markTerms(s, terms)}</li>`).join("")}</ol></details>
+    ${lintHtml(r.lint)}
     ${fresh.length ? `<table class="lex prescan"><thead><tr><th>Từ</th><th>Ngữ cảnh</th><th>Đọc là</th><th></th><th></th></tr></thead><tbody>${fresh.map(row).join("")}</tbody></table>`
       : `<p>✅ Không thấy từ mới nào dễ đọc sai.</p>`}
     ${known.length ? `<details><summary>${known.length} từ đã có trong từ điển</summary><table class="lex prescan"><tbody>${known.map(row).join("")}</tbody></table></details>` : ""}
@@ -327,8 +345,10 @@ function renderOutputs(job, out) {
     out.innerHTML = `<p class="qa-bad">${esc(head)}</p>` + (err.includes("\n") ? `<details><summary class="muted">Chi tiết lỗi</summary><pre class="qa-bad">${esc(err)}</pre></details>` : "");
     return;
   }
+  if (job.status === "waiting") { window.renderGate?.(job, out); return; }
   if (job.status !== "done") return;
-  const bust = job.result?.resubtitled_at ? `?v=${Math.round(job.result.resubtitled_at)}` : "";
+  const at = job.result?.rendered_at || job.result?.resubtitled_at;
+  const bust = at ? `?v=${Math.round(at)}` : "";
   if (fileUrl(f.video)) out.insertAdjacentHTML("beforeend", `<video controls preload="metadata" src="${fileUrl(f.video)}${bust}" poster="${fileUrl(f.thumbnail) || ""}${bust}"></video>`);
   const credit = job.result?.report?.music_credit;
   if (credit) out.insertAdjacentHTML("beforeend", `<p class="muted">♪ Ghi công nhạc nền (bắt buộc khi đăng): ${esc(credit)}</p>`);
@@ -569,14 +589,25 @@ function renderQA(job) {
     li.className = s.passed ? (s.source === "recording" ? "rec-ok" : "ok") : fixed ? "fixed" : "bad";
     li.innerHTML = `<div class="qa-text">${s.passed ? esc(s.text) : markMissing(s.text, s.missing, s.heard)}</div>
       <div class="qa-meta">${s.source === "recording" ? "🎙 giọng ghi âm của bạn (bản cũ)" :
-        `${s.lang} · ${s.engine} · lỗi ${(s.score * 100).toFixed(0)}%${s.passed ? "" : ` · nghe thành: “${esc(s.heard)}”`}`}${fixed ? " · ✓ đã có bản AI sửa" : ""}</div>
+        `${s.lang} · ${s.engine} · lỗi ${(s.score * 100).toFixed(0)}%${s.passed ? "" : ` · nghe thành: “${esc(s.heard)}”`}`}${fixed ? " · ✓ đã có bản AI sửa" : ""}${s.accepted ? " · ✓ bạn xác nhận nghe đúng" : ""}${s.lessons?.length || s.judge_accepted?.length ? ` · <span class="chip on" title="Câu này dùng bài học từ các lần trước">📘 bài học</span>` : ""}</div>
       <div class="qa-actions">
         <button class="rec small" data-act="rec">🎙 Ghi âm câu này</button>
         <button class="ghost small" data-act="regen">🔁 Tạo lại</button>
+        ${s.passed ? "" : `<button class="ghost small" data-act="accept" title="Bạn nghe thấy câu này đúng — máy nghe (ASR) đã nghe nhầm. Câu được tính là đạt và lần sau không thử lại những từ này nữa.">✓ Nghe đúng rồi</button>`}
         <span class="muted qa-status"></span></div>`;
     if (s.passed && !(s.takes || []).length) li.classList.add("only-hover");
     $("[data-act=rec]", li).onclick = (e) => recordSentence(job, s, i, e.currentTarget, li);
     $("[data-act=regen]", li).onclick = () => rerenderSentence(job, i, {}, li);
+    const acc = $("[data-act=accept]", li);
+    if (acc) acc.onclick = async () => {
+      acc.disabled = true;
+      try {
+        const r = await api(`/api/jobs/${job.id}/sentences/${i}/accept`, { method: "POST" });
+        const terms = r.sentence.accepted_terms || [];
+        toast(terms.length ? `Đã ghi nhận: máy nghe nhầm “${terms.join("”, “")}” — lần sau không bắt lỗi nữa` : "Đã đánh dấu câu này đạt");
+        updateJob(r.job);
+      } catch (e) { acc.disabled = false; toast("Lỗi: " + e.message); }
+    };
     renderTakes(job, s, i, li);
     list.append(li);
   });
@@ -632,11 +663,24 @@ function renderJob(job) {
   const el = $("#tpl-job").content.firstElementChild.cloneNode(true);
   el.dataset.id = job.id;
   $(".job-cancel", el).onclick = async () => { await api(`/api/jobs/${job.id}/cancel`, { method: "POST" }); };
-  $(".job-del", el).onclick = async () => { if (!confirm("Xoá job và file kết quả?")) return; await api(`/api/jobs/${job.id}?files=true`, { method: "DELETE" }); el.remove(); };
+  $(".job-del", el).onclick = () => undoable(el, "Đã xoá job (file chuyển vào thùng rác)",
+    () => api(`/api/jobs/${job.id}?files=true`, { method: "DELETE" }));
+  $(".job-open", el).onclick = () => { location.hash = "job/" + job.id; };
+  $(".job-clone", el).onclick = () => cloneJob(job);
   jobEls.set(job.id, el); updateJob(job); return el;
+}
+// Reversible actions run after a grace period with "Hoàn tác" instead of a blocking confirm() (SDD-review-upgrade §5.5.3).
+function undoable(el, msg, action, ms = 8000) {
+  el.hidden = true;
+  const t = document.createElement("div"); t.className = "toast undo";
+  t.innerHTML = `${esc(msg)} <button class="ghost small">Hoàn tác</button>`;
+  document.body.append(t);
+  const timer = setTimeout(async () => { t.remove(); try { await action(); el.remove(); } catch (e) { el.hidden = false; toast(e.message); } }, ms);
+  $("button", t).onclick = () => { clearTimeout(timer); t.remove(); el.hidden = false; };
 }
 function updateJob(job) {
   const el = jobEls.get(job.id); if (!el) return;
+  if (el.classList.contains("job-page")) { window.refreshJobPage?.(job, el); return; }
   const b = $(".badge", el); b.className = "badge " + job.status; b.textContent = job.status;
   $(".job-type", el).textContent = TYPE_LABEL[job.type] || job.type;
   const p = job.params || {};
@@ -646,6 +690,10 @@ function updateJob(job) {
   $(".job-msg", el).textContent = job.status === "running" ? job.message : "";
   $(".job-cancel", el).style.display = ["queued", "running"].includes(job.status) ? "" : "none";
   $(".job-del", el).style.display = ["queued", "running"].includes(job.status) ? "none" : "";
+  $(".job-open", el).style.display = job.status === "done" && (job.result?.video || job.result?.audio) ? "" : "none";
+  $(".job-clone", el).style.display = ["tts", "short", "narrated", "explainer", "image"].includes(job.type) && job.status !== "running" ? "" : "none";
+  const th = $(".job-thumb", el), tu = fileUrl(job.files?.thumbnail);
+  th.hidden = !tu; if (tu && th.getAttribute("src") !== tu) th.src = tu;
   if (el.dataset.rendered !== job.status) { el.dataset.rendered = job.status; renderOutputs(job, $(".job-out", el)); }
 }
 const followers = new Set();
@@ -657,14 +705,36 @@ function followJob(id, { onProgress, onEnd } = {}) {
   es.addEventListener("end", () => { es.close(); followers.delete(id); loadHealth(); onEnd?.(last); });
   es.onerror = () => { es.close(); followers.delete(id); if (onEnd) api(`/api/jobs/${id}`).then(onEnd, () => onEnd(null)); };
 }
+// "Làm thêm bản như vầy": refill the create form from a job's parameters (SDD-review-upgrade §5.5.1).
+function cloneJob(job) {
+  const p = job.params || {}, f = $("#create-form");
+  $(`#tabs button[data-tab="create"]`).click();
+  $(`#create-kind button[data-kind="${job.type}"]`)?.click();
+  const text = p.brief ?? p.script ?? p.slides_markdown ?? p.text ?? "";
+  if (job.type === "image") f.prompt.value = p.prompt || "";
+  else f.text.value = text;
+  if (p.brief) f.source.value = "brief"; else if (p.slides_markdown) f.source.value = "slides"; else if (p.script) f.source.value = "script";
+  for (const k of ["lang", "style", "aspect", "theme", "engine"]) if (p[k] && f[k]) f[k].value = p[k];
+  if (p.seconds) f.seconds.value = p.seconds;
+  if (p.voice) f.voice.value = p.voice;
+  if (typeof p.music === "string" && [...f.music.options].some((o) => o.value === p.music)) f.music.value = p.music;
+  if (VIDEO_KINDS.includes(job.type)) { $("#gates").checked = (p.review || []).length > 0; gateUI(); }
+  toast("Đã điền lại thiết lập — sửa nội dung rồi bấm tạo");
+}
+let jobsCache = [];
+function renderJobList() {
+  const q = ($("#jobs-search").value || "").trim().toLowerCase();
+  const list = $("#jobs-list"); list.innerHTML = "";
+  const hay = (j) => [j.result?.title, j.params?.brief, j.params?.script, j.params?.text, j.params?.prompt, j.params?.slides_markdown].join(" ").toLowerCase();
+  jobsCache.filter((j) => !HIDDEN_TYPES.includes(j.type) && !j.params?.preview && (!q || hay(j).includes(q))).forEach((j) => { list.append(renderJob(j)); if (["queued", "running"].includes(j.status)) followJob(j.id); });
+  if (!list.children.length) list.innerHTML = `<p class="muted">${q ? "Không thấy job nào khớp." : "Chưa có job nào."}</p>`;
+}
 async function loadJobs() {
   const status = $("#jobs-filter").value;
-  const jobs = await api("/api/jobs?limit=60" + (status ? "&status=" + status : ""));
-  const list = $("#jobs-list"); list.innerHTML = "";
-  jobs.filter((j) => !HIDDEN_TYPES.includes(j.type) && !j.params?.preview).forEach((j) => { list.append(renderJob(j)); if (["queued", "running"].includes(j.status)) followJob(j.id); });
-  if (!list.children.length) list.innerHTML = `<p class="muted">Chưa có job nào.</p>`;
+  jobsCache = await api("/api/jobs?limit=100" + (status ? "&status=" + status : ""));
+  renderJobList();
 }
-$("#jobs-filter").onchange = loadJobs; $("#jobs-refresh").onclick = loadJobs;
+$("#jobs-filter").onchange = loadJobs; $("#jobs-refresh").onclick = loadJobs; $("#jobs-search").oninput = renderJobList;
 
 // ------------------------------------------------------------------ voices
 let voices = [], selVoice = null, prompts = { vi: [], en: [] };
@@ -860,6 +930,7 @@ async function toggleRecord(v) {
       stream.getTracks().forEach((t) => t.stop()); btn.classList.remove("on"); btn.textContent = "● Ghi âm";
       const blob = new Blob(chunks, { type: mediaRec.mimeType || "audio/webm" });
       const ext = (mediaRec.mimeType || "").includes("mp4") ? "m4a" : "webm";
+      if (blob.size < 1024) { $("#rec-status").textContent = "Bản ghi trống — hãy giữ ghi ít nhất 2 giây rồi bấm Dừng."; return; }
       await sendSample(v, new File([blob], `rec.${ext}`, { type: blob.type }), (prompts[recLang] || [])[recIdx]);
     };
     mediaRec.start(); btn.classList.add("on"); btn.textContent = "■ Dừng";

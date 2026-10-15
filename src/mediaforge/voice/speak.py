@@ -13,8 +13,9 @@ from typing import Any, Callable
 import numpy as np
 
 from mediaforge import audio as A
-from mediaforge import asr, llm
+from mediaforge import asr, lessons, llm
 from mediaforge.config import settings
+from mediaforge.text import lint as L
 from mediaforge.text import normalize as N
 from mediaforge.tts.base import DEFAULT_ROUTE, VoiceRef, blend_engines, engines_for, get_engine, self_normalises
 from mediaforge.voice import fx as FX
@@ -75,11 +76,14 @@ def _threshold(lang: str) -> float:
     return settings.qa_max_cer_vi if lang == "vi" else settings.qa_max_wer_en
 
 
-def _duration_penalty(text: str, lang: str, audio: np.ndarray) -> float:
+def _duration_ratio(text: str, lang: str, audio: np.ndarray) -> float:
     n = max(1, len(N.qa_tokens(text, lang)))
     expected = n / RATE.get(lang, 3.5)
-    actual = len(audio) / A.SR
-    ratio = actual / max(expected, 0.3)
+    return (len(audio) / A.SR) / max(expected, 0.3)
+
+
+def _duration_penalty(text: str, lang: str, audio: np.ndarray) -> float:
+    ratio = _duration_ratio(text, lang, audio)
     if ratio > 2.3 or ratio < 0.35:
         return 0.5
     return 0.0
@@ -126,19 +130,62 @@ def _run_attempt(att: Attempt, sentence: str, lang: str, ref, lenient: set[str])
     else:
         x = synth(att.tts_text, att.seed)
     att.seconds = round(time.time() - t, 2)
-    # Hint rare spellings to Whisper so correct brand names are not reported as mistakes.
+    # Hint rare spellings to Whisper so correct brand names are not reported as mistakes. Greedy decoding: the
+    # sampling fallback is where Whisper hallucinates (CJK on Vietnamese audio).
     hint = ", ".join(sorted(lenient)) if lenient else None
-    heard = asr.transcribe(x, lang=lang, initial_prompt=hint)["text"]
+    heard = asr.transcribe(x, lang=lang, initial_prompt=hint, temperature=0.0)["text"]
+    judge_retry = False
+    if asr.judge_error(heard, lang):
+        # The judge failed, not necessarily the voice: listen again primed with the intended sentence (F3).
+        judge_retry = True
+        heard = asr.transcribe(x, lang=lang, initial_prompt=((hint + ". ") if hint else "") + sentence,
+                               temperature=0.0)["text"]
     qa = asr.error_rate(sentence, heard, lang, lenient)
+    qa["judge_retry"] = judge_retry
+    qa["judge"] = asr.judge_error(heard, lang)
+    qa["repeat"] = asr.repetition(sentence, heard, lang)
+    qa["dur_ratio"] = round(_duration_ratio(sentence, lang, x), 2)
     att.audio, att.heard, att.qa = x, heard, qa
     att.score = round(qa["score"] + _duration_penalty(sentence, lang, x), 4)
     return att
 
 
+def classify(att: Attempt, sentence: str, lang: str) -> str:
+    """Failure class of an attempt (SDD-review-upgrade §3.2): repeat | judge | truncated | terms | other."""
+    from mediaforge.text.pronounce import is_vi_syllable
+
+    qa = att.qa
+    if qa.get("repeat"):
+        return "repeat"
+    if qa.get("judge"):
+        return "judge"
+    ref, hyp = N.qa_tokens(sentence, lang), N.qa_tokens(att.heard, lang)
+    missing = " ".join(qa.get("missing", [])).split()
+    if (qa.get("dur_ratio") or 1) < 0.7 or (ref and missing and ref[-1] in missing and len(hyp) < len(ref)):
+        return "truncated"
+    raw_missing = [w for w in sentence.split() if w.strip(",.;:!?").lower() in set(missing)]
+    if any(w.strip(",.;:!?").isupper() or (lang == "vi" and not is_vi_syllable(w.strip(",.;:!?"))) for w in raw_missing):
+        return "terms"
+    return "other"
+
+
+# Which repair strategy to try next for each failure class; each strategy has a use limit per sentence.
+REPAIR_ORDER = {
+    "repeat": ["reseed", "engine", "phrases", "respell"],
+    "judge": ["reseed", "engine", "phrases", "respell"],
+    "truncated": ["phrases", "engine", "reseed", "respell"],
+    "terms": ["respell", "engine", "reseed", "phrases"],
+    "other": ["reseed", "engine", "phrases", "respell"],
+}
+REPAIR_LIMIT = {"reseed": 2, "engine": 1, "phrases": 1, "respell": 2}
+# Stop repairing after this many attempts in a row that do not improve the best score.
+STALL_LIMIT = 2
+
+
 def synth_sentence(
     sentence: str, lang: str, voice_id: str | None, *, engine: str | None = None, seed: int = 1234,
     max_attempts: int | None = None, learn: bool = True, ref_path: str | None = None,
-    guide: dict[str, Any] | None | bool = None, phrase_first: bool = False,
+    guide: dict[str, Any] | None | bool = None, phrase_first: bool = False, cache: bool = True,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Synthesise one sentence; retry/repair until it passes ASR QA. Returns (audio48k, report).
 
@@ -176,30 +223,45 @@ def synth_sentence(
     plan_engines = capable if preferred == "best" else [preferred]
     alternates = [e for e in capable if e not in plan_engines]
 
+    # What the engine is given: lint's TTS-only readings (acronym runs, domains) < learned readings (lessons,
+    # per engine) < the owner's lexicon. Subtitles keep the written sentence.
+    lint_readings = L.tts_readings(sentence, lang)
+    lesson_readings = {e: {t: v for t, v in lessons.readings(base_id, lang, e).items() if N.terms_in(sentence, [t])}
+                       for e in capable}
+
+    def lex_for(e: str) -> dict[str, str]:
+        return {**lint_readings, **{t: v[0] for t, v in lesson_readings.get(e, {}).items()}, **lexicon}
+
+    judged = {t for t in lessons.judge_terms(base_id, lang) if N.terms_in(sentence, [t])}
+    phrase_first = phrase_first or L.is_long(sentence, lang)
+
     # Sentence-level cache: identical requests are free. A new guide changes the key, so a sentence the owner
     # corrected is re-synthesised with the guide instead of returning the cached failure.
     key_src = json.dumps([sentence, lang, voice_id, ref.audio_path if ref else None, plan_engines, seed,
                           ref.blend.key if ref and ref.blend else None,
-                          {k: lexicon[k] for k in N.terms_in(sentence, lexicon)}]
+                          {k: lexicon[k] for k in N.terms_in(sentence, lexicon)}, lint_readings,
+                          {e: {t: v[0] for t, v in d.items()} for e, d in lesson_readings.items()}, sorted(judged)]
                          + ([guide["id"]] if guide else []) + (["phrases"] if phrase_first else []), ensure_ascii=False)
     key = hashlib.sha256(key_src.encode()).hexdigest()[:24]
     cache_dir = settings.sub("cache", "tts")
-    if (cache_dir / f"{key}.wav").exists() and (cache_dir / f"{key}.json").exists():
+    if cache and (cache_dir / f"{key}.wav").exists() and (cache_dir / f"{key}.json").exists():
         return A.load(cache_dir / f"{key}.wav"), {**json.loads((cache_dir / f"{key}.json").read_text()), "cached": True}
 
     attempts: list[Attempt] = []
     thr = _threshold(lang)
     # Match the case the sentence uses ("Pháp lý" for the lexicon term "pháp lý") so QA forgives the respelling.
-    lenient = asr.lenient_terms(sentence, {m.group(0) for k in N.terms_in(sentence, lexicon)
-                                           for m in N.term_pattern(k).finditer(sentence)})
+    soft = set(N.terms_in(sentence, lexicon)) | set(lint_readings) | judged | \
+        {t for d in lesson_readings.values() for t in d}
+    lenient = asr.lenient_terms(sentence, {m.group(0) for k in soft for m in N.term_pattern(k).finditer(sentence)})
 
     def make(e: str, sd: int, temp: float, respell: dict[str, str] | None = None, *, phrases: list[str] | None = None,
              pauses: list[float] | None = None, prompt: VoiceRef | None = None, strategy: str = "whole") -> Attempt:
         respell = dict(respell or {})
-        att = Attempt(e, sd, temp, _tts_text(sentence, lang, e, lexicon, respell), respell, prompt=prompt, strategy=strategy)
+        lex = lex_for(e)
+        att = Attempt(e, sd, temp, _tts_text(sentence, lang, e, lex, respell), respell, prompt=prompt, strategy=strategy)
         if phrases and len(phrases) > 1:
             att.phrases, att.pauses = list(phrases), list(pauses or [0.16] * (len(phrases) - 1))
-            att.tts_phrases = [_tts_text(ph, lang, e, lexicon, respell) for ph in phrases]
+            att.tts_phrases = [_tts_text(ph, lang, e, lex, respell) for ph in phrases]
         return att
 
     def derive(b: Attempt, e: str, sd: int, temp: float, respell: dict[str, str]) -> Attempt:
@@ -226,6 +288,9 @@ def synth_sentence(
             return _run_attempt(att, sentence, lang, ref, lenient)
 
     p_phrases, p_pauses = punct_phrases(sentence)
+    if len(p_phrases) < 2 and L.is_long(sentence, lang):  # long and unpunctuated: split before conjunctions
+        p_phrases = L.conj_phrases(sentence, lang)
+        p_pauses = [0.14] * (len(p_phrases) - 1)
     # 1) first pass
     first: list[Attempt] = []
     learned = None
@@ -257,19 +322,29 @@ def synth_sentence(
         if guide and attempts[-1].score <= thr and (attempts[-1].prompt is None or attempts[-1].strategy == learned):
             break  # a guided candidate with the canonical timbre (or the strategy that worked before) passes
     budget = max_attempts + len(attempts) - 1
-    # 2) repair loop
-    step = 0
+    # 2) repair loop: the next strategy depends on how the best attempt failed (SDD-review-upgrade §5.2.3)
+    from collections import Counter
+
+    used: Counter[str] = Counter()
     tried_phrases = any(a.phrases for a in attempts)
-    while best().score > thr and len(attempts) < budget:
+    step, stall, best_score = 0, 0, best().score
+    classes: list[str] = []
+    while best().score > thr and len(attempts) < budget and stall < STALL_LIMIT:
         b = best()
-        if step == 0:          # resample with a calmer temperature
-            att = derive(b, b.engine, seed + 17, 0.55, b.respell)
-        elif step == 1 and alternates:  # switch engine
+        cls = classify(b, sentence, lang)
+        classes.append(cls)
+        ok = {"reseed": True, "engine": bool(alternates), "phrases": not tried_phrases and len(p_phrases) > 1,
+              "respell": True}
+        strat = next((k for k in REPAIR_ORDER[cls] if ok[k] and used[k] < REPAIR_LIMIT[k]), "reseed")
+        used[strat] += 1
+        if strat == "reseed":
+            att = derive(b, b.engine, seed + 17 + 101 * step, 0.55, b.respell)
+        elif strat == "engine":
             att = derive(b, alternates[0], seed, 0.7, b.respell)
-        elif not tried_phrases and len(p_phrases) > 1:  # long sentences truncate/babble: synthesise phrase by phrase
+        elif strat == "phrases":  # long sentences truncate/babble: synthesise phrase by phrase
             att = make(b.engine, seed + 29, 0.7, b.respell, phrases=p_phrases, pauses=p_pauses, strategy="phrases")
             tried_phrases = True
-        else:                  # ask the LLM for phonetic respellings of the misheard words
+        else:                     # ask the LLM for phonetic respellings of the misheard words
             respell = {**b.respell, **_respell_with_llm(sentence, lang, b.qa, b.heard)}
             if respell == b.respell:
                 att = derive(b, b.engine, seed + 101 * (step + 1), 0.6, b.respell)
@@ -277,11 +352,36 @@ def synth_sentence(
                 att = derive(b, b.engine, seed + 7, 0.6, respell)
         attempts.append(run(att))
         step += 1
+        if best().score < best_score - 0.005:
+            best_score, stall = best().score, 0
+        else:
+            stall += 1
 
     chosen = best()
-    if learn and chosen.respell and chosen.score <= thr:
-        for term, say in chosen.respell.items():
-            N.learn(base_id, lang, term, say)
+    passed = chosen.score <= thr
+    # 3) learn — only what provably helped (SDD-review-upgrade §5.1.4). A respelling becomes a lesson when it passes
+    # the gate AND the same attempt without it fails (otherwise the new seed, not the respelling, fixed it).
+    counterfactual = None
+    if learn and passed and chosen.respell:
+        known = lex_for(chosen.engine)
+        new = {t: v for t, v in chosen.respell.items()
+               if t not in known and lessons.reading_gate(t, v, lang, base_id)[0]}
+        if new:
+            counterfactual = run(derive(chosen, chosen.engine, chosen.seed, chosen.temperature,
+                                        {k: v for k, v in chosen.respell.items() if k not in new}))
+            counterfactual.strategy = "counterfactual"
+            if counterfactual.score > thr:
+                for term, say in new.items():
+                    lessons.propose_reading(base_id, lang, chosen.engine, term, say, sentence)
+            else:
+                lessons.signal("reading_not_causal", {"voice": base_id, "lang": lang, "respell": new, "sentence": sentence})
+    applied = [lid for t, (_, lid) in lesson_readings.get(attempts[0].engine, {}).items()]
+    if learn:  # evaluations (learn=False) must not feed the lessons they measure
+        lessons.record_use(applied, attempts[0].score <= thr)
+    if not passed and learn:
+        lessons.signal("qa_fail", {"voice": base_id, "lang": lang, "engine": chosen.engine, "text": sentence,
+                                   "heard": chosen.heard, "score": chosen.score,
+                                   "class": classify(chosen, sentence, lang), "attempts": len(attempts)})
     report = {
         "text": sentence, "lang": lang, "engine": chosen.engine, "score": chosen.score, "passed": chosen.score <= thr,
         "heard": chosen.heard, "respell": chosen.respell, "source": "tts", "strategy": chosen.strategy,
@@ -289,8 +389,12 @@ def synth_sentence(
         "phrases": chosen.phrases, "pauses": chosen.pauses if chosen.phrases else None,
         "missing": chosen.qa.get("missing", []), "extra": chosen.qa.get("extra", []), "attempts": [
             {"engine": a.engine, "seed": a.seed, "temperature": a.temperature, "score": a.score, "heard": a.heard,
-             "respell": a.respell, "seconds": a.seconds, "strategy": a.strategy} for a in attempts
+             "respell": a.respell, "seconds": a.seconds, "strategy": a.strategy,
+             "class": classify(a, sentence, lang) if a.score > thr else None}
+            for a in attempts + ([counterfactual] if counterfactual else [])
         ],
+        "failure_class": None if passed else classify(chosen, sentence, lang),
+        "lint": [k for k in lint_readings], "lessons": applied, "judge_accepted": sorted(judged),
     }
     A.save(cache_dir / f"{key}.wav", chosen.audio)  # type: ignore[arg-type]
     (cache_dir / f"{key}.json").write_text(json.dumps(report, ensure_ascii=False))
@@ -324,6 +428,7 @@ def speak(
     voice = voice or profiles.default_voice()
     vprof = profiles.get_voice(voice) if voice else None
     fxp = FX.VoiceFX.from_dict({**((vprof or {}).get("fx") or {}), **(fx or {})})
+    text, lint_findings = L.fix_text(text, lang)  # join cut sentences, strip foreign script (idempotent)
     sentences = N.split_sentences(text)
     if not sentences:
         raise ValueError("empty text")
@@ -363,6 +468,7 @@ def speak(
         "fx": fxp.as_dict(), "sentences": reports, "words": words, "voice_id": voice,
         "qa_passed": all(r["passed"] for r in reports),
         "qa_failed_sentences": [r["text"] for r in reports if not r["passed"]],
+        "lint": lint_findings,
         "elapsed": round(time.time() - t0, 1),
     }
     (out_dir / f"{name}.report.json").write_text(json.dumps(result, ensure_ascii=False, indent=2))
