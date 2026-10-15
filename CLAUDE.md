@@ -11,5 +11,7 @@
 - Service: scripts/service.sh install|restart|status|logs. Server binds 127.0.0.1:8765 only.
 - Licences: only Apache/MIT/BSD engines; see SDD §3 "Rejected" before adding any model.
 - Project skills in .claude/skills (review: docs/SKILLS-REVIEW.md). Animated slides = anime.js + three.js in
-  video/scene_web, rendered by video/animate.py (Playwright → FFmpeg). The gsap-* skills are for timing concepts
-  only: write anime.js, not GSAP (GSAP licence not approved); Remotion stays rejected (SDD §3).
+  video/scene_web, rendered by video/animate.py (Playwright → FFmpeg). Owner decisions 2026-10-16 (personal test
+  project): Remotion (free individual licence) and GSAP ("no charge" licence) are allowed; MPL-2.0 libs are
+  licence-OK but not adopted (no gain yet). Existing slide templates stay on anime.js; never build a no-code visual
+  animation editor on GSAP (prohibited use). Licences: docs/SKILLS-REVIEW.md §Licence decisions.

@@ -99,9 +99,10 @@ F5-TTS weights and all VI fine-tunes (CC-BY-NC), viXTTS/XTTS (CPML, unmaintained
 Fish-Speech S2 (research licence), Higgs Audio (non-commercial), IndexTTS (bilibili
 licence), vinorm (non-commercial, Linux binary), WhisperX VI aligners and
 ctc-forced-aligner default model (CC-BY-NC-4.0), Wav2Lip (non-commercial models),
-Remotion + remotion-dev/skills (company licence; re-checked 2026-10-15, docs/SKILLS-REVIEW.md), GSAP library (GSAP Standard
-licence, not OSI — its MIT agent skills are kept for timing concepts only), motiondivision/ai-kit (no licence file),
-Satori / Mediabunny (MPL-2.0, deferred), aeneas (AGPL), VibeVoice (TTS removed upstream),
+motiondivision/ai-kit (no licence file), aeneas (AGPL). Owner decisions 2026-10-16 (personal test project —
+docs/SKILLS-REVIEW.md §Licence decisions): Remotion is **allowed** under its free individual licence (company licence
+needed only if used by a for-profit org with > 3 employees), GSAP is **allowed** under its "no charge" licence (no
+no-code visual animation builder), Satori / Mediabunny (MPL-2.0) are licence-OK but deferred (no technical gain yet), VibeVoice (TTS removed upstream),
 CosyVoice/Chatterbox/Qwen3-TTS/Kokoro (no Vietnamese), DiffusionKit (archived), Seed-VC (GPL-3.0 singing
 voice conversion), SoulX-Singer / YingMusic-Singer (no Vietnamese; licences unclear), WavLM-SV / UniSpeech
 checkpoints (CC BY-SA 3.0 — use SpeechBrain ECAPA (Apache-2.0) or VieNeu's speaker encoder instead).
