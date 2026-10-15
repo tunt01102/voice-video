@@ -281,15 +281,16 @@ function renderPrescan(job, type, params) {
   const terms = cands.map((c) => c.term);
   const fresh = cands.filter((c) => !c.known), known = cands.filter((c) => c.known);
   const row = (c) => `<tr data-term="${esc(c.term)}">
-      <td><b>${esc(c.term)}</b>${c.known ? ` <span class="badge">đã lưu</span>` : ""}<br><small class="muted">${esc(c.reason_labels.join(", "))} · ${c.count}×</small></td>
+      <td><b>${esc(c.term)}</b>${c.known ? ` <span class="badge">${c.source === "english" ? "tiếng Anh" : "đã lưu"}</span>` : ""}<br><small class="muted">${esc(c.reason_labels.join(", "))} · ${c.count}×</small></td>
       <td class="ps-ctx">${markTerms(c.context, [c.term])}</td>
-      <td><input class="ps-say" value="${esc(c.say)}" placeholder="cách đọc, VD: Pi En Di"></td>
-      <td class="ps-okc"><label class="check"><input type="checkbox" class="ps-ok"> đúng</label></td>
+      <td><input class="ps-say" value="${esc(c.source === "english" ? "" : c.say)}" placeholder="cách đọc, VD: Pi En Di" ${c.source === "english" ? "disabled" : ""}></td>
+      <td class="ps-okc">${psChoice(c)}</td>
       <td><button class="ghost small ps-listen" title="Nghe thử câu này với cách đọc đã ghi">▶</button></td></tr>`;
   const voiceName = params.voice ? ($("#voice-select").selectedOptions[0]?.textContent || params.voice) : "";
   box.innerHTML = `<h3>Kiểm tra phát âm trước khi dựng</h3>
     <p class="muted">“${esc(r.title || "")}” · ${r.scenes.length} cảnh. Ghi cách đọc cho từ có thể bị đọc sai (VD: <b>PNJ</b> → <i>Pi En Di</i>),
-      hoặc tick <b>đúng</b> nếu AI đọc đúng như viết. Bỏ trống = để AI tự đọc. Câu trả lời được lưu vào <b>Từ điển phát âm</b> để dùng cho các lần sau.</p>
+      tick <b>đúng</b> nếu AI đọc đúng như viết, hoặc <b>tiếng Anh</b> để đọc nguyên tiếng Anh bằng chính giọng đang dùng
+      (không phiên âm, không đổi giọng giữa câu). Bỏ trống = để AI tự đọc. Câu trả lời được lưu vào <b>Từ điển phát âm</b> để dùng cho các lần sau.</p>
     <details><summary>Xem kịch bản (${r.scenes.length} cảnh)</summary><ol class="ps-scenes">${r.scenes.map((s) => `<li>${markTerms(s, terms)}</li>`).join("")}</ol></details>
     ${lintHtml(r.lint)}
     ${fresh.length ? `<table class="lex prescan"><thead><tr><th>Từ</th><th>Ngữ cảnh</th><th>Đọc là</th><th></th><th></th></tr></thead><tbody>${fresh.map(row).join("")}</tbody></table>`
@@ -301,15 +302,16 @@ function renderPrescan(job, type, params) {
     </div>`;
   const byTerm = Object.fromEntries(cands.map((c) => [c.term, c]));
   $$("tr[data-term]", box).forEach((tr) => {
-    const c = byTerm[tr.dataset.term], say = $(".ps-say", tr), ok = $(".ps-ok", tr);
-    ok.onchange = () => { say.disabled = ok.checked; };
+    const c = byTerm[tr.dataset.term], say = $(".ps-say", tr);
+    psChoiceWire(tr);
+    const en = $(".ps-en", tr);
     $(".ps-listen", tr).onclick = async (ev) => {
-      const b = ev.currentTarget, reading = ok.checked ? c.term : say.value.trim();
+      const b = ev.currentTarget, reading = $(".ps-ok", tr).checked || en.checked ? c.term : say.value.trim();
       const sentence = c.context.replace(/^…|…$/g, "");
       const text = reading ? sentence.split(c.term).join(reading) : sentence;
       b.disabled = true; b.textContent = "⏳";
       try {
-        const j = await api("/api/jobs?wait=true&timeout=300", { method: "POST", body: JSON.stringify({ type: "tts", source: "dashboard", params: { text, voice: params.voice, lang: r.lang, fx: params.fx } }) });
+        const j = await api("/api/jobs?wait=true&timeout=300", { method: "POST", body: JSON.stringify({ type: "tts", source: "dashboard", params: { text, voice: params.voice, lang: r.lang, fx: params.fx, english_terms: en.checked ? [c.term] : [] } }) });
         const url = fileUrl(j.files?.mp3) || fileUrl(j.files?.audio);
         if (url) new Audio(url).play(); else toast("Chưa nghe thử được: " + (j.message || j.status));
       } catch (err) { toast(err.message); }
@@ -318,21 +320,35 @@ function renderPrescan(job, type, params) {
   });
   $(".ps-go", box).onclick = async (ev) => {
     const b = ev.currentTarget, st = $(".ps-status", box);
-    const readings = {}, verified = [];
+    const readings = {}, verified = [], english = [];
     $$("tr[data-term]", box).forEach((tr) => {
       const c = byTerm[tr.dataset.term], s = $(".ps-say", tr).value.trim();
-      if ($(".ps-ok", tr).checked) verified.push(c.term);
-      else if (s && (!c.known || s !== c.say)) readings[c.term] = s;
+      if ($(".ps-en", tr).checked) { if (c.source !== "english") english.push(c.term); }
+      else if ($(".ps-ok", tr).checked) verified.push(c.term);
+      else if (s && (!c.known || s !== c.say || c.source === "english")) readings[c.term] = s;
     });
     b.disabled = true; st.textContent = "Đang lưu…";
     try {
       const scope = $(".ps-scope", box).value;
-      if (Object.keys(readings).length || verified.length)
-        await api("/api/lexicon/terms" + (scope ? "?voice=" + encodeURIComponent(scope) : ""), { method: "POST", body: JSON.stringify({ lang: r.lang, terms: readings, verified }) });
+      if (Object.keys(readings).length || verified.length || english.length)
+        await api("/api/lexicon/terms" + (scope ? "?voice=" + encodeURIComponent(scope) : ""), { method: "POST", body: JSON.stringify({ lang: r.lang, terms: readings, verified, english }) });
       await submitJob(type, { ...params, lang: r.lang, plan_file: r.plan_file });
-      st.textContent = `Đã lưu ${Object.keys(readings).length} cách đọc, ${verified.length} từ đúng — đang dựng video bên dưới.`;
+      st.textContent = `Đã lưu ${Object.keys(readings).length} cách đọc, ${verified.length} từ đúng, ${english.length} từ đọc tiếng Anh — đang dựng video bên dưới.`;
     } catch (err) { b.disabled = false; st.textContent = ""; toast(err.message); }
   };
+}
+
+// One answer per risky term: "đúng" (reads fine as written) or "tiếng Anh" (read as English, same voice).
+function psChoice(c) {
+  return `<label class="check"><input type="checkbox" class="ps-ok"> đúng</label>
+    <label class="check" title="Đọc nguyên tiếng Anh, cùng giọng đang dùng (không phiên âm, không đổi giọng)"><input type="checkbox" class="ps-en" ${c.source === "english" ? "checked" : ""}> tiếng Anh</label>`;
+}
+function psChoiceWire(tr) {
+  const say = $(".ps-say", tr), ok = $(".ps-ok", tr), en = $(".ps-en", tr);
+  const sync = () => { say.disabled = ok.checked || en.checked; };
+  ok.onchange = () => { if (ok.checked) en.checked = false; sync(); };
+  en.onchange = () => { if (en.checked) ok.checked = false; sync(); };
+  sync();
 }
 
 // ------------------------------------------------------------------ jobs
@@ -1019,7 +1035,7 @@ function collectLex() {
   const lang = $("#lex-lang").value; const out = {};
   $$("#lex-body tr").forEach((tr) => {
     const k = $("[data-k]", tr).value.trim(), s = $("[data-s]", tr).value.trim(), src = $(".badge", tr).textContent;
-    if (k && s) out[k] = { ...(lex[lang][k] || {}), say: s, source: ["learned", "verified"].includes(src) && lex[lang][k]?.say === s ? src : "manual", hits: lex[lang][k]?.hits || 0 };
+    if (k && s) out[k] = { ...(lex[lang][k] || {}), say: s, source: ["learned", "verified", "english"].includes(src) && lex[lang][k]?.say === s ? src : "manual", hits: lex[lang][k]?.hits || 0 };
   });
   lex[lang] = out;
 }

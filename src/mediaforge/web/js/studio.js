@@ -27,13 +27,15 @@ function planGate(job, out) {
     ${pres.length ? `<h4>Từ có thể bị đọc sai</h4><table class="lex prescan"><tbody>${pres.map((c) => `<tr data-term="${esc(c.term)}">
       <td><b>${esc(c.term)}</b><br><small class="muted">${esc((c.reason_labels || []).join(", "))}</small></td>
       <td class="ps-ctx">${typeof markTerms === "function" ? markTerms(c.context, [c.term]) : esc(c.context)}</td>
-      <td><input class="ps-say" value="${esc(c.say || "")}" placeholder="cách đọc"></td>
-      <td><label class="check"><input type="checkbox" class="ps-ok"> đúng</label></td></tr>`).join("")}</tbody></table>` : ""}
+      <td><input class="ps-say" value="${esc(c.source === "english" ? "" : c.say || "")}" placeholder="cách đọc"></td>
+      <td>${psChoice(c)}</td></tr>`).join("")}</tbody></table>
+      <p class="muted"><b>tiếng Anh</b> = đọc nguyên tiếng Anh bằng chính giọng này (không phiên âm, không đổi giọng giữa câu).</p>` : ""}
     <div class="actions">
       <button class="primary g-go">Duyệt kịch bản → đọc &amp; vẽ</button>
       <button class="ghost g-all" title="Không dừng ở storyboard nữa">Duyệt hết, dựng luôn</button>
       <button class="ghost g-cancel">Huỷ</button><span class="muted g-status"></span></div>`;
   $$(".g-del", box).forEach((b) => b.onclick = () => b.closest("li").classList.toggle("removed"));
+  $$("tr[data-term]", box).forEach(psChoiceWire);
   const send = async (skip) => {
     const scenesOut = $$(".g-scenes > li", box).filter((li) => !li.classList.contains("removed"))
       .map((li) => ({ from: +li.dataset.i, narration: $(".g-narr", li).value, visual_prompt: $(".g-vp", li).value }));
@@ -41,13 +43,14 @@ function planGate(job, out) {
     const adOut = {};
     $$("[data-ad]", box).forEach((i) => { adOut[i.dataset.ad] = i.dataset.ad === "palette" ? i.value.split(",").map((x) => x.trim()).filter(Boolean) : i.value; });
     const hook = $(`input[name="hook-${job.id}"]:checked`, box);
-    const readings = {}, verified = [];
+    const readings = {}, verified = [], english = [];
     $$("tr[data-term]", box).forEach((tr) => {
-      if ($(".ps-ok", tr).checked) verified.push(tr.dataset.term);
+      if ($(".ps-en", tr).checked) english.push(tr.dataset.term);
+      else if ($(".ps-ok", tr).checked) verified.push(tr.dataset.term);
       else if ($(".ps-say", tr).value.trim()) readings[tr.dataset.term] = $(".ps-say", tr).value.trim();
     });
     const body = { stage: "plan", skip_rest: skip, plan: { title: $(".g-title", box).value, scenes: scenesOut, art_direction: adOut },
-      pronunciations: readings, verified_terms: verified };
+      pronunciations: readings, verified_terms: verified, english_terms: english };
     if (hook) body.plan.hook = +hook.value;
     $(".g-status", box).textContent = "Đang gửi…";
     try { const j = await api(`/api/jobs/${job.id}/approve`, { method: "POST", body: JSON.stringify(body) }); updateJob(j); followJob(j.id); }

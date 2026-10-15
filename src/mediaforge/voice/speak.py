@@ -193,10 +193,16 @@ REPAIR_LIMIT = {"reseed": 2, "engine": 1, "phrases": 1, "respell": 2}
 STALL_LIMIT = 2
 
 
+def _overlaps(term: str, english: set[str]) -> bool:
+    """A rewrite of `term` would touch one of the English-kept terms (inside it, or containing it)."""
+    return any(N.terms_in(e, [term]) or N.terms_in(term, [e]) for e in english)
+
+
 def synth_sentence(
     sentence: str, lang: str, voice_id: str | None, *, engine: str | None = None, seed: int = 1234,
     max_attempts: int | None = None, learn: bool = True, ref_path: str | None = None,
     guide: dict[str, Any] | None | bool = None, phrase_first: bool = False, cache: bool = True,
+    english: list[str] | set[str] | tuple[str, ...] | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Synthesise one sentence; retry/repair until it passes ASR QA. Returns (audio48k, report).
 
@@ -204,6 +210,7 @@ def synth_sentence(
     guide:        the owner's recording of this sentence (profiles.add_correction entry). None = look it up,
                   False = do not use one. A guide is reference data only, never part of the output.
     phrase_first: also try phrase-wise synthesis (split at punctuation) in the first pass.
+    english:      extra "đọc tiếng Anh" terms (besides the lexicon's `english` entries), e.g. a not-yet-saved answer.
     """
     max_attempts = max_attempts or settings.qa_max_attempts
     voice = profiles.get_voice(voice_id) if voice_id else None
@@ -215,6 +222,12 @@ def synth_sentence(
         guide = profiles.guide_for(base_id, sentence)
     guide = guide or None
     lexicon = N.merged_lexicon(base_id, lang)
+    # "Đọc tiếng Anh" (the owner's choice per term): the term stays as written — no lexicon, lint, lesson or LLM
+    # respelling touches it — and the sentence stays on one engine whose G2P reads English words inside Vietnamese
+    # (VieNeu / sea_g2p), so the voice does not change at the English words.
+    eng = set(N.terms_in(sentence, N.english_terms(base_id, lang) | set(english or ()))) if lang == "vi" else set()
+    if eng:
+        lexicon = {k: v for k, v in lexicon.items() if not _overlaps(k, eng)} | {t: t for t in eng}
     capable = engines_for(lang)
     if ref is not None and ref.blend is not None:
         # Only engines with a speaker vector can render the blend; never fall back to one that would drop it.
@@ -236,6 +249,9 @@ def synth_sentence(
         log.warning("voice %s routes %s to unknown engine %r; using %s", voice_id, lang, preferred, DEFAULT_ROUTE[lang])
         preferred = DEFAULT_ROUTE[lang]
     plan_engines = capable if preferred == "best" else [preferred]
+    if eng and len(capable) > 1:
+        keep = preferred if preferred in capable else ("vieneu" if "vieneu" in capable else plan_engines[0])
+        capable = plan_engines = [keep]
     alternates = [e for e in capable if e not in plan_engines]
     # An active engine_route lesson for the class this sentence is likely to fail with puts that engine first; with
     # "best", a perfect take on it (score 0) ends the first pass early (SDD-review-upgrade §5.1.3).
@@ -247,9 +263,9 @@ def synth_sentence(
 
     # What the engine is given: lint's TTS-only readings (acronym runs, domains) < learned readings (lessons,
     # per engine) < the owner's lexicon. Subtitles keep the written sentence.
-    lint_readings = L.tts_readings(sentence, lang, lexicon)
-    lesson_readings = {e: {t: v for t, v in lessons.readings(base_id, lang, e).items() if N.terms_in(sentence, [t])}
-                       for e in capable}
+    lint_readings = {k: v for k, v in L.tts_readings(sentence, lang, lexicon).items() if not _overlaps(k, eng)}
+    lesson_readings = {e: {t: v for t, v in lessons.readings(base_id, lang, e).items()
+                           if N.terms_in(sentence, [t]) and not _overlaps(t, eng)} for e in capable}
 
     def lex_for(e: str) -> dict[str, str]:
         return {**lint_readings, **{t: v[0] for t, v in lesson_readings.get(e, {}).items()}, **lexicon}
@@ -263,7 +279,8 @@ def synth_sentence(
                           ref.blend.key if ref and ref.blend else None,
                           {k: lexicon[k] for k in N.terms_in(sentence, lexicon)}, lint_readings,
                           {e: {t: v[0] for t, v in d.items()} for e, d in lesson_readings.items()}, sorted(judged)]
-                         + ([guide["id"]] if guide else []) + (["phrases"] if phrase_first else []), ensure_ascii=False)
+                         + ([guide["id"]] if guide else []) + (["phrases"] if phrase_first else [])
+                         + ([["english", *sorted(eng)]] if eng else []), ensure_ascii=False)
     key = hashlib.sha256(key_src.encode()).hexdigest()[:24]
     cache_dir = settings.sub("cache", "tts")
     if cache and (cache_dir / f"{key}.wav").exists() and (cache_dir / f"{key}.json").exists():
@@ -383,7 +400,8 @@ def synth_sentence(
             att = make(b.engine, seed + 29, 0.7, b.respell, phrases=p_phrases, pauses=p_pauses, strategy="phrases")
             tried_phrases = True
         else:                     # ask the LLM for phonetic respellings of the misheard words
-            respell = {**b.respell, **_respell_with_llm(sentence, lang, b.qa, b.heard)}
+            respell = {**b.respell, **{t: v for t, v in _respell_with_llm(sentence, lang, b.qa, b.heard).items()
+                                       if not _overlaps(t, eng)}}
             if respell == b.respell:
                 att = derive(b, b.engine, seed + 101 * (step + 1), 0.6, b.respell)
             else:
@@ -440,6 +458,7 @@ def synth_sentence(
         ],
         "failure_class": None if passed else classify(chosen, sentence, lang),
         "lint": [k for k in lint_readings], "lessons": applied, "judge_accepted": sorted(judged),
+        **({"english": sorted(eng)} if eng else {}),
     }
     A.save(cache_dir / f"{key}.wav", chosen.audio)  # type: ignore[arg-type]
     (cache_dir / f"{key}.json").write_text(json.dumps(report, ensure_ascii=False))
@@ -456,13 +475,14 @@ def speak(
     fx: dict | None = None, out_dir: str | Path | None = None, name: str = "voice", seed: int = 1234,
     progress: Progress | None = None, timings: bool = True,
     overrides: dict[str, str] | None = None, regen: dict[str, int] | None = None,
-    takes: dict[str, str] | None = None,
+    takes: dict[str, str] | None = None, english: list[str] | None = None,
 ) -> dict[str, Any]:
     """Text → finished voice track (wav + mp3) with QA report and word timings.
 
     overrides: {sentence text: recording path} — legacy: the owner's own recording replaces that sentence.
     regen:     {sentence text: n} — re-synthesise that sentence with a fresh seed (n-th retry).
     takes:     {sentence text: raw take wav} — an AI re-render chosen in the dashboard (pre-FX, 48 kHz).
+    english:   terms to read as English in the same voice (added to the lexicon's `english` entries).
     """
     takes = {_key(k): v for k, v in (takes or {}).items()}
     overrides = {_key(k): v for k, v in (overrides or {}).items()}
@@ -491,7 +511,8 @@ def speak(
             rep = {"text": s, "lang": s_lang, "engine": "recording", "score": 0.0, "passed": True, "source": "recording",
                    "heard": "", "respell": {}, "missing": [], "extra": [], "attempts": []}
         else:
-            audio, rep = synth_sentence(s, s_lang, voice, engine=engine, seed=seed + i + 7919 * regen.get(_key(s), 0))
+            audio, rep = synth_sentence(s, s_lang, voice, engine=engine, seed=seed + i + 7919 * regen.get(_key(s), 0),
+                                        english=english)
         rep = {"source": "tts", "missing": [], "extra": [], **rep, "index": i}  # older cache entries lack these
         chunks.append(audio)
         reports.append(rep)

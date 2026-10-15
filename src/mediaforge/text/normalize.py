@@ -69,9 +69,10 @@ DEFAULT_LEXICON = {
 
 
 def load_lexicon(voice_id: str | None = None) -> dict[str, dict[str, dict]]:
-    """Returns {lang: {term: {"say": str, "source": "manual"|"verified"|"learned"|"default", "hits": int}}}.
+    """Returns {lang: {term: {"say": str, "source": "manual"|"verified"|"english"|"learned"|"default", "hits": int}}}.
 
     verified = the owner confirmed the term reads correctly as written (say == term); pre-scans skip it.
+    english  = read the term as English, as written (say == term), in the same voice: see english_terms.
     """
     p = _lexicon_path(voice_id)
     if not p.exists():
@@ -97,10 +98,21 @@ def merged_lexicon(voice_id: str | None, lang: str) -> dict[str, str]:
     return merged
 
 
+def english_terms(voice_id: str | None, lang: str = "vi") -> set[str]:
+    """Terms the owner marked "đọc tiếng Anh" (source `english`; a voice entry overrides a global one).
+
+    A Vietnamese sentence keeps them as written: VieNeu's G2P (sea_g2p) reads Latin words with English phonemes
+    inside the Vietnamese sentence, so the same engine and the same voice read both languages."""
+    merged = dict(load_lexicon(None).get(lang, {}))
+    if voice_id:
+        merged.update(load_lexicon(voice_id).get(lang, {}))
+    return {t for t, e in merged.items() if e.get("source") == "english"}
+
+
 def learn(voice_id: str | None, lang: str, term: str, say: str) -> None:
     data = load_lexicon(voice_id)
     entry = data[lang].get(term)
-    if entry and entry.get("source") in ("manual", "verified"):
+    if entry and entry.get("source") in ("manual", "verified", "english"):
         return  # never overwrite a human decision
     data[lang][term] = {"say": say, "source": "learned", "hits": (entry or {}).get("hits", 0) + 1}
     save_lexicon(data, voice_id)

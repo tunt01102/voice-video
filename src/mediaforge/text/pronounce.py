@@ -160,10 +160,12 @@ def scan(text: str, lang: str, *, voice: str | None = None, use_llm: bool = True
 
 
 def remember(lang: str, readings: dict[str, str], verified: list[str] | tuple[str, ...] = (), *,
-             voice: str | None = None, origin: str = "prescan") -> dict[str, Any]:
-    """Save owner answers from a pre-scan: readings → `manual`, confirmed-as-written → `verified`.
+             voice: str | None = None, origin: str = "prescan",
+             english: list[str] | tuple[str, ...] = ()) -> dict[str, Any]:
+    """Save owner answers from a pre-scan: readings → `manual`, confirmed-as-written → `verified`, read as English
+    → `english` (N.english_terms).
 
-    Manual entries are never overwritten by automatic learning (normalize.learn).
+    Owner entries are never overwritten by automatic learning (normalize.learn).
     """
     data = N.load_lexicon(voice)
     table = data.setdefault(lang, {})
@@ -184,5 +186,13 @@ def remember(lang: str, readings: dict[str, str], verified: list[str] | tuple[st
             table[term] = {"say": term, "source": "verified", "hits": prev.get("hits", 0), "origin": origin,
                            "added_at": now}
             ok.append(term)
+    en = []
+    for term in english or ():
+        term = str(term).strip()
+        if term and term not in saved and term not in ok:
+            prev = table.get(term, {})
+            table[term] = {"say": term, "source": "english", "hits": prev.get("hits", 0), "origin": origin,
+                           "added_at": now}
+            en.append(term)
     N.save_lexicon(data, voice)
-    return {"lang": lang, "voice": voice, "saved": saved, "verified": ok}
+    return {"lang": lang, "voice": voice, "saved": saved, "verified": ok, "english": en}

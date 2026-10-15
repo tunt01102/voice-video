@@ -108,15 +108,24 @@ def job_readings(job: dict[str, Any], plan_text: str, lang: str) -> dict[str, st
     return {t: say for t, say in found.items() if t.strip() and say.strip() and N.terms_in(plan_text, [t])}
 
 
-def carry_readings(readings: dict[str, str], lang: str, voice_id: str) -> dict[str, str]:
-    """Save the readings the new voice would not already apply, scoped to its base voice (origin `revoice`)."""
+def job_english(job: dict[str, Any], plan_text: str, lang: str) -> set[str]:
+    """Terms this video read as English ("đọc tiếng Anh"): the request's english_terms and the old voice's marks."""
+    terms = set(job["params"].get("english_terms") or []) | N.english_terms(profiles.base_voice(T.job_voice(job)), lang)
+    return set(N.terms_in(plan_text, terms))
+
+
+def carry_readings(readings: dict[str, str], lang: str, voice_id: str, english: set[str] | None = None) -> dict[str, str]:
+    """Save the readings the new voice would not already apply, scoped to its base voice (origin `revoice`).
+    English-kept terms stay English for the new voice."""
     base = profiles.base_voice(voice_id)
     have = N.merged_lexicon(base, lang)
+    eng = set(english or ()) - N.english_terms(base, lang)
+    readings = {t: s for t, s in readings.items() if t not in (english or ())}
     todo = {t: say for t, say in readings.items() if have.get(t) != say and not (say == t and t not in have)}
-    if todo:
+    if todo or eng:
         pronounce.remember(lang, {t: s for t, s in todo.items() if s != t}, [t for t, s in todo.items() if s == t],
-                           voice=base, origin="revoice")
-    return todo
+                           voice=base, origin="revoice", english=sorted(eng))
+    return {**todo, **{t: t for t in eng}}
 
 
 def dropped_edits(job: dict[str, Any]) -> dict[str, Any]:
@@ -163,7 +172,8 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
             plan_text = " ".join(sc["narration"] for sc in plan_data["scenes"])
             readings = job_readings(job, plan_text, lang)
             meta["readings_kept"] = readings
-            meta["readings_saved"] = carry_readings(readings, lang, new_voice) if readings else {}
+            english = job_english(job, plan_text, lang)
+            meta["readings_saved"] = carry_readings(readings, lang, new_voice, english) if readings or english else {}
             meta["dropped"] = dropped_edits(job)
             meta["before"] = {"voice": old_voice, "fx": r.get("fx"), "engine": job["params"].get("engine"),
                               "duration": r.get("duration"), "qa_failed": len(r.get("qa_failed_sentences") or [])}

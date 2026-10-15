@@ -53,7 +53,7 @@ def _fx(**kw: float | None) -> dict[str, float] | None:
 @mcp.tool()
 async def speak(text: str, voice: str | None = None, lang: str = "auto", pitch: float | None = None,
                 pace: float | None = None, warmth: float | None = None, clarity: float | None = None,
-                engine: str | None = None,
+                engine: str | None = None, english_terms: list[str] | None = None,
                 wait_seconds: float = 300) -> dict[str, Any]:
     """Synthesise speech in a cloned voice (English 'en', Vietnamese 'vi', or 'auto' per sentence).
 
@@ -61,8 +61,11 @@ async def speak(text: str, voice: str | None = None, lang: str = "auto", pitch: 
     the voice's saved settings (the owner's last setup in the dashboard).
     engine: None (voice default), 'vieneu', 'voxcpm' or 'best'. Every sentence is checked by speech
     recognition and automatically regenerated/respelled if mispronounced. Returns wav/mp3 + SRT/VTT/ASS paths.
+    english_terms: words in Vietnamese text to read as English, as written, in the same voice (no respelling, no
+    engine switch); terms saved as "đọc tiếng Anh" in the lexicon apply automatically.
     """
     return await _submit("tts", {"text": text, "voice": voice, "lang": lang, "engine": engine,
+                                 "english_terms": english_terms,
                                  "fx": _fx(pitch=pitch, pace=pace, warmth=warmth, clarity=clarity)}, wait_seconds)
 
 
@@ -105,7 +108,9 @@ async def prepare_video(brief: str | None = None, script: str | None = None, kin
 
     Returns plan_file, the scene narrations and `candidates` [{term, say, known, reason_labels, context}].
     Decide a reading for each unknown term (ask the user when unsure, e.g. PNJ -> 'Pi En Di'), then call
-    create_video(plan_file=..., pronunciations={term: reading}, verified_terms=[terms that read fine as written]).
+    create_video(plan_file=..., pronunciations={term: reading}, verified_terms=[terms that read fine as written],
+    english_terms=[English words/names to read in English, e.g. 'Claude Code', 'pull request']). English terms keep
+    the narrator's voice: the same engine reads them with English pronunciation inside the Vietnamese sentence.
     The answers are saved to the pronunciation lexicon for every later render.
     document / document_as / style: as in create_video.
     """
@@ -122,7 +127,7 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
                        slides_markdown: str | None = None, media: list[str] | None = None,
                        burn_subtitles: bool = True, plan_file: str | None = None,
                        pronunciations: dict[str, str] | None = None, verified_terms: list[str] | None = None,
-                       karaoke: bool = True, document: str | None = None, document_as: str = "brief",
+                       english_terms: list[str] | None = None, karaoke: bool = True, document: str | None = None, document_as: str = "brief",
                        structure: str = "auto", cards: bool | None = None, critique: bool = True,
                        review: list[str] | None = None, slides_engine: str = "static", theme: str = "midnight",
                        wait_seconds: float = 0) -> dict[str, Any]:
@@ -133,7 +138,8 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
     explainers ('# Title', '- bullet', '> narration'). media: optional per-scene image/video paths.
     music: optional background track (ducked under the voice): a library id from list_music, or a local audio path. Videos take minutes; by default this returns
     a job_id immediately — poll job_status.
-    plan_file / pronunciations / verified_terms: from prepare_video (recommended: avoids mispronounced audio).
+    plan_file / pronunciations / verified_terms / english_terms: from prepare_video (recommended: avoids
+    mispronounced audio). english_terms: read these as English, as written, in the same voice (Vietnamese videos).
     karaoke: highlight the word being spoken (default on).
     style: cinematic, photo, illustration, 3d, minimal, tech, chibi (scenes acted out by cute chibi characters).
     document: local .docx/.pdf (.doc/.rtf/.odt) path used as the content instead of brief/script; its pictures are
@@ -155,7 +161,7 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
                                 "slides_markdown": slides_markdown, "media": media,
                                 "burn_subtitles": burn_subtitles, "plan_file": plan_file,
                                 "pronunciations": pronunciations, "verified_terms": verified_terms,
-                                "karaoke": karaoke, "document": document, "document_as": document_as,
+                                "english_terms": english_terms, "karaoke": karaoke, "document": document, "document_as": document_as,
                                 "structure": structure, "critique": critique, "review": review or [],
                                 "slides_engine": slides_engine, "theme": theme,
                                 **({"cards": cards} if cards is not None else {})},
