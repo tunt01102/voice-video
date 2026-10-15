@@ -224,6 +224,17 @@ def test_fixed_clips_are_cut_held_or_looped_with_a_warning(env, monkeypatch):
     assert fresh["report"]["clip_fit"] == res["clip_fit"]
 
 
+def test_auto_music_keeps_the_track_run_video_picked(env, monkeypatch):
+    monkeypatch.setattr(P, "auto_music", lambda mood, **k: "track-1")
+    resolved = []
+    monkeypatch.setattr(music, "resolve", lambda m: resolved.append(m) or None)
+    monkeypatch.setattr(music, "credit", lambda m: None)
+    src = source_video({"music": "auto"})
+    assert src["result"]["report"]["music_id"] == "track-1"
+    run_revoice(src)
+    assert resolved[-1] == "track-1"  # not the literal "auto" (ffmpeg: "Error opening input file auto")
+
+
 def test_legacy_video_without_words_or_cards(env):
     """Shorts made before word timings and cards were stored: revoice must not add cards or re-plan."""
     src = source_video({"kind": "short", "cards": False})

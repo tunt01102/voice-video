@@ -871,10 +871,13 @@ def recompose(p: dict[str, Any], progress: Progress, *, new_subtitles: bool,
         visuals = build_visuals(jp, plan_data, out, durations, kind=kind, aspect=aspect,
                                 style=jp.get("style", "cinematic"), report=report,
                                 progress=_sub(progress, 0.05, 0.5 if not new_subtitles else 0.15), reuse=True)
-        (out / "visuals.json").write_text(json.dumps([v.as_dict() for v in visuals], ensure_ascii=False, indent=2))
+        vis_json = json.dumps([v.as_dict() for v in visuals], ensure_ascii=False, indent=2)
         burn = jp.get("burn_subtitles", True)
+        music_id = jp.get("music")
+        if music_id == "auto":  # run_video picked a library track; recompose keeps the same one
+            music_id = (r.get("report") or {}).get("music_id")
         final_new = compose.compose(
-            visuals, (vdir / "voice.wav") if voice_dir else r["voice"], work / "final.mp4", aspect=aspect, music=music.resolve(jp.get("music")),
+            visuals, (vdir / "voice.wav") if voice_dir else r["voice"], work / "final.mp4", aspect=aspect, music=music.resolve(music_id),
             music_volume=float(jp.get("music_volume", 0.18)),
             subtitles_ass=chapter_ass(subs["ass"], plan_data, durations, work, height=H) if burn else None,
             soft_srt=None if burn else subs["srt"], transition=0.0 if kind == "screen" else 0.5,
@@ -892,6 +895,7 @@ def recompose(p: dict[str, Any], progress: Progress, *, new_subtitles: bool,
                 shutil.move(str(out / f"subtitles.{ext}"), trash / f"subtitles.{ext}")
             shutil.move(subs[ext], out / f"subtitles.{ext}")
         shutil.move(str(final_new), out / "final.mp4")
+        (out / "visuals.json").write_text(vis_json)  # only once the new render exists
     finally:
         shutil.rmtree(work, ignore_errors=True)
     final = out / "final.mp4"

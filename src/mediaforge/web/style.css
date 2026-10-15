@@ -131,8 +131,8 @@ table.prescan label.check { margin: 0; font-size: 13px; }
 .revoice .rv-tabs { display: flex; gap: 6px; }
 .revoice .rv-item { cursor: pointer; }
 .revoice .rv-item.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
-.revoice .rv-pitch { display: flex; gap: 8px; align-items: center; }
-.revoice .rv-pitch input { width: 160px; }
+.revoice .rv-pitch { display: flex; flex-direction: row; gap: 8px; align-items: center; margin: 0; }
+.revoice .rv-pitch input { width: 160px; flex: 0 0 160px; margin: 0; }
 .revoice .rv-warn { margin: 4px 0 0; padding-left: 18px; color: var(--warn); }
 .revoice .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .resub-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; width: 100%; }

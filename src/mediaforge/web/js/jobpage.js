@@ -74,7 +74,7 @@ async function ratingBox(job) {
 // ---- 🎙 Đổi giọng (revoice): read the whole video again in another voice; script and pictures are kept
 // (docs/SDD-review-upgrade.md §11.5). Stock voices play their pre-rendered preview at once, like the Giọng mẫu card.
 let rvAudio = null;
-const fmtSec = (s) => s >= 90 ? `${Math.round(s / 60)} phút` : `${Math.round(s)} giây`;
+const fmtSec = (s) => s >= 90 ? `${Math.floor(s / 60)} phút ${Math.round(s % 60)} giây` : `${Math.round(s)} giây`;
 
 function revoiceBox(job) {
   const r = job.result || {}, box = document.createElement("div");

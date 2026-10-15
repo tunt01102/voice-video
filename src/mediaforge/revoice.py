@@ -29,7 +29,7 @@ Progress = Callable[[float, str], None]
 
 ENGINES = ("vieneu", "voxcpm", "best")
 # Seconds of work per second of narration, for the dashboard's estimate (measured on the M4 Max, §11.5).
-SYNTH_RATE = {"vieneu": 0.9, "voxcpm": 1.3, "best": 2.4}
+SYNTH_RATE = {"vieneu": 0.8, "voxcpm": 1.4, "best": 2.8}
 COMPOSE_RATE = 0.25
 
 
