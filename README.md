@@ -245,6 +245,12 @@ else's voice needs recorded consent (Giọng nói tab). MCP: `revoice_video(job_
 1. **Normalisation.** Numbers, dates, currency and units are written out as words (`vietnormalizer` for Vietnamese).
 2. **Pronunciation lexicon.** Applied next. Filled before rendering by the pronunciation pre-scan (your answers are
    `manual`; terms you confirmed read fine are `verified` and are not asked again), and editable under **Phát âm**.
+   - **Đọc tiếng Anh.** For Vietnamese videos that mix in English, tick **tiếng Anh** next to a term in *Từ có thể
+     bị đọc sai* (pre-scan page or Bước 1 · Duyệt kịch bản). The term is then read in English, exactly as written,
+     **in the same voice**: no Vietnamese respelling ("Claude" stays "Claude", not "clốt"), and a sentence with an
+     English term stays on one engine (VieNeu reads English words inside a Vietnamese sentence), so the voice
+     never changes at the English words — even with `best` routing. ▶ previews it before saving. Saved as
+     `english` in the lexicon; MCP/REST: `english_terms=["Claude Code", "pull request"]`.
 3. **Speech-recognition check.** Every sentence is synthesised and transcribed back with Whisper large-v3-turbo, then compared with the script:
    - Vietnamese is scored as the mean of syllable WER and CER.
    - English is scored as WER.

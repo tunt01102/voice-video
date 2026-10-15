@@ -295,12 +295,15 @@ function renderPrescan(job, type, params) {
     ${lintHtml(r.lint)}
     ${fresh.length ? `<table class="lex prescan"><thead><tr><th>Từ</th><th>Ngữ cảnh</th><th>Đọc là</th><th></th><th></th></tr></thead><tbody>${fresh.map(row).join("")}</tbody></table>`
       : `<p>✅ Không thấy từ mới nào dễ đọc sai.</p>`}
+    ${fresh.length ? `<p><button type="button" class="ghost small ps-all-en">Mọi từ nước ngoài → tiếng Anh</button></p>` : ""}
     ${known.length ? `<details><summary>${known.length} từ đã có trong từ điển</summary><table class="lex prescan"><tbody>${known.map(row).join("")}</tbody></table></details>` : ""}
     <div class="actions">
       <label class="inline-label">Lưu vào <select class="ps-scope"><option value="">Từ điển chung</option>${params.voice ? `<option value="${esc(params.voice)}">Chỉ giọng ${esc(voiceName)}</option>` : ""}</select></label>
       <button class="primary ps-go">2 · Lưu cách đọc &amp; dựng video</button><span class="muted ps-status"></span>
     </div>`;
   const byTerm = Object.fromEntries(cands.map((c) => [c.term, c]));
+  const allEn = $(".ps-all-en", box);
+  if (allEn) allEn.onclick = () => psAllEnglish(box, fresh);
   $$("tr[data-term]", box).forEach((tr) => {
     const c = byTerm[tr.dataset.term], say = $(".ps-say", tr);
     psChoiceWire(tr);
@@ -349,6 +352,15 @@ function psChoiceWire(tr) {
   ok.onchange = () => { if (ok.checked) en.checked = false; sync(); };
   en.onchange = () => { if (en.checked) ok.checked = false; sync(); };
   sync();
+}
+
+// Tick "tiếng Anh" on every row flagged as a foreign word or brand (not acronyms: "AI" is often read the Vietnamese way).
+function psAllEnglish(box, cands) {
+  const foreign = new Set(cands.filter((c) => (c.reasons || []).some((r) => r === "foreign" || r === "camel")).map((c) => c.term));
+  $$("tr[data-term]", box).forEach((tr) => {
+    if (!foreign.has(tr.dataset.term)) return;
+    const en = $(".ps-en", tr); en.checked = true; en.onchange();
+  });
 }
 
 // ------------------------------------------------------------------ jobs

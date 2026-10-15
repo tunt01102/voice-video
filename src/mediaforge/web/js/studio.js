@@ -29,13 +29,16 @@ function planGate(job, out) {
       <td class="ps-ctx">${typeof markTerms === "function" ? markTerms(c.context, [c.term]) : esc(c.context)}</td>
       <td><input class="ps-say" value="${esc(c.source === "english" ? "" : c.say || "")}" placeholder="cách đọc"></td>
       <td>${psChoice(c)}</td></tr>`).join("")}</tbody></table>
-      <p class="muted"><b>tiếng Anh</b> = đọc nguyên tiếng Anh bằng chính giọng này (không phiên âm, không đổi giọng giữa câu).</p>` : ""}
+      <p class="muted"><b>tiếng Anh</b> = đọc nguyên tiếng Anh bằng chính giọng này (không phiên âm, không đổi giọng giữa câu).
+        <button type="button" class="ghost small ps-all-en">Mọi từ nước ngoài → tiếng Anh</button></p>` : ""}
     <div class="actions">
       <button class="primary g-go">Duyệt kịch bản → đọc &amp; vẽ</button>
       <button class="ghost g-all" title="Không dừng ở storyboard nữa">Duyệt hết, dựng luôn</button>
       <button class="ghost g-cancel">Huỷ</button><span class="muted g-status"></span></div>`;
   $$(".g-del", box).forEach((b) => b.onclick = () => b.closest("li").classList.toggle("removed"));
   $$("tr[data-term]", box).forEach(psChoiceWire);
+  const allEn = $(".ps-all-en", box);
+  if (allEn) allEn.onclick = () => psAllEnglish(box, pres);
   const send = async (skip) => {
     const scenesOut = $$(".g-scenes > li", box).filter((li) => !li.classList.contains("removed"))
       .map((li) => ({ from: +li.dataset.i, narration: $(".g-narr", li).value, visual_prompt: $(".g-vp", li).value }));
