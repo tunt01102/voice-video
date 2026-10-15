@@ -179,7 +179,7 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
                               "duration": r.get("duration"), "qa_failed": len(r.get("qa_failed_sentences") or [])}
             ts = time.time()
             vp = {"engine": engine, "fx": fx, "seed": job["params"].get("seed", 1234),
-                  "karaoke": job["params"].get("karaoke")}
+                  "karaoke": job["params"].get("karaoke"), "one_voice": job["params"].get("one_voice")}
             P.voice_stage(vp, plan_data, work, lang=lang, voice=new_voice, width=W, height=H,
                           progress=P._sub(progress, 0.0, 0.6))
             meta["voice_seconds"] = round(time.time() - ts, 1)
