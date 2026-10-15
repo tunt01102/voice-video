@@ -284,7 +284,8 @@ def run_tts(p: dict[str, Any], progress: Progress, job_id: str | None = None) ->
     preview = bool(p.get("preview"))  # "Nghe thử": nobody reads timings or subtitles of a preview
     r = S.speak(D.strip_markers(p["text"]), voice=p.get("voice"), lang=p.get("lang", "auto"), engine=p.get("engine"),
                 fx=p.get("fx"), out_dir=out, name="voice", seed=int(p.get("seed", 1234)), progress=progress,
-                overrides=p.get("overrides"), regen=p.get("regen"), takes=p.get("takes"), timings=not preview)
+                overrides=p.get("overrides"), regen=p.get("regen"), takes=p.get("takes"), timings=not preview,
+                english=p.get("english_terms"))
     r["sentence_spans"] = sentence_spans([x["text"] for x in r["sentences"]], r["words"])
     if p.get("subtitles", not preview) and r["words"]:
         r["subtitles"] = subtitles.write_all(r["words"], out / "voice")
@@ -668,7 +669,8 @@ def voice_stage(p: dict[str, Any], plan_data: dict[str, Any], out: Path, *, lang
         vprog(i / len(scenes_in), f"voice {i + 1}/{len(scenes_in)}")
         r = S.speak(sc["narration"], voice=voice, lang=lang, engine=p.get("engine"), fx=p.get("fx"),
                     out_dir=out / "voice", name=f"scene_{i + 1:02d}", seed=int(p.get("seed", 1234)) + 100 * i,
-                    timings=False, overrides=p.get("overrides"), regen=p.get("regen"), takes=p.get("takes"))
+                    timings=False, overrides=p.get("overrides"), regen=p.get("regen"), takes=p.get("takes"),
+                    english=p.get("english_terms"))
         scene_audio.append(A.load(r["audio"]))
         scene_reports.append(r)
     voice_track = A.crossfade_concat(scene_audio, [SCENE_GAP] * (len(scene_audio) - 1), fade=0.005)
@@ -769,10 +771,11 @@ def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
         voice_wav = out / "voice.wav"
     else:
         ts = time.time()
-        if p.get("pronunciations") or p.get("verified_terms"):
+        if p.get("pronunciations") or p.get("verified_terms") or p.get("english_terms"):
             # Readings the owner gave before rendering (pre-scan): save them so this and later renders use them.
             report["pronunciations"] = pronounce.remember(lang, p.get("pronunciations") or {}, p.get("verified_terms") or [],
-                                                          voice=p.get("lexicon_voice"))
+                                                          voice=p.get("lexicon_voice"),
+                                                          english=p.get("english_terms") or [])
         if "cards" not in plan_data:
             plan_data["cards"] = card_plan(p, plan_data, kind=kind, aspect=aspect, music_id=music_id)
             (out / "plan.json").write_text(json.dumps(plan_data, ensure_ascii=False, indent=2))

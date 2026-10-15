@@ -205,6 +205,13 @@ provenance: SDD-stock-voices.md.
 1. **Normalise**: language detect per sentence (`auto` supports mixed EN/VI);
    VI → `vietnormalizer` (numbers, dates, currency, units); EN → small rule normaliser;
    then the **pronunciation lexicon** (global + per-voice JSON, e.g. `API → ây-pi-ai`).
+   **Đọc tiếng Anh** (2026-10-16): a term with lexicon source `english` (pre-scan "tiếng Anh", plan gate, or
+   `english_terms` on speak/create_video) is left as written in a Vietnamese sentence — no lexicon, lint, lesson
+   or LLM respelling touches it — and that sentence is pinned to one engine (the voice's route, VieNeu under
+   `best`): VieNeu's G2P (`sea_g2p`, vi with English code-switching) gives English phonemes in the same voice.
+   Measured on the data-store copy (gi-ng-t, `best`, 3 mixed sentences): default → VoxCPM for sentence 1 and
+   VieNeu for 2–3 (voice change), 70 s; English-kept → VieNeu for all three, 1 attempt each, 31 s, Whisper heard
+   every English term as written. Revoice carries the marks to the new voice.
 2. **Split** into sentences/clauses ≤ 220 chars.
 3. **Synthesise** each sentence with the routed engine (fixed seed for reproducibility).
 4. **QA**: resample to 16 kHz → Whisper → compare with the normalised input.

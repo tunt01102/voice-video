@@ -243,7 +243,8 @@ def create_app() -> FastAPI:
         """Continue a job waiting at a review step (SDD-review-upgrade §5.3).
 
         body: {stage: plan|visuals, plan?: {title?, scenes?: [{narration?, visual_prompt?, from?}], art_direction?, hook?},
-               pronunciations?: {term: reading}, verified_terms?: [term], lexicon_voice?, skip_rest?: bool}
+               pronunciations?: {term: reading}, verified_terms?: [term], english_terms?: [term], lexicon_voice?,
+               skip_rest?: bool}
         """
         from mediaforge import pipelines
 
@@ -258,7 +259,7 @@ def create_app() -> FastAPI:
         if body.get("skip_rest"):
             approved = list(dict.fromkeys([*approved, *(params.get("review") or [])]))
         params["approved"] = approved
-        for k in ("pronunciations", "verified_terms", "lexicon_voice"):
+        for k in ("pronunciations", "verified_terms", "english_terms", "lexicon_voice"):
             if body.get(k):
                 params[k] = body[k]
         out = Path(job["result"]["out"])
@@ -583,11 +584,13 @@ def create_app() -> FastAPI:
 
     @app.post("/api/lexicon/terms")
     def add_terms(body: dict[str, Any] = Body(...), voice: str | None = None):
-        """Merge pre-scan answers: {lang, terms: {term: reading}, verified: [term]} (PUT replaces the whole file)."""
+        """Merge pre-scan answers: {lang, terms: {term: reading}, verified: [term], english: [term]} (PUT replaces the
+        whole file)."""
         lang = body.get("lang", "vi")
         if lang not in ("vi", "en"):
             raise HTTPException(400, "lang must be vi or en")
-        return pronounce.remember(lang, body.get("terms") or {}, body.get("verified") or [], voice=voice or body.get("voice"))
+        return pronounce.remember(lang, body.get("terms") or {}, body.get("verified") or [], voice=voice or body.get("voice"),
+                                  english=body.get("english") or [])
 
     # ---------------------------------------------------------------- poems (Ngâm thơ tab)
     @app.get("/api/poems")
