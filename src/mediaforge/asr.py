@@ -103,15 +103,17 @@ LETTER_NAMES = {
 SPELLED_MIN_SIMILARITY = 0.8
 
 
-def _letter_key(tokens: list[str]) -> tuple[str, float]:
-    """Letters a token run spells, and the share of tokens that looked spelled (letter names, single letters,
-    short ASCII clusters such as 'vn')."""
+def _letter_key(tokens: list[str], *, strict: bool = False) -> tuple[str, float]:
+    """Letters a token run spells, and the share of tokens that looked spelled. Letter names and single letters
+    always count; other short ASCII tokens count only if not strict (the heard side: Whisper writes "aisme") or,
+    when strict (the script side), only vowel-less clusters such as "vn", "pnj" — so ordinary English words in the
+    script are never letter-compared ("cat" vs "cats" must still fail)."""
     key, spelled = [], 0
     for t in tokens:
-        if t in LETTER_NAMES:
-            key.append(LETTER_NAMES[t])
+        if t in LETTER_NAMES or (len(t) == 1 and t.isalpha()):
+            key.append(LETTER_NAMES.get(t, t))
             spelled += 1
-        elif t.isascii() and t.isalpha() and len(t) <= 6:
+        elif t.isascii() and t.isalpha() and len(t) <= 6 and (not strict or not set(t) & set("aeiouy")):
             key.append(t)
             spelled += 1
         else:
@@ -125,7 +127,7 @@ def spelled_match(ref_seg: list[str], hyp_seg: list[str]) -> bool:
     ("AISME.vn" → "a i ét em ê vn"): compare the letters, not the words (judge fix, SDD-review-upgrade §5.2.3)."""
     if not ref_seg or not hyp_seg:
         return False
-    rk, rs = _letter_key(ref_seg)
+    rk, rs = _letter_key(ref_seg, strict=True)
     hk, hs = _letter_key(hyp_seg)
     if rs < 0.6 or hs < 0.6 or not rk:
         return False

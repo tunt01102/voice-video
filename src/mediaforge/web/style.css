@@ -186,7 +186,7 @@ table.prescan label.check { margin: 0; font-size: 13px; }
 .lint { margin: 10px 0; padding: 10px 12px; border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); border-radius: 6px; }
 .lint ul { margin: 6px 0 0; padding-left: 18px; }
 .badge.waiting { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
-.gate { border: 1px solid var(--accent); border-radius: 12px; padding: 14px; margin-top: 8px; }
+.gate { flex: 1 0 100%; border: 1px solid var(--accent); border-radius: 12px; padding: 14px; margin-top: 8px; }
 .gate h3 { margin-top: 0; }
 .gate input:not([type]), .gate textarea { width: 100%; }
 .g-scenes { padding-left: 22px; }

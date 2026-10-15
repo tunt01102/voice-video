@@ -91,7 +91,7 @@ composition, lighting; {style_hint(style)}; never ask for text, letters, logos o
 Story shape: {STRUCTURES.get(structure) or "choose the best of: " + "; ".join(f"{k} ({v})" for k, v in STRUCTURES.items())}.
 Art direction: decide ONE look for the whole video and describe it in "art_direction": a recurring motif or
 character that appears in most scenes (concrete and drawable), the camera language, a palette of 3-4 colour
-words, and the background-music mood (one of {", ".join(MUSIC_MOODS)}). Every visual_prompt then describes only
+words — all written in English, for the image model — and the background-music mood (one of {", ".join(MUSIC_MOODS)}). Every visual_prompt then describes only
 that scene's subject and action — the art direction is added to it automatically, so do not repeat it.
 Give each scene a "mood" (one of {", ".join(MOODS)}) that follows the emotional arc; vary it.
 Mark at most 3 scenes that open a new section with "chapter": "<2-4 word heading in {LANG_NAME[lang]}>".
@@ -177,8 +177,8 @@ def visual_plan_for(narrations: list[str], *, style: str, kind: str = "narrated"
     numbered = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(narrations))
     prompt = (f"For each narration line below, write one English image-generation prompt that illustrates it "
               f"(concrete subject, action, setting; {style_hint(style)}; no text/letters/logos in the image) and its "
-              f"mood (one of {', '.join(MOODS)}). First decide ONE art direction for the whole video: a recurring "
-              f"motif or character, the camera language, 3-4 palette colour words and a music mood (one of "
+              f"mood (one of {', '.join(MOODS)}). First decide ONE art direction for the whole video (in English): a "
+              f"recurring motif or character, the camera language, 3-4 palette colour words and a music mood (one of "
               f"{', '.join(MUSIC_MOODS)}); it is added to every prompt automatically, so prompts describe only the "
               f"scene subject.\n{numbered}\n\nReturn JSON: {{\"art_direction\": {{\"motif\": \"...\", \"camera\": \"...\", "
               f"\"palette\": [\"...\"], \"music_mood\": \"...\"}}, \"scenes\": [{{\"visual_prompt\": \"...\", \"mood\": \"...\"}}]}} "

@@ -1,6 +1,9 @@
 // Review steps of a staged video (docs/SDD-review-upgrade.md §5.5.2): the plan gate (script, art direction, hook,
 // risky words) and the storyboard gate (pictures, redraw one). Uses the globals from app.js.
 
+const MOOD_VI = { calm: "êm", reflective: "suy tư", curious: "tò mò", tense: "căng thẳng", urgent: "gấp gáp",
+  hopeful: "hy vọng", triumphant: "chiến thắng", playful: "vui tươi" };
+const moodVi = (m) => MOOD_VI[m] || m;
 const AD_FIELDS = [["motif", "Nhân vật / chi tiết lặp lại"], ["camera", "Cách quay"], ["palette", "Bảng màu"],
   ["music_mood", "Không khí nhạc"], ["structure", "Cấu trúc"]];
 
@@ -10,7 +13,7 @@ function planGate(job, out) {
   const box = document.createElement("div");
   box.className = "gate";
   box.innerHTML = `<h3>Bước 1/2 · Duyệt kịch bản</h3>
-    <p class="muted">Sửa lời đọc, xoá cảnh thừa, ghi cách đọc từ khó. Máy chỉ đọc và vẽ sau khi bạn duyệt.</p>
+    <p class="muted">Sửa lời đọc, xoá cảnh thừa, ghi cách đọc từ khó. Máy chỉ đọc và vẽ sau khi bạn duyệt. Chỉ đạo hình ảnh và mô tả hình viết bằng tiếng Anh (cho máy vẽ).</p>
     <label>Tựa đề <input class="g-title" value="${esc(plan.title || "")}"></label>
     ${plan.hooks?.length > 1 ? `<fieldset class="hooks"><legend>Câu mở đầu (hook)</legend>${plan.hooks.map((h, i) =>
       `<label class="check"><input type="radio" name="hook-${job.id}" value="${i}" ${i === (plan.hook_choice ?? 0) ? "checked" : ""}> ${esc(h)}</label>`).join("")}</fieldset>` : ""}
@@ -19,7 +22,7 @@ function planGate(job, out) {
     ${typeof lintHtml === "function" ? lintHtml(plan.lint) : ""}
     <ol class="g-scenes">${scenes.map((sc, i) => `<li data-i="${i}">
       <textarea class="g-narr" rows="2">${esc(sc.narration)}</textarea>
-      <details><summary class="muted">Mô tả hình${sc.mood ? ` · ${esc(sc.mood)}` : ""}</summary><textarea class="g-vp" rows="2">${esc(sc.visual_prompt || "")}</textarea></details>
+      <details><summary class="muted">Mô tả hình${sc.mood ? ` · không khí: ${esc(moodVi(sc.mood))}` : ""}</summary><textarea class="g-vp" rows="2">${esc(sc.visual_prompt || "")}</textarea></details>
       <button type="button" class="ghost small g-del" title="Bỏ cảnh này">✕</button></li>`).join("")}</ol>
     ${pres.length ? `<h4>Từ có thể bị đọc sai</h4><table class="lex prescan"><tbody>${pres.map((c) => `<tr data-term="${esc(c.term)}">
       <td><b>${esc(c.term)}</b><br><small class="muted">${esc((c.reason_labels || []).join(", "))}</small></td>
@@ -67,7 +70,7 @@ function storyGate(job, out) {
     <div class="board">${board.map((sc, i) => `<figure data-i="${i}">
       <img src="${files[i]?.image?.url || ""}${bust}" alt="Cảnh ${i + 1}" loading="lazy">
       <figcaption><b>${i + 1}.</b> ${esc(sc.narration.slice(0, 140))}${sc.narration.length > 140 ? "…" : ""}
-        <small class="muted">${sc.duration}s${sc.mood ? " · " + esc(sc.mood) : ""}${sc.motion ? " · " + esc(sc.motion) : ""}</small></figcaption>
+        <small class="muted">${sc.duration}s${sc.mood ? " · " + esc(moodVi(sc.mood)) : ""}${sc.motion ? " · " + esc(sc.motion) : ""}</small></figcaption>
       <textarea rows="2" class="b-vp" placeholder="Mô tả hình (tiếng Anh)">${esc(sc.visual_prompt || "")}</textarea>
       <button class="ghost small b-redo">🔁 Vẽ lại</button></figure>`).join("")}</div>
     <div class="actions"><button class="primary b-go">Dựng video</button><button class="ghost b-cancel">Huỷ</button><span class="muted b-status"></span></div>`;

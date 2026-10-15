@@ -543,6 +543,11 @@ creative features (P6-D) need ratings to learn from.
 - **Added (not in v1.0):** spelled-acronym matching in QA (`asr.spelled_match`). The eval showed the main acronym
   failure was the judge comparing a phonetic spelling with Whisper's written form ("ây ai ét em i chấm vi en" vs
   "AISME.vn").
+- `spelled_match` only letter-compares a script-side block made of letter names, single letters or vowel-less
+  clusters ("vn", "pnj"), so ordinary English words are never forgiven ("cat"→"cats" still fails). Some letter
+  names are also Vietnamese words (`em`, `đi`, `ca`, `vi`); a false match needs a misheard run of ≥ 3 of them with
+  near-identical letters, because keys under 3 letters must match exactly — rare, but possible.
+- Art direction is asked for in English (it goes into image prompts); the plan gate says so.
 - No "✂ Tách câu" button: 🔁 Tạo lại already renders phrase-first.
 - `app.js` was not split. New UI lives in ES modules under `web/js/` that use `app.js`'s globals, which avoids
   churn in working code.

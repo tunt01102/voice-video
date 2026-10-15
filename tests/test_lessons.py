@@ -257,3 +257,9 @@ def test_evaluation_runs_do_not_feed_lessons(monkeypatch):
     _fake_loop(monkeypatch, lambda a: (0.5, "sai"))
     S.synth_sentence("Câu đánh giá không học.", "vi", "ve", engine="vieneu", cache=False, learn=False)
     assert not [s for s in lessons.signals("qa_fail") if s["payload"]["text"] == "Câu đánh giá không học."]
+
+
+def test_spelled_match_does_not_forgive_english_words():
+    assert asr.error_rate("The cat sat", "The cats sat", "en")["score"] > 0
+    assert asr.error_rate("They form a line", "They from a line", "en")["score"] > 0
+    assert asr.error_rate("Visit their site", "Visit there site", "en")["score"] > 0
