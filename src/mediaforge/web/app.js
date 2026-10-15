@@ -356,7 +356,7 @@ function psChoiceWire(tr) {
 
 // Tick "tiếng Anh" on every row flagged as a foreign word or brand (not acronyms: "AI" is often read the Vietnamese way).
 function psAllEnglish(box, cands) {
-  const foreign = new Set(cands.filter((c) => (c.reasons || []).some((r) => r === "foreign" || r === "camel")).map((c) => c.term));
+  const foreign = new Set(cands.filter((c) => (c.reasons || []).some((r) => r === "foreign" || r === "camel" || r === "phrase")).map((c) => c.term));
   $$("tr[data-term]", box).forEach((tr) => {
     if (!foreign.has(tr.dataset.term)) return;
     const en = $(".ps-en", tr); en.checked = true; en.onchange();
