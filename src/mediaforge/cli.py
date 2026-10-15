@@ -133,7 +133,8 @@ def explainer(brief: Optional[str] = typer.Argument(None), slides: Optional[Path
               script: Optional[str] = None, lang: str = "auto", voice: Optional[str] = None, seconds: int = 90,
               theme: str = "midnight", music: Optional[str] = None, pitch: Optional[float] = None,
               aspect: str = "16:9", local: bool = False,
-              animated: bool = typer.Option(False, help="animated slides (anime.js / three.js 3D) instead of stills")) -> None:
+              animated: bool = typer.Option(True, "--animated/--static",
+                                            help="animated slides (anime.js / three.js 3D, default) or Pillow stills")) -> None:
     """Slide explainer (from a brief, a script, or markdown slides)."""
     extra = {"theme": theme, "slides_markdown": slides.read_text("utf-8") if slides else None,
              "slides_engine": "animated" if animated else "static"}
