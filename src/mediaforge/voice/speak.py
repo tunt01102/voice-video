@@ -103,35 +103,58 @@ class Context:
     side: str  # "before" | "after"
 
 
+def _garbage(expected: str, heard: str, lang: str, qa: dict[str, Any]) -> bool:
+    """Whisper heard nothing usable for a short clip: a hallucination, a repeat, twice the words, or not one syllable
+    of the sentence. Only then may the neighbour's context overrule the verdict on the clip alone: a near miss
+    ("Chú ý nhá" for "Chú ý nhé") stays a failure, because in context Whisper's prior papers over a changed particle
+    (A/B on 48 correct and 48 wrong takes, SDD §5.2)."""
+    import difflib
+
+    ref, hyp = N.qa_tokens(expected, lang), N.qa_tokens(heard, lang)
+    shared = sum(m.size for m in difflib.SequenceMatcher(a=ref, b=hyp, autojunk=False).get_matching_blocks())
+    return bool(qa.get("repeat") or qa.get("judge")) or len(hyp) >= 2 * len(ref) or shared < 0.3 * max(1, len(ref))
+
+
 def _listen(x: np.ndarray, sentence: str, lang: str, lenient: set[str], ctx: Context | None) -> tuple[str, dict]:
-    """Transcribe and score one take. Returns (heard, qa)."""
+    """Transcribe and score one take. Returns (heard, qa).
+
+    A short sentence (is_short) with a neighbour is heard alone first; only when that hearing is garbage is it heard
+    again together with the neighbour, scoring its own words only (asr.error_rate focus)."""
     hint = ", ".join(sorted(lenient)) if lenient else None
-    expected, focus, clip = sentence, None, x
-    if ctx is not None:
-        gap = np.zeros(int(CONTEXT_GAP * A.SR), dtype=np.float32)
-        n_ctx, n_own = len(N.qa_tokens(ctx.text, lang)), len(N.qa_tokens(sentence, lang))
-        if ctx.side == "before":
-            clip, expected, focus = np.concatenate([ctx.audio, gap, x]), f"{ctx.text} {sentence}", (n_ctx, n_ctx + n_own)
-        else:
-            clip, expected, focus = np.concatenate([x, gap, ctx.audio]), f"{sentence} {ctx.text}", (0, n_own)
-    elif is_short(sentence, lang):
-        pad = np.zeros(int(SHORT_PAD * A.SR), dtype=np.float32)
-        clip = np.concatenate([pad, x, pad])
-    heard = asr.transcribe(clip, lang=lang, initial_prompt=hint, temperature=0.0)["text"]
-    judge_retry = False
-    if asr.judge_error(heard, lang, expected):
-        # The judge failed, not necessarily the voice: listen again primed with the intended sentence (F3).
-        judge_retry = True
-        heard = asr.transcribe(clip, lang=lang, initial_prompt=((hint + ". ") if hint else "") + expected,
-                               temperature=0.0)["text"]
-    qa = asr.error_rate(expected, heard, lang, lenient, focus=focus)
-    qa["judge_retry"] = judge_retry
-    qa["judge"] = asr.judge_error(heard, lang, expected)
-    qa["repeat"] = asr.repetition(expected, heard, lang)
-    if ctx is not None:
-        qa["context"] = {"side": ctx.side, "text": ctx.text, "heard": heard}
-        heard = qa.get("heard_focus", heard)
-    return heard, qa
+
+    def hear(clip: np.ndarray, expected: str, focus: tuple[int, int] | None) -> tuple[str, dict]:
+        heard = asr.transcribe(clip, lang=lang, initial_prompt=hint, temperature=0.0)["text"]
+        judge_retry = False
+        if asr.judge_error(heard, lang, expected):
+            # The judge failed, not necessarily the voice: listen again primed with the intended sentence (F3).
+            judge_retry = True
+            heard = asr.transcribe(clip, lang=lang, initial_prompt=((hint + ". ") if hint else "") + expected,
+                                   temperature=0.0)["text"]
+        qa = asr.error_rate(expected, heard, lang, lenient, focus=focus)
+        qa["judge_retry"] = judge_retry
+        qa["judge"] = asr.judge_error(heard, lang, expected)
+        qa["repeat"] = asr.repetition(expected, heard, lang)
+        return heard, qa
+
+    if ctx is None:
+        if is_short(sentence, lang):
+            pad = np.zeros(int(SHORT_PAD * A.SR), dtype=np.float32)
+            x = np.concatenate([pad, x, pad])
+        return hear(x, sentence, None)
+    heard, qa = hear(x, sentence, None)
+    if qa["score"] <= _threshold(lang) or not _garbage(sentence, heard, lang, qa):
+        qa["context"] = {"side": ctx.side, "text": ctx.text, "used": False}
+        return heard, qa
+    alone = heard
+    gap = np.zeros(int(CONTEXT_GAP * A.SR), dtype=np.float32)
+    n_ctx, n_own = len(N.qa_tokens(ctx.text, lang)), len(N.qa_tokens(sentence, lang))
+    if ctx.side == "before":
+        clip, expected, focus = np.concatenate([ctx.audio, gap, x]), f"{ctx.text} {sentence}", (n_ctx, n_ctx + n_own)
+    else:
+        clip, expected, focus = np.concatenate([x, gap, ctx.audio]), f"{sentence} {ctx.text}", (0, n_own)
+    heard, qa = hear(clip, expected, focus)
+    qa["context"] = {"side": ctx.side, "text": ctx.text, "used": True, "heard": heard, "alone": alone}
+    return qa.get("heard_focus", heard), qa
 
 
 def _duration_penalty(text: str, lang: str, audio: np.ndarray) -> float:

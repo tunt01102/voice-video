@@ -33,29 +33,46 @@ class Rec:
         return np.full(int(A.SR * 0.15 * len(text.split())), 0.1, dtype=np.float32)
 
 
-def test_short_sentences_are_heard_with_a_neighbour(monkeypatch, tmp_path):
-    Rec.calls, heard_lens = [], []
-    monkeypatch.setattr(S, "get_engine", lambda n: Rec())
-
-    def transcribe(x, **kw):
-        heard_lens.append(len(x) / A.SR)
-        return {"text": "ok", "words": []}
-
-    monkeypatch.setattr(S.asr, "transcribe", transcribe)
-    seen = []
-    monkeypatch.setattr(S.asr, "error_rate", lambda exp, heard, lang, lenient=None, focus=None:
-                        seen.append((exp, focus)) or {"score": 0.0, "missing": [], "extra": []})
+def _shorty():
     try:
         profiles.get_voice("shorty")
     except KeyError:
         profiles.create_voice("Shorty", "shorty")
     profiles.update_voice("shorty", {"engines": {"vi": "vieneu", "en": "vieneu"}})
-    r = S.speak(f"Chào bạn. {CTX} Cảm ơn nhé.", voice="shorty", lang="vi", out_dir=tmp_path, timings=False)
+    return "shorty"
+
+
+def _hearing(monkeypatch, alone: str):
+    """Whisper hears `alone` on a clip under a second, and every longer clip correctly."""
+    def transcribe(x, **kw):
+        sec = len(x) / A.SR
+        if sec < 1.0:
+            return {"text": alone, "words": []}
+        if abs(sec - 1.5) < 0.05:
+            return {"text": CTX, "words": []}
+        return {"text": f"Chào bạn. {CTX}" if sec < 2.1 else f"{CTX} Cảm ơn nhé.", "words": []}
+
+    monkeypatch.setattr(S.asr, "transcribe", transcribe)
+
+
+def test_garbage_alone_is_heard_again_with_a_neighbour(monkeypatch, tmp_path):
+    Rec.calls = []
+    monkeypatch.setattr(S, "get_engine", lambda n: Rec())
+    _hearing(monkeypatch, "Hãy subscribe cho kênh Ghiền Mì Gõ")   # the classic short-clip hallucination
+    r = S.speak(f"Chào bạn. {CTX} Cảm ơn nhé.", voice=_shorty(), lang="vi", out_dir=tmp_path, timings=False)
     assert [c.split()[0] for c in Rec.calls] == ["Hôm", "Chào", "Cảm"]   # the next one first, and only once
-    assert seen == [(CTX, None), (f"Chào bạn. {CTX}", (0, 2)),           # first: heard with the next sentence
-                    (f"{CTX} Cảm ơn nhé.", (10, 13))]                    # later: heard after the previous one
-    assert r["sentences"][0]["context"]["side"] == "after" and r["sentences"][2]["context"]["side"] == "before"
-    assert heard_lens[1] > 1.5 and heard_lens[2] > 1.5                  # context audio + gap + the short clip
+    first, last = r["sentences"][0], r["sentences"][2]
+    assert first["passed"] and first["context"]["used"] and first["context"]["side"] == "after"
+    assert last["passed"] and last["context"]["used"] and last["context"]["side"] == "before"
+    assert first["heard"] == "chào bạn"
+
+
+def test_a_near_miss_alone_is_not_rescued_by_context(monkeypatch, tmp_path):
+    monkeypatch.setattr(S, "get_engine", lambda n: Rec())
+    _hearing(monkeypatch, "Chào bà!")                             # one syllable off: a real mistake, maybe
+    _, rep = S.synth_sentence("Chào bạn.", "vi", _shorty(), cache=False, learn=False,
+                              context=S.Context(CTX, np.full(int(A.SR * 1.5), 0.1, dtype=np.float32), "after"))
+    assert not rep["passed"] and rep["context"]["used"] is False
 
 
 def test_a_lone_short_sentence_is_padded(monkeypatch):
