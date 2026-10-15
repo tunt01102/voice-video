@@ -114,6 +114,7 @@ async function buildParams(f) {
       params = { media: await upload(f.media_file.files[0]), lang: f.lang.value === "auto" ? null : f.lang.value, burn: f.burn.checked, translate_to: f.translate_to.value || null };
     } else {
       params = { lang: f.lang.value, voice: f.voice.value || null, seconds: +f.seconds.value, style: f.style.value, fx, theme: f.theme.value };
+      if (kind === "explainer") params.slides_engine = f.slides_engine.value;
       const src = f.source.value;
       if (src === "brief") params.brief = f.text.value; else if (src === "slides") params.slides_markdown = f.text.value; else params.script = f.text.value;
       if (doc.images.length) params.doc_images = doc.images.map((im) => im.removed ? "" : im.path);
@@ -714,7 +715,7 @@ function cloneJob(job) {
   if (job.type === "image") f.prompt.value = p.prompt || "";
   else f.text.value = text;
   if (p.brief) f.source.value = "brief"; else if (p.slides_markdown) f.source.value = "slides"; else if (p.script) f.source.value = "script";
-  for (const k of ["lang", "style", "aspect", "theme", "engine"]) if (p[k] && f[k]) f[k].value = p[k];
+  for (const k of ["lang", "style", "aspect", "theme", "engine", "slides_engine"]) if (p[k] && f[k]) f[k].value = p[k];
   if (p.seconds) f.seconds.value = p.seconds;
   if (p.voice) f.voice.value = p.voice;
   if (typeof p.music === "string" && [...f.music.options].some((o) => o.value === p.music)) f.music.value = p.music;

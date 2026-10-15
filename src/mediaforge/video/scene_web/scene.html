@@ -1,0 +1,219 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- One animated slide. Python (video/animated.py) calls __setup(data) once, then __seek(t) per frame and
+     screenshots; nothing here may depend on wall-clock time, so every frame is reproducible. -->
+<style>
+  @font-face { font-family: "MF"; src: url("/font/regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "MF"; src: url("/font/bold.ttf"); font-weight: 700; }
+  :root { --bg1: #0e1226; --bg2: #26184a; --title: #fff; --text: #d6dcf0; --accent: #ffc400; --u: 1px; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg1); font-family: "MF", Arial, sans-serif; }
+  #stage { position: absolute; inset: 0; overflow: hidden; background: linear-gradient(145deg, var(--bg1), var(--bg2)); }
+  #bgimg { position: absolute; inset: -4%; background-size: cover; background-position: center; filter: blur(8px) brightness(.38) saturate(1.1); }
+  .blob { position: absolute; border-radius: 50%; filter: blur(calc(90 * var(--u))); opacity: .35; }
+  #grid { position: absolute; inset: 0; opacity: .07;
+    background-image: linear-gradient(var(--text) 1px, transparent 1px), linear-gradient(90deg, var(--text) 1px, transparent 1px);
+    background-size: calc(80 * var(--u)) calc(80 * var(--u)); }
+  #content { position: absolute; left: 7.5%; top: 15%; right: 7.5%; bottom: 14%; }
+  body.split #content { right: 46%; }
+  body.vertical #content { left: 8%; right: 8%; top: 12%; bottom: 40%; }
+  body.vertical.split #content { right: 8%; top: 9%; }
+  #bar { height: calc(10 * var(--u)); width: calc(120 * var(--u)); background: var(--accent); border-radius: 99px; transform-origin: left center; margin-bottom: calc(30 * var(--u)); }
+  #title { color: var(--title); font-weight: 700; font-size: calc(76 * var(--u)); line-height: 1.16; letter-spacing: -.01em; }
+  #title .w { display: inline-block; white-space: pre; }
+  #bullets { list-style: none; margin-top: calc(48 * var(--u)); }
+  #bullets li { position: relative; color: var(--text); font-size: calc(44 * var(--u)); line-height: 1.3; padding-left: calc(56 * var(--u)); margin-bottom: calc(28 * var(--u)); }
+  #bullets li .dot { position: absolute; left: calc(4 * var(--u)); top: calc(18 * var(--u)); width: calc(20 * var(--u)); height: calc(20 * var(--u)); border-radius: 50%; background: var(--accent); box-shadow: 0 0 calc(18 * var(--u)) var(--accent); }
+  #stat { margin-top: calc(70 * var(--u)); display: flex; align-items: center; gap: calc(48 * var(--u)); }
+  #stat svg { width: calc(300 * var(--u)); height: calc(300 * var(--u)); flex: none; }
+  #stat .num { color: var(--title); font-weight: 700; font-size: calc(150 * var(--u)); line-height: 1; }
+  #stat .lab { color: var(--text); font-size: calc(40 * var(--u)); margin-top: calc(14 * var(--u)); max-width: calc(800 * var(--u)); }
+  /* 9:16 is watched on a phone: bigger type, stat stacked */
+  body.vertical #title { font-size: calc(100 * var(--u)); }
+  body.vertical #bullets li { font-size: calc(58 * var(--u)); padding-left: calc(70 * var(--u)); }
+  body.vertical #bullets li .dot { top: calc(26 * var(--u)); width: calc(24 * var(--u)); height: calc(24 * var(--u)); }
+  body.vertical #stat { flex-direction: column; align-items: flex-start; gap: calc(30 * var(--u)); }
+  body.vertical #stat .num { font-size: calc(190 * var(--u)); }
+  body.vertical #stat .lab { font-size: calc(50 * var(--u)); }
+  body.vertical #foot { font-size: calc(30 * var(--u)); }
+  #three { position: absolute; right: 2%; top: 8%; width: 46%; height: 84%; }
+  body.vertical #three { left: 0; right: 0; top: auto; bottom: 18%; width: 100%; height: 44%; }
+  /* top, not bottom: burned-in subtitles own the bottom band */
+  #foot { position: absolute; left: 7.5%; right: 7.5%; top: 5%; display: flex; align-items: center; gap: calc(24 * var(--u)); color: var(--text); font-size: calc(24 * var(--u)); opacity: .8; }
+  body.vertical #foot { top: 4%; }
+  #track { flex: 1; height: calc(4 * var(--u)); background: rgba(255,255,255,.14); border-radius: 99px; overflow: hidden; }
+  #fill { height: 100%; width: 0; background: var(--accent); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bgimg"></div>
+  <div class="blob" id="b1"></div><div class="blob" id="b2"></div>
+  <div id="grid"></div>
+  <canvas id="three"></canvas>
+  <div id="content">
+    <div id="bar"></div>
+    <h1 id="title"></h1>
+    <ul id="bullets"></ul>
+    <div id="stat"></div>
+  </div>
+  <div id="foot"><span id="num"></span><div id="track"><div id="fill"></div></div><span id="brand"></span></div>
+</div>
+<script src="/vendor/anime.umd.min.js"></script>
+<script type="module">
+import * as THREE from "/vendor/three.module.min.js";
+
+const $ = (s) => document.querySelector(s);
+let tl = null, three = null, D = null;
+
+function words(el, text) {
+  el.textContent = "";
+  for (const part of text.split(/(\s+)/)) {
+    if (!part) continue;
+    const s = document.createElement("span");
+    s.className = "w"; s.textContent = part; el.appendChild(s);
+  }
+  return el.querySelectorAll(".w");
+}
+
+function setupThree(shape, accent, W, H) {
+  const canvas = $("#three");
+  const r = canvas.getBoundingClientRect();
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(1);
+  renderer.setSize(r.width, r.height, false);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(40, r.width / r.height, 0.1, 100);
+  const col = new THREE.Color(accent);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+  const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(3, 4, 5); scene.add(key);
+  const rim = new THREE.PointLight(col, 40, 20); rim.position.set(-3, -1, 2); scene.add(rim);
+  const group = new THREE.Group(); scene.add(group);
+  const geos = {
+    globe: () => new THREE.IcosahedronGeometry(1.25, 3),
+    cube: () => new THREE.BoxGeometry(1.6, 1.6, 1.6, 2, 2, 2),
+    torus: () => new THREE.TorusKnotGeometry(0.9, 0.3, 160, 24),
+    network: () => new THREE.IcosahedronGeometry(1.3, 1),
+  };
+  const geo = (geos[shape] || geos.globe)();
+  const solid = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: col, metalness: 0.35, roughness: 0.35, transparent: true, opacity: shape === "network" ? 0.15 : 0.9 }));
+  const wire = new THREE.LineSegments(new THREE.WireframeGeometry(geo), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 }));
+  wire.scale.setScalar(1.002);
+  group.add(solid, wire);
+  if (shape === "network") {
+    const pos = geo.getAttribute("position");
+    const nodeGeo = new THREE.SphereGeometry(0.06, 16, 16);
+    const nodeMat = new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 1.4 });
+    for (let i = 0; i < pos.count; i += 3) {
+      const n = new THREE.Mesh(nodeGeo, nodeMat); n.position.fromBufferAttribute(pos, i); group.add(n);
+    }
+  }
+  // orbiting particles: positions are a pure function of t
+  const N = 140, pts = new Float32Array(N * 3), seeds = [];
+  for (let i = 0; i < N; i++) seeds.push([1.9 + (i % 7) * 0.12, (i * 2.399) % (Math.PI * 2), ((i * 0.618) % 1) * 1.6 - 0.8, 0.15 + (i % 5) * 0.05]);
+  const pg = new THREE.BufferGeometry(); pg.setAttribute("position", new THREE.BufferAttribute(pts, 3));
+  const cloud = new THREE.Points(pg, new THREE.PointsMaterial({ color: col, size: 0.035, transparent: true, opacity: 0.9 }));
+  scene.add(cloud);
+  return {
+    render(t) {
+      const ease = 1 - Math.pow(1 - Math.min(t / 1.6, 1), 3);
+      group.scale.setScalar(0.55 + 0.45 * ease);
+      group.rotation.set(0.35 + 0.08 * Math.sin(t * 0.5), t * 0.45, 0);
+      camera.position.set(0, 0.25, 6.2 - 0.9 * ease - 0.04 * t); camera.lookAt(0, 0, 0);
+      for (let i = 0; i < N; i++) {
+        const [rad, ph, y, sp] = seeds[i], a = ph + t * sp;
+        pts[i * 3] = Math.cos(a) * rad; pts[i * 3 + 1] = y + 0.1 * Math.sin(a * 2); pts[i * 3 + 2] = Math.sin(a) * rad;
+      }
+      pg.attributes.position.needsUpdate = true;
+      cloud.material.opacity = 0.9 * ease;
+      renderer.render(scene, camera);
+    },
+  };
+}
+
+window.__setup = async (data) => {
+  D = data;
+  const { createTimeline, stagger } = anime;
+  const root = document.documentElement.style;
+  for (const [k, v] of Object.entries(data.colors)) root.setProperty(`--${k}`, v);
+  const vertical = data.height > data.width;
+  root.setProperty("--u", `${data.height / (vertical ? 1920 : 1080)}px`);
+  document.body.classList.toggle("vertical", vertical);
+  const layout = data.layout;
+  document.body.classList.toggle("split", layout === "3d");
+  if (data.background) $("#bgimg").style.backgroundImage = `url("/bg")`;
+  else $("#bgimg").style.display = "none";
+  const u = data.height / (vertical ? 1920 : 1080);
+  Object.assign($("#b1").style, { width: `${700 * u}px`, height: `${700 * u}px`, background: data.colors.accent });
+  Object.assign($("#b2").style, { width: `${900 * u}px`, height: `${900 * u}px`, background: data.colors.bg2 });
+  $("#num").textContent = data.counter || "";
+  $("#brand").textContent = data.footer || "";
+
+  const ws = words($("#title"), data.title);
+  const ul = $("#bullets");
+  // a stat slide is about its one number: the bullets stay in the narration
+  for (const b of (layout === "stat" && data.stat) ? [] : data.bullets) {
+    const li = document.createElement("li");
+    li.innerHTML = '<span class="dot"></span>'; li.appendChild(document.createTextNode(b)); ul.appendChild(li);
+  }
+  const S = data.seconds * 1000;
+  tl = createTimeline({ autoplay: false, defaults: { ease: "outExpo" } });
+  tl.add("#bar", { scaleX: [0, 1], duration: 900 }, 0)
+    .add(ws, { opacity: [0, 1], translateY: [`${40 * u}px`, 0], filter: ["blur(8px)", "blur(0px)"], duration: 900, delay: stagger(70) }, 150);
+
+  // Bullets arrive one by one across the slide, roughly following the narration.
+  const lis = ul.querySelectorAll("li");
+  const first = 900, span = Math.max(S * 0.62 - first, 600);
+  lis.forEach((li, i) => {
+    const at = first + (lis.length > 1 ? span * i / (lis.length - 1) : 0);
+    tl.add(li, { opacity: [0, 1], translateX: [`${-60 * u}px`, 0], duration: 800 }, at)
+      .add(li.querySelector(".dot"), { scale: [0, 1.35, 1], duration: 700, ease: "outBack" }, at);
+  });
+
+  if (layout === "stat" && data.stat) {
+    const st = $("#stat");
+    const m = String(data.stat.value).match(/^([^\d-]*)(-?[\d.,]+)(.*)$/);
+    st.innerHTML = `<svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="10"/>
+      <circle id="arc" cx="60" cy="60" r="52" fill="none" stroke="${data.colors.accent}" stroke-width="10" stroke-linecap="round"
+      transform="rotate(-90 60 60)" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"/></svg>
+      <div><div class="num"></div><div class="lab"></div></div>`;
+    st.querySelector(".lab").textContent = data.stat.label || "";
+    const num = st.querySelector(".num");
+    const target = m ? parseFloat(m[2].replace(/,/g, "")) : null;
+    const decimals = m && m[2].includes(".") ? m[2].split(".")[1].length : 0;
+    const frac = m && m[3].match(/^\s*\/\s*([\d.]+)/);  // "9/10" fills 90 %
+    const pct = !m ? 78 : m[3].trim().startsWith("%") ? Math.max(0, Math.min(target, 100))
+      : frac ? Math.max(0, Math.min(100 * target / parseFloat(frac[1]), 100)) : 78;
+    const counter = { v: 0 };
+    num.textContent = m ? `${m[1]}0${m[3]}` : data.stat.value;
+    tl.add(st, { opacity: [0, 1], scale: [0.9, 1], duration: 700 }, 700)
+      .add("#arc", { strokeDashoffset: [100, 100 - pct], duration: 1800, ease: "inOutQuart" }, 800);
+    if (m) tl.add(counter, { v: [0, target], duration: 1800, ease: "inOutQuart",
+      onUpdate: () => { num.textContent = `${m[1]}${counter.v.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}${m[3]}`; } }, 800);
+  } else {
+    $("#stat").style.display = "none";
+  }
+  tl.add("#foot", { opacity: [0, 0.8], duration: 600 }, 400);
+  if (layout === "3d") three = setupThree(data.shape || "globe", data.colors.accent, data.width, data.height);
+  else $("#three").style.display = "none";
+  await document.fonts.ready;
+  if (data.background) await new Promise((ok) => { const i = new Image(); i.onload = i.onerror = ok; i.src = "/bg"; });
+  return true;
+};
+
+window.__seek = (t) => {
+  tl.seek(Math.min(t * 1000, tl.duration));
+  const W = D.width, H = D.height;
+  // slow ambient drift so a held slide never looks frozen
+  $("#b1").style.transform = `translate(${W * (0.62 + 0.06 * Math.sin(t * 0.35))}px, ${H * (-0.12 + 0.05 * Math.cos(t * 0.3))}px)`;
+  $("#b2").style.transform = `translate(${W * (-0.18 + 0.05 * Math.cos(t * 0.25))}px, ${H * (0.48 + 0.06 * Math.sin(t * 0.28))}px)`;
+  $("#bgimg").style.transform = `scale(${1 + 0.06 * t / D.seconds})`;
+  $("#fill").style.width = `${Math.min(100, 100 * (D.progress0 + (D.progress1 - D.progress0) * t / D.seconds))}%`;
+  if (three) three.render(t);
+};
+window.__ready = true;
+</script>
+</body>
+</html>

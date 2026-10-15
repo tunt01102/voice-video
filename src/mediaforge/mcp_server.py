@@ -124,7 +124,8 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
                        pronunciations: dict[str, str] | None = None, verified_terms: list[str] | None = None,
                        karaoke: bool = True, document: str | None = None, document_as: str = "brief",
                        structure: str = "auto", cards: bool | None = None, critique: bool = True,
-                       review: list[str] | None = None, wait_seconds: float = 0) -> dict[str, Any]:
+                       review: list[str] | None = None, slides_engine: str = "static", theme: str = "midnight",
+                       wait_seconds: float = 0) -> dict[str, Any]:
     """Create a narrated video with cloned voice, generated visuals and subtitles.
 
     kind: 'narrated' (16:9 AI visuals), 'short' (9:16 with karaoke subtitles), 'explainer' (slides).
@@ -143,6 +144,9 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
     cards: title + end card (default on for 16:9 narrated/explainer). critique: one self-review pass of the script
     (default on). review: ["plan", "visuals"] pauses the job (status 'waiting') for the owner to approve in the
     dashboard — leave empty for a one-shot render.
+    slides_engine (explainer only): 'static' (Pillow slides) or 'animated' — presentation slides with animated
+    titles/bullets, count-up stat slides and rotating three.js 3D slides (layout per slide from the plan, or
+    'layout'/'stat'/'shape' in a plan_file). theme: midnight | ocean | paper | block8.
     """
     return await _submit(kind, {"brief": brief, "script": script, "lang": lang, "voice": voice, "seconds": seconds,
                                 "style": style, "aspect": aspect, "music": music, "fx": _fx(pitch=pitch),
@@ -151,6 +155,7 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
                                 "pronunciations": pronunciations, "verified_terms": verified_terms,
                                 "karaoke": karaoke, "document": document, "document_as": document_as,
                                 "structure": structure, "critique": critique, "review": review or [],
+                                "slides_engine": slides_engine, "theme": theme,
                                 **({"cards": cards} if cards is not None else {})},
                          wait_seconds)
 

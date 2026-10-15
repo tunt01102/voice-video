@@ -17,7 +17,7 @@ from mediaforge import audio as A
 from mediaforge.config import settings
 from mediaforge.text import documents as D
 from mediaforge.text.normalize import detect_lang, split_sentences
-from mediaforge.video import clips, compose, slides
+from mediaforge.video import animate, clips, compose, slides
 from mediaforge.voice import speak as S
 
 log = logging.getLogger(__name__)
@@ -70,7 +70,10 @@ def plan(brief: str, *, lang: str, kind: str = "narrated", seconds: int = 60, sc
         "short": "This is a vertical short (TikTok/Reels/Shorts): open with a strong hook in the first sentence, "
                  "short punchy sentences, end with a call to action.",
         "explainer": "This is an explainer: each scene is a slide with a concise title and 2-4 short bullets; "
-                     "narration explains the slide conversationally.",
+                     "narration explains the slide conversationally. Give each slide a \"layout\": \"bullets\" "
+                     "(default), \"stat\" when the slide is about one key number (then add \"stat\": {\"value\": "
+                     "\"87%\", \"label\": \"...\"}), or \"3d\" for at most two big-idea slides (then add "
+                     "\"shape\": globe | cube | torus | network).",
         "narrated": "This is a narrated documentary-style video: clear structure (intro, body, conclusion).",
     }[kind]
     images_note = (
@@ -101,7 +104,7 @@ Mark at most 3 scenes that open a new section with "chapter": "<2-4 word heading
 Return JSON:
 {{"title": "...", "description": "one-sentence summary in {LANG_NAME[lang]}", "structure": "<shape used>",
   "art_direction": {{"motif": "...", "camera": "...", "palette": ["...", "..."], "music_mood": "..."}},
-  "scenes": [{{"narration": "...", "visual_prompt": "...", "mood": "...", "chapter": "", "slide_title": "...", "bullets": ["..."]{', "image": 1' if n_images else ''}}}],
+  "scenes": [{{"narration": "...", "visual_prompt": "...", "mood": "...", "chapter": "", "slide_title": "...", "bullets": ["..."]{', "layout": "bullets"' if kind == "explainer" else ''}{', "image": 1' if n_images else ''}}}],
   {'"hooks": ["...", "..."], ' if kind == "short" else ''}"cta": "...", "hashtags": ["..."]}}
 (slide_title and bullets are required only for explainers.)"""
     prompt += lessons_note(kind, style)
@@ -426,6 +429,12 @@ def build_visuals(p: dict[str, Any], plan_data: dict[str, Any], out: Path, durat
     media = p.get("media") or []
     use_clips = bool(p.get("clips")) and clips.available()
     fallback = False
+    animated = kind == "explainer" and p.get("slides_engine") == "animated"
+    if animated and not animate.available():
+        animated = False
+        report.setdefault("warnings", []).append("slides_engine=animated needs playwright; used static slides")
+    pending: list[tuple[Path, dict[str, Any]]] = []  # animated slides, rendered after every picture is made
+    total = sum(durations) or 1.0
     for i, sc in enumerate(scenes_in):
         progress(i / len(scenes_in), f"visual {i + 1}/{len(scenes_in)}")
         if kind == "screen":
@@ -456,7 +465,19 @@ def build_visuals(p: dict[str, Any], plan_data: dict[str, Any], out: Path, durat
                                      style=style if style in image.STYLE_PRESETS else "none",
                                      quality=p.get("image_quality", "standard"))
                 bg = gen["image"]
-        if kind == "explainer":
+        if animated:
+            # Each clip covers its slot plus the 0.5 s cross-fade, so compose never has to loop or hold it.
+            need = durations[i] + 0.5
+            clip = out / "slides" / f"slide_{i + 1:02d}.mp4"
+            if not (reuse and clip.exists() and abs(A.probe_duration(clip) - need) <= 0.1):
+                pending.append((clip, dict(
+                    title=sc.get("slide_title") or plan_data["title"], bullets=sc.get("bullets") or [], seconds=need,
+                    theme=p.get("theme", "midnight"), layout=animate.layout_of(sc, i), shape=sc.get("shape") or "globe",
+                    stat=sc.get("stat") if isinstance(sc.get("stat"), dict) else None, background=bg,
+                    counter=f"{i + 1:02d} / {len(scenes_in):02d}", footer=plan_data.get("title") or "",
+                    progress=(sum(durations[:i]) / total, sum(durations[:i + 1]) / total))))
+            visuals.append(compose.Scene(str(clip), durations[i], kind="video", fill="hold"))
+        elif kind == "explainer":
             sl = slides.render_slide(out / "slides" / f"slide_{i + 1:02d}.png", sc.get("slide_title") or plan_data["title"],
                                      sc.get("bullets") or [], width=W, height=H, theme=p.get("theme", "midnight"), background=bg)
             visuals.append(compose.Scene(str(sl), durations[i], motion="static" if not bg else "zoom_in"))
@@ -469,6 +490,13 @@ def build_visuals(p: dict[str, Any], plan_data: dict[str, Any], out: Path, durat
             fallback = fallback or bool(p.get("clips") and bg)
             visuals.append(compose.Scene(bg or str(slides.render_slide(out / "slides" / f"slide_{i + 1:02d}.png", sc["narration"][:80], [], width=W, height=H)),
                                          durations[i]))
+    if pending:
+        # One Chromium for the deck, opened only once the image model is done: an open WebGL (Metal) context
+        # slowed concurrent mflux generation ~3× in the first E2E run.
+        with animate.renderer(W, H) as anim:
+            for k, (clip, kw) in enumerate(pending):
+                progress(0.9 + 0.1 * k / len(pending), f"animated slide {k + 1}/{len(pending)}")
+                anim.scene(clip, **kw)
     for v, sc in zip(visuals, scenes_in):  # owner overrides from the storyboard
         v.motion = sc.get("motion") or v.motion
         v.transition = sc.get("transition") or v.transition
@@ -481,6 +509,7 @@ def build_visuals(p: dict[str, Any], plan_data: dict[str, Any], out: Path, durat
 
 
 CLIP_TOLERANCE = 0.15  # s: a clip this close to its slot needs nothing
+XFADE = 0.5            # s: compose's cross-fade (run_video passes transition=0.5)
 HOLD_MAX = 1.5         # s: a clip short by at most this much (or 25 %) freezes on its last frame; beyond, it loops
 
 
@@ -499,7 +528,8 @@ def fit_clips(visuals: list[compose.Scene], report: dict[str, Any]) -> None:
         except Exception:  # noqa: BLE001 — an unreadable clip fails later in compose with a clearer error
             continue
         need = v.duration
-        if abs(need - have) <= CLIP_TOLERANCE:
+        # Each segment runs on for the 0.5 s cross-fade into the next scene, so that much extra is shown, not cut.
+        if -CLIP_TOLERANCE <= have - need <= XFADE + CLIP_TOLERANCE:
             continue
         if need < have:
             mode = "cut"
