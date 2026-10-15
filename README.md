@@ -174,6 +174,7 @@ claude mcp add -s user --transport http mediaforge http://127.0.0.1:8765/mcp
 | `generate_image` | Prompt → image(s) |
 | `prepare_video` | Writes the script and lists terms the TTS may misread, before rendering. Returns `plan_file` + `candidates`. |
 | `create_video` | `kind`: `narrated`, `short` or `explainer`. Input is a brief, your own script, slide markdown, or a `plan_file` from `prepare_video` with `pronunciations` (`{"PNJ": "Pi En Di"}`). Returns a `job_id`. |
+| `revoice_video` | Reads a finished video again in another voice (clone, blend or stock); keeps script and pictures |
 | `resubtitle_video` | Rebuilds a finished video's subtitles (fit-to-frame, karaoke) without re-rendering voice or images |
 | `repronounce_video` | Fixes how words are read in a finished video (`{"PNJ": "Pi En Di"}`): re-reads only those sentences and exports a new MP4, no re-render |
 | `voiceover_recording` | Narration and subtitles over a screen recording |
@@ -201,6 +202,15 @@ is written (`PNJ`) and how to read it (`Pi En Di`); add more rows as needed. The
 Every sentence containing the word is read again and spliced into a new MP4. The pictures and subtitles are not
 re-rendered. The reading is saved to the lexicon, so later videos get it right. CLI:
 `mediaforge repronounce <job-id> PNJ="Pi En Di"`.
+
+To hear a finished video in another voice, open the video's page (**Jobs → Mở**) and press **🎙 Đổi giọng**.
+Pick one of your voices or a **Giọng mẫu** (▶ plays its sample at once), optionally move the pitch, and press
+**Đổi sang giọng này**. The page shows an estimate first (about 1 minute per minute of video for a stock voice,
+about 3 minutes for your cloned voice with `best` routing). Only the narration is read again: the script and
+pictures stay. Subtitles, karaoke, title/end cards, chapter headings and music move to the new timing. AI clips
+with a fixed length are cut, held on their last frame, or looped, and each case is listed as a warning. Per-sentence
+re-reads of the old voice are dropped. Your pronunciations are kept. The old render goes to `data/trash/`. Someone
+else's voice needs recorded consent (Giọng nói tab). MCP: `revoice_video(job_id, voice, pitch?)`.
 
 ## How pronunciation is kept correct
 

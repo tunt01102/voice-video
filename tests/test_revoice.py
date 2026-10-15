@@ -292,6 +292,32 @@ def test_interrupted_revoice_resumes_without_resynthesis(env, monkeypatch):
     assert res["seconds"]["voice"] is not None and db.get_job(src["id"])["result"]["voice_id"] == "stock-x"
 
 
+def test_crash_after_compose_keeps_the_original_render_in_trash(env, monkeypatch):
+    """Killed after recompose swapped the render but before the job noted it: the redo must not overwrite the
+    original in trash with the first new render."""
+    src = source_video()
+    out = Path(src["result"]["video"]).parent
+    (out / "final.mp4").write_bytes(b"ORIGINAL")
+    real = P.recompose
+    calls = []
+
+    def once_then_die(*a, **k):
+        res = real(*a, **k)
+        calls.append(1)
+        if len(calls) == 1:
+            raise SystemExit("server died")
+        return res
+
+    monkeypatch.setattr(P, "recompose", once_then_die)
+    job = db.create_job("revoice", {"job": src["id"], "voice": "stock-x"})
+    with pytest.raises(SystemExit):
+        P.run("revoice", job["params"], prog, job_id=job["id"])
+    res = P.run("revoice", job["params"], prog, job_id=job["id"])
+    finals = sorted(Path(res["trash"]).glob("final*.mp4"))
+    assert len(finals) == 2 and b"ORIGINAL" in [f.read_bytes() for f in finals]
+    assert db.get_job(src["id"])["result"]["voice_id"] == "stock-x"
+
+
 def test_failed_compose_leaves_the_source_untouched(env, monkeypatch):
     src = source_video()
     monkeypatch.setattr(compose, "compose", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("ffmpeg")))

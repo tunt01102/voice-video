@@ -129,14 +129,6 @@ def dropped_edits(job: dict[str, Any]) -> dict[str, Any]:
             "exports": len(r.get("exports") or []), "repronounced": len(r.get("repronounced") or [])}
 
 
-def _move(src: Path, dest_dir: Path) -> None:
-    if src.exists():
-        dest = dest_dir / src.name
-        if dest.exists():  # a resumed swap: keep both
-            dest = dest_dir / f"{src.name}.{time.strftime('%H%M%S')}"
-        shutil.move(str(src), dest)
-
-
 def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
     """p: {job, voice, fx?, engine?}. Resumable: the new voice is kept in out/.revoice-<id>/ until it is swapped in."""
     from mediaforge import pipelines as P
@@ -202,7 +194,7 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
     trash.mkdir(parents=True, exist_ok=True)
     for name in ("voice", "voice.wav", "voice.json", "takes"):
         if (work / name).exists() or name in ("voice.json", "takes"):
-            _move(out / name, trash)
+            P.to_trash(out / name, trash)
     for name in ("voice", "voice.wav"):
         if (work / name).exists():
             shutil.move(str(work / name), out / name)

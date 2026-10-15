@@ -822,6 +822,16 @@ def run_resubtitle(p: dict[str, Any], progress: Progress, job_id: str | None = N
     return recompose(p, progress, new_subtitles=True)
 
 
+def to_trash(src: str | Path, trash: Path) -> None:
+    """Move into trash, never over something already there (a resumed job reuses its trash folder)."""
+    src = Path(src)
+    if src.exists():
+        dest = trash / src.name
+        if dest.exists():
+            dest = trash / f"{src.stem}.{time.strftime('%H%M%S')}-{time.time_ns() % 10**6}{src.suffix}"
+        shutil.move(str(src), dest)
+
+
 def recompose(p: dict[str, Any], progress: Progress, *, new_subtitles: bool,
               param_changes: dict[str, Any] | None = None, trash: Path | None = None,
               voice_dir: Path | None = None, words: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -887,12 +897,10 @@ def recompose(p: dict[str, Any], progress: Progress, *, new_subtitles: bool,
         trash.mkdir(parents=True, exist_ok=True)
         fresh = T.load_done_job(src_id)["result"]
         for e in fresh.get("exports") or []:
-            if Path(e["file"]).exists():
-                shutil.move(e["file"], trash / Path(e["file"]).name)
-        shutil.move(str(out / "final.mp4"), trash / "final.mp4")
+            to_trash(e["file"], trash)
+        to_trash(out / "final.mp4", trash)
         for ext in ("srt", "vtt", "ass"):
-            if (out / f"subtitles.{ext}").exists():
-                shutil.move(str(out / f"subtitles.{ext}"), trash / f"subtitles.{ext}")
+            to_trash(out / f"subtitles.{ext}", trash)
             shutil.move(subs[ext], out / f"subtitles.{ext}")
         shutil.move(str(final_new), out / "final.mp4")
         (out / "visuals.json").write_text(vis_json)  # only once the new render exists
