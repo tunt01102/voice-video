@@ -8,8 +8,8 @@ const api = async (path, opts = {}) => {
 };
 const toast = (msg) => { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 3500); };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const TYPE_LABEL = { tts: "Giọng nói", image: "Ảnh", subtitle: "Phụ đề", short: "Short", narrated: "Video", explainer: "Explainer", screen: "Screen", video: "Video", enrol: "Thu mẫu", rerender: "Đọc lại câu", export: "Xuất file", prepare: "Chuẩn bị kịch bản", resubtitle: "Dựng lại phụ đề", repronounce: "Sửa phát âm", sing: "Hát", recite: "Ngâm thơ", restage: "Dựng lại cảnh", eval: "Kiểm thử giọng" };
-const HIDDEN_TYPES = ["enrol", "rerender", "export", "prepare", "resubtitle", "repronounce", "blend", "restage"];
+const TYPE_LABEL = { tts: "Giọng nói", image: "Ảnh", subtitle: "Phụ đề", short: "Short", narrated: "Video", explainer: "Explainer", screen: "Screen", video: "Video", enrol: "Thu mẫu", rerender: "Đọc lại câu", export: "Xuất file", prepare: "Chuẩn bị kịch bản", resubtitle: "Dựng lại phụ đề", repronounce: "Sửa phát âm", sing: "Hát", recite: "Ngâm thơ", restage: "Dựng lại cảnh", revoice: "Đổi giọng", eval: "Kiểm thử giọng" };
+const HIDDEN_TYPES = ["enrol", "rerender", "export", "prepare", "resubtitle", "repronounce", "blend", "restage", "revoice"];
 
 // ------------------------------------------------------------------ tabs
 $$("#tabs button").forEach((b) => b.onclick = () => {
