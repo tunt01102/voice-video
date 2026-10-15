@@ -369,7 +369,11 @@ def make_plan(p: dict[str, Any], kind: str, *, style: str, seconds: int) -> tupl
         lang = lang if lang != "auto" else detect_lang(" ".join(s["narration"] for s in md_slides))
         plan_data = {"title": md_slides[0]["title"] if md_slides else "Explainer",
                      "scenes": [{"narration": s["narration"], "slide_title": s["title"], "bullets": s["bullets"],
-                                 "visual_prompt": "", "image": doc_image(p, s.get("image"))} for s in md_slides]}
+                                 "visual_prompt": "", "image": doc_image(p, s.get("image")),
+                                 **{k: s[k] for k in ("layout", "stat", "shape", "text_fx", "mood") if k in s}}
+                                for s in md_slides]}
+        if warns := [f"slide {i + 1}: {w}" for i, s in enumerate(md_slides) for w in s.get("warnings", [])]:
+            plan_data["warnings"] = warns
     elif p.get("script"):
         lang = lang if lang != "auto" else detect_lang(D.strip_markers(p["script"]))
         if kind == "screen":
@@ -744,6 +748,8 @@ def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
         (out / "plan.json").write_text(json.dumps(plan_data, ensure_ascii=False, indent=2))
         report["llm"] = plan_data.get("llm")
         report["lint"] = plan_data.get("lint", [])
+        if plan_data.get("warnings"):  # e.g. an unknown @layout in slide markdown
+            report.setdefault("warnings", []).extend(plan_data["warnings"])
         timings["plan"] = round(time.time() - ts, 1)
         done("plan", lang=lang)
     gate("plan", {"plan": str(out / "plan.json"), "plan_data": plan_data, "lang": lang, "title": plan_data.get("title")})

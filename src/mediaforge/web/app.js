@@ -52,7 +52,7 @@ function applyKind() {
   const src = f.source.value;
   f.text.placeholder = kind === "tts" ? "Văn bản cần đọc (Tiếng Việt / English / trộn lẫn)…"
     : src === "brief" ? "Ý tưởng video, ví dụ: 5 mẹo bảo mật mật khẩu cho nhân viên văn phòng"
-    : src === "slides" ? "# Tiêu đề slide\n- ý 1\n- ý 2\n> Lời thuyết minh cho slide này"
+    : src === "slides" ? "# Tiêu đề slide\n- ý 1\n- ý 2\n> Lời thuyết minh cho slide này\n\n# Slide con số (slide động)\n@layout stat 87% | khách hàng quay lại\n@fx type\n> Gần chín phần mười khách hàng quay lại."
     : "Kịch bản lời đọc của bạn…";
   $("#create-hint").textContent = isVideo ? "Video mất vài phút — theo dõi ở tab Jobs." : "";
   if (!isVideo) $("#prescan").hidden = true;
