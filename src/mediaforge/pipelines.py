@@ -285,7 +285,7 @@ def run_tts(p: dict[str, Any], progress: Progress, job_id: str | None = None) ->
     r = S.speak(D.strip_markers(p["text"]), voice=p.get("voice"), lang=p.get("lang", "auto"), engine=p.get("engine"),
                 fx=p.get("fx"), out_dir=out, name="voice", seed=int(p.get("seed", 1234)), progress=progress,
                 overrides=p.get("overrides"), regen=p.get("regen"), takes=p.get("takes"), timings=not preview,
-                english=p.get("english_terms"))
+                english=p.get("english_terms"), one_voice=bool(p.get("one_voice")))
     r["sentence_spans"] = sentence_spans([x["text"] for x in r["sentences"]], r["words"])
     if p.get("subtitles", not preview) and r["words"]:
         r["subtitles"] = subtitles.write_all(r["words"], out / "voice")
@@ -657,6 +657,12 @@ def invalidate(out: Path, after: str) -> None:
     save_stage_state(out, state)
 
 
+def one_voice(p: dict[str, Any], lang: str) -> bool:
+    """"Một giọng cho cả video": every sentence of the job on one engine. Default on for Vietnamese videos."""
+    v = p.get("one_voice")
+    return lang == "vi" if v is None else bool(v)
+
+
 def voice_stage(p: dict[str, Any], plan_data: dict[str, Any], out: Path, *, lang: str, voice: str | None,
                 width: int, height: int, progress: Progress) -> dict[str, Any]:
     """Narration per scene → out/voice/scene_NN.wav, out/voice.wav (with silence under the cards), word timings,
@@ -670,7 +676,7 @@ def voice_stage(p: dict[str, Any], plan_data: dict[str, Any], out: Path, *, lang
         r = S.speak(sc["narration"], voice=voice, lang=lang, engine=p.get("engine"), fx=p.get("fx"),
                     out_dir=out / "voice", name=f"scene_{i + 1:02d}", seed=int(p.get("seed", 1234)) + 100 * i,
                     timings=False, overrides=p.get("overrides"), regen=p.get("regen"), takes=p.get("takes"),
-                    english=p.get("english_terms"))
+                    english=p.get("english_terms"), one_voice=one_voice(p, lang))
         scene_audio.append(A.load(r["audio"]))
         scene_reports.append(r)
     voice_track = A.crossfade_concat(scene_audio, [SCENE_GAP] * (len(scene_audio) - 1), fade=0.005)

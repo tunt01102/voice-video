@@ -85,12 +85,14 @@ def speak(
     voice: Optional[str] = None, lang: str = "auto", engine: Optional[str] = None,
     pitch: Optional[float] = typer.Option(None, help="semitones, negative = deeper"),
     pace: Optional[float] = None, warmth: Optional[float] = None, clarity: Optional[float] = None,
+    one_voice: bool = typer.Option(False, help="one engine for every sentence (no voice change)"),
     local: bool = typer.Option(False, help="run in-process even if the server is up"),
 ) -> None:
     """Text → cloned-voice audio (+ subtitles), with pronunciation QA."""
     if text.startswith("@"):
         text = Path(text[1:]).read_text("utf-8")
-    _run("tts", {"text": text, "voice": voice, "lang": lang, "engine": engine, "fx": _fx(pitch, pace, warmth, clarity)}, local)
+    _run("tts", {"text": text, "voice": voice, "lang": lang, "engine": engine, "fx": _fx(pitch, pace, warmth, clarity),
+                 **({"one_voice": True} if one_voice else {})}, local)
 
 
 @app.command()
