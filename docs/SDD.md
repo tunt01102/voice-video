@@ -212,6 +212,29 @@ provenance: SDD-stock-voices.md.
    Measured on the data-store copy (gi-ng-t, `best`, 3 mixed sentences): default → VoxCPM for sentence 1 and
    VieNeu for 2–3 (voice change), 70 s; English-kept → VieNeu for all three, 1 attempt each, 31 s, Whisper heard
    every English term as written. Revoice carries the marks to the new voice.
+   **Multi-word terms** (2026-10-16): the pre-scan joins adjacent foreign / brand / acronym words separated only by
+   spaces into one term ("pull request", "slash command", "Claude Code", "AI agent"; at most 4 words, a longer
+   English clause stays as single words), so "tiếng Anh" is ticked once. A longer run is cut around a part that also
+   stands alone in the script or is a multi-word lexicon term ("review pull request" → "review" + "pull request").
+   A standalone word is counted only where it is not inside a listed phrase (`pronounce._runs`, `_split_known`).
+   **Whose answers are saved** (2026-10-16): only the owner's. Plan-gate answers in the dashboard are sent with
+   `from_owner` and stored as `owner_terms` → saved to the lexicon before the voice stage, as before. Readings that
+   come with a request — MCP/REST `pronunciations`, `verified_terms`, `english_terms` — are **job-local**
+   (`pronounce.job_terms`): applied to that job only (`synth_sentence(readings=…)`, part of the cache key), never
+   written to the lexicon, and a term the owner already answered (`manual` / `verified` / `english`, global or for
+   the voice, case-insensitive) keeps the owner's answer. Conflicts are listed in the report as
+   `job_terms.kept_owner` (term → {owner, request}). Revoice passes a request's terms job-local to the new voice and
+   carries only the owner's answers into its lexicon. (Incident 2026-10-16: an MCP job overwrote "Claude Code →
+   clốt cốt" and "GitHub → gít háp".)
+   **Một giọng cho cả video** (`one_voice`, 2026-10-16): every sentence of a job uses one engine, chosen once by
+   `speak.job_engine` — a stock voice's engine, an explicit engine, the voice's route, or under `best` the
+   language default (VieNeu for vi; a blend keeps a blend-capable engine). `synth_sentence(lock_engine=True)`
+   drops the other engine from the first pass, from repair (`engine` strategy), from guide prompts and from
+   `engine_route` lessons. Default on for Vietnamese videos (`pipelines.one_voice`: `one_voice=None` → lang == vi),
+   opt-in for `speak`; 🔁 re-reads and revoice keep the job's lock. Measured on the data-store copy (gi-ng-t, route
+   `best`, the 18-sentence script of job a5bde995ad72, cache cleared): default → VieNeu 15 / VoxCPM 3, **4 engine
+   changes between sentences**, 483.6 s, 41 attempts, QA 18/18; `one_voice` → VieNeu 18, **0 changes**, **180.1 s**,
+   24 attempts, QA 18/18 (first take passed 17/18 in both).
 2. **Split** into sentences/clauses ≤ 220 chars.
 3. **Synthesise** each sentence with the routed engine (fixed seed for reproducibility).
 4. **QA**: resample to 16 kHz → Whisper → compare with the normalised input.
@@ -219,7 +242,35 @@ provenance: SDD-stock-voices.md.
    WER for EN. Lexicon terms and brand-like tokens (MediaForge, Block8, API) are passed to
    Whisper as an `initial_prompt` hint and diff blocks made only of them are excluded, because
    ASR cannot spell back a correctly spoken brand name ("Media4"). Duration sanity
-   (tokens/sec) catches babble/truncation.
+   (tokens/sec, expected length at least 0.5 s) catches babble/truncation.
+   **Very short sentences** (≤ 3 syllables, `speak.is_short`; 2026-10-16). Under a second of audio, Whisper often
+   mishears ("Chào bạn" → "Chào bà") or hallucinates ("Hãy subscribe cho kênh…"). A short sentence is heard alone
+   first. A lone one (no neighbour) is padded with 0.3 s of silence. Only when the alone hearing is **garbage** is
+   it heard a second time, joined to its neighbour (`speak.Context`): the previous sentence, or else the next one,
+   synthesised early and reused. Garbage = a repeat, a judge error, twice the words, or under 30 % of the syllables
+   shared. In the second hearing only its own words are scored (`asr.error_rate(focus=…)`); words at the seam
+   with the context count for neither. A near miss stays a failure, because in context Whisper's language prior
+   papers over a changed particle.
+   Measured on the data-store copy with gi-ng-t: 12 short sentences, each with a neighbour, read by both engines
+   at 2 seeds, plus a wrong variant of each ("Chào bà.", "Tạm dừng.", "Chú ý nha.", …). The same takes were scored
+   both ways:
+
+   | Judge | Correct takes passed | Wrong takes caught |
+   |---|---|---|
+   | alone (before) | 31/48 | 48/48 |
+   | context always | 41/48 | 45/48 (the 3 misses: "Chú ý nha" heard as "nhé") |
+   | **context only for a garbage hearing (shipped)** | **36/48** | **48/48** |
+
+   The 30 % cut was chosen on these same 96 takes. `eval voice --voice gi-ng-t` (no neighbours, so it measures only
+   the padding and the duration floor): 35/41 before, 34/41 after. The one flip, "dot V.N.", comes from VoxCPM
+   synthesising a different take on the same seed, not from the padding: on 6 fresh takes, alone and padded gave
+   the same scores. The earlier pass was also doubtful: the take was heard as "dot den" and scored 0.0.
+   **Regional voices** (2026-10-16): a voice whose profile has `region` Trung or Nam is judged with that region's
+   tone merges (`voice/region.py`). A syllable heard with the same letters and a tone of the same group is not a
+   mistake: Nam hỏi~ngã; Trung sắc~hỏi~ngã~nặng (all oblique tones). Every other difference still counts. LLM
+   respellings of ordinary Vietnamese words are dropped for these voices, so a regional reading is never "fixed"
+   the Northern way. Lessons were already blocked by reading-gate rules 3–4. Results:
+   [SDD-stock-voices.md](SDD-stock-voices.md) §5.5.
 5. **Self-repair** on failure (max 4 attempts per sentence, keep best, stop after 2 that do not improve). The
    strategy order depends on the failure class (repeat → new seed, truncated → phrase-wise, acronym/foreign terms →
    LLM respelling; also engine switch). A respelling is **not** written to the lexicon any more: it becomes a
@@ -340,8 +391,8 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 | `GET/POST /api/voices`, `GET/PATCH/DELETE /api/voices/{id}` | voice profiles |
 | `POST /api/voices/{id}/samples` | multipart upload/recording → processed sample |
 | `GET/PUT /api/voices/{id}/lexicon`, `GET/PUT /api/lexicon` | pronunciation lexicons |
-| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip, prepare, sing, recite, eval` (+ internal `rerender`, `export`, `resubtitle`, `repronounce`, `blend`, `restage`, `revoice`); video params `review: [plan, visuals]` pause the job in status `waiting` |
-| `POST /api/jobs/{id}/approve`, `/restage`, `/sentences/{i}/accept`, `GET/POST /api/jobs/{id}/rating`, `GET /api/lessons`, `PATCH /api/lessons/{id}`, `GET /api/insights`, `GET /api/incidents`, `POST /api/lint` | review steps, partial re-renders, owner judgement and the lessons store ([SDD-review-upgrade.md](SDD-review-upgrade.md) §11.1) |
+| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip, prepare, sing, recite, eval` (+ internal `rerender`, `export`, `resubtitle`, `repronounce`, `blend`, `restage`, `revoice`); video params `review: [plan, visuals]` pause the job in status `waiting`; `one_voice` (default on for vi videos); `pronunciations` / `verified_terms` / `english_terms` are job-local (§5.2) |
+| `POST /api/jobs/{id}/approve` (`from_owner: true` = dashboard answers, saved to the lexicon), `/restage`, `/sentences/{i}/accept`, `GET/POST /api/jobs/{id}/rating`, `GET /api/lessons`, `PATCH /api/lessons/{id}`, `GET /api/insights`, `GET /api/incidents`, `POST /api/lint` | review steps, partial re-renders, owner judgement and the lessons store ([SDD-review-upgrade.md](SDD-review-upgrade.md) §11.1) |
 | `GET /api/poems`, `GET /api/sing/moods` | Tang poem catalogue (Ngâm thơ tab); moods/styles for sing/recite |
 | `POST /api/jobs/{id}/sentences/{i}/rerender` | `{file?, lang?}` — AI re-renders sentence *i* as a take (recording = guide) |
 | `POST /api/jobs/{id}/repronounce` | `{readings: {term: reading}, format?}` — re-read every sentence containing a term, export (no re-render); `GET /api/jobs/{id}/occurrences?terms=` previews matches |

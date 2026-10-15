@@ -11,7 +11,11 @@ MediaForge already does everything from script to MP4; this skill is the map.
 
 1. `list_jobs` — never start a GPU render beside a running one.
 2. `list_voices` — use the owner's voice id, not `demo`.
-3. Optional but recommended: `prepare_video(kind="explainer", …)` → check the script and risky words.
+3. Optional but recommended: `prepare_video(kind="explainer", …)` → check the script and risky words
+   (multi-word terms such as "pull request" come back as one candidate). `pronunciations` / `verified_terms` /
+   `english_terms` you pass to `create_video` apply to that video only: they never change the owner's lexicon, and
+   the owner's own answers win (`report.job_terms.kept_owner`). Don't invent answers the owner didn't give.
+   Vietnamese videos read every sentence with one engine (`one_voice`, default on) — leave it on.
 4. `create_video(kind="explainer", slides_engine="animated", theme="midnight"|"ocean"|"paper"|"block8",
    brief=… | script=… | slides_markdown=… | plan_file=…, lang="vi"|"en", voice=<id>, music="auto")`.
 5. Poll `job_status`; the result has `video`, `thumbnail`, `subtitles`, `report.warnings`.
