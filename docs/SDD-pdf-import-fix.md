@@ -204,18 +204,18 @@ copy of it: count the blocks and spot-check pages 1 and 3 against the boundaries
 
 ## 6. Delivery without disturbing the running render (R5)
 
-- **Work in a separate git worktree on a branch** (`feature/pdf-import-fix`), with its own venv, not in the
-  live checkout. The running server already has `mediaforge.text.documents` in `sys.modules` (`pipelines`
-  imports it at module level), so editing the file does not change the live process. But the next restart loads
-  whatever is on disk, so a half-finished edit in the live checkout is a trap. The service does not use
-  `--reload`.
-- **Never sync the live venv while a job runs.** A plain `uv run` in the live checkout re-syncs and reinstalls
-  the editable `mediaforge` package. During this analysis that happened once: the code was identical, and the
-  running process was unaffected because its modules were already loaded. Use `.venv/bin/python -I` or
-  `uv run --no-sync` there. In the worktree, `uv run` is fine. The tests need no model or GPU (memory: never
-  GPU-test beside a live render).
-- **Deploy** means merging to main and then running `scripts/service.sh restart`. **A restart is required** to
-  load the fix, because the module is cached. Run it **only when `list_jobs` shows nothing `running` or
-  `queued`**: a restart kills the GPU worker thread and any render in it.
-- **Rollback:** revert the merge commit and restart, under the same idle condition. There is no data migration.
+- **The service does not run from this checkout.** launchd runs a non-editable copy installed with
+  `uv tool install` (`~/.local/bin/mediaforge`, data in `~/.local/share/mediaforge`), because TCC blocks
+  background agents from reading `~/Documents`. Editing `src/` or syncing the project `.venv` therefore never
+  touches the live process. (The `uv run` re-sync seen during the analysis only reinstalled the project
+  `.venv`, never the service.) A git worktree on a branch is still used, so `main` only ever holds tested code.
+- **Tests** run in the worktree's own venv (`uv run --with pytest pytest`). They are CPU only and need no model
+  (memory: never GPU-test beside a live render).
+- **Deploy** = merge to main, then **`scripts/service.sh update`**. It reinstalls the tool copy and **waits
+  until `/api/health` shows no running job** (up to 30 min) before `launchctl kickstart`. A plain `restart` only
+  restarts the old installed copy and does **not** deploy code. Check `queue` and `running` before you start
+  too: `update` waits for the running job, but a queued job would start in the gap.
+  Done 2026-10-15: `queue: 0, running: null`, then `update`, then re-importing the sample through
+  `POST /api/documents` gave 80 blocks, 0 single-word blocks and 8 images.
+- **Rollback:** revert the merge commit and run `service.sh update`. There is no data migration.
   Documents imported earlier keep their (bad) text. Import them again after the deploy.
