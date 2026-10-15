@@ -33,6 +33,50 @@ def test_text_is_nfc_so_splittext_keeps_diacritics_whole():
     assert len(animate._nfc(decomposed)) == len("Kiểm thử") < len(decomposed)
 
 
+def test_markdown_directives_set_animated_fields():
+    from mediaforge.video import slides
+    md = """# Mở đầu
+@layout bullets
+@fx type
+- ý một
+# Doanh thu
+@layout stat 87% | khách hàng quay lại
+> Gần chín phần mười khách quay lại.
+# Mạng lưới
+@shape network
+@mood calm
+# Khối
+@layout 3d cube
+# Số
+@stat 1,2 triệu
+# Sai
+@layout pie
+@fx explode
+@shape blob
+@stat
+"""
+    s = slides.parse_markdown_slides(md)
+    assert s[0]["layout"] == "bullets" and s[0]["text_fx"] == "type" and s[0]["bullets"] == ["ý một"]
+    assert s[1]["layout"] == "stat" and s[1]["stat"] == {"value": "87%", "label": "khách hàng quay lại"}
+    assert s[1]["narration"] == "Gần chín phần mười khách quay lại."
+    assert s[2]["layout"] == "3d" and s[2]["shape"] == "network" and s[2]["mood"] == "calm"
+    assert s[3]["layout"] == "3d" and s[3]["shape"] == "cube"
+    assert s[4]["layout"] == "stat" and s[4]["stat"] == {"value": "1,2 triệu", "label": ""}
+    assert not {"layout", "text_fx", "shape", "stat"} & set(s[5]) and len(s[5]["warnings"]) == 4
+    assert "@" not in s[5]["narration"]  # directives are never read aloud
+    # what the renderer then picks: @layout bullets beats the default 3D opener, @fx beats the mood
+    assert animate.layout_of(s[0], 0) == "bullets" and animate.layout_of(s[5], 0) == "3d"
+    assert animate.text_fx_for(s[2]) == "blur" and animate.text_fx_for(s[0]) == "type"
+
+
+def test_markdown_directives_reach_the_plan():
+    md = "# Một\n@layout stat 3 | bước\n> Ba bước.\n# Hai\n@layout pie\n> Hai."
+    plan, lang = P.make_plan({"slides_markdown": md, "lang": "vi"}, "explainer", style="minimal", seconds=30)
+    a, b = plan["scenes"]
+    assert a["layout"] == "stat" and a["stat"] == {"value": "3", "label": "bước"} and "layout" not in b
+    assert plan["warnings"] == ["slide 2: @layout 'pie': dùng bullets, stat, 3d"]
+
+
 def test_colors_follow_theme():
     c = animate.colors("block8")
     assert c["accent"] == "#00c88c" and c["bg1"] == "#0a0c10"

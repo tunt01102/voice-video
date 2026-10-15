@@ -309,8 +309,9 @@ result exposes as `report.music_credit` and the dashboard shows under the video.
   deck progress bar — rendered at 30 fps by stepping an anime.js timeline (`__seek(t)`, never the clock) in
   headless Chromium and piping JPEG frames into FFmpeg. Clip length = slot + 0.5 s cross-fade, so compose,
   karaoke subtitles, music and cards are unchanged; clips are re-rendered only when a slot length changes
-  (revoice/repronounce). Layout per scene comes from the planner (`layout`, `stat`, `shape`); default = `3d`
-  opener then `bullets`. Measured (E2E 2026-10-16, M4 Max): ≈ 1–1.5 s of render per 1 s of slide at 1080p;
+  (revoice/repronounce). Layout per scene comes from the planner (`layout`, `stat`, `shape`) or, in slide markdown, from `@layout` /
+  `@stat` / `@shape` / `@fx` / `@mood` lines (2026-10-16, `slides.parse_markdown_slides`; bad values → `report.warnings`);
+  default = `3d` opener then `bullets`. Measured (E2E 2026-10-16, M4 Max): ≈ 1–1.5 s of render per 1 s of slide at 1080p;
   slides are rendered after all background images, because an open WebGL (Metal) context slowed mflux ~3×. Falls back to Pillow slides (with a
   warning) when Playwright is missing. Agent skills for this stack: `.claude/skills/` (SKILLS-REVIEW.md).
 

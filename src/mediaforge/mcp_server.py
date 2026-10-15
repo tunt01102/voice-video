@@ -146,7 +146,9 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
     dashboard — leave empty for a one-shot render.
     slides_engine (explainer only): 'static' (Pillow slides) or 'animated' — presentation slides with animated
     titles/bullets, count-up stat slides and rotating three.js 3D slides (layout per slide from the plan, or
-    'layout'/'stat'/'shape' in a plan_file). theme: midnight | ocean | paper | block8.
+    'layout'/'stat'/'shape' in a plan_file; in slides_markdown a line '@layout stat 87% | label', '@layout 3d cube',
+    '@shape torus', '@fx type' (rise|blur|wave|type) or '@mood calm' under a slide's '# Title'). theme: midnight |
+    ocean | paper | block8.
     """
     return await _submit(kind, {"brief": brief, "script": script, "lang": lang, "voice": voice, "seconds": seconds,
                                 "style": style, "aspect": aspect, "music": music, "fx": _fx(pitch=pitch),

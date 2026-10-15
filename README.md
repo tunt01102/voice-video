@@ -115,11 +115,22 @@ Notes on the inputs:
   - `# Title` starts a slide
   - `- bullet` lines are bullet points
   - `> narration` lines are what the voice says
+  - with animated slides, `@` lines under a title choose how that slide looks (never read aloud):
+
+    | Line | Effect |
+    |---|---|
+    | `@layout bullets` | title + bullets (also stops slide 1 from being 3D) |
+    | `@layout stat 87% \| khách hàng quay lại` (or `@stat 87% \| …`) | count-up number with a ring and its label; bullets hidden |
+    | `@layout 3d cube` (or `@shape cube`) | rotating 3D object: `globe`, `cube`, `torus`, `network` |
+    | `@fx type` | text effect: `rise`, `blur`, `wave`, `type` (otherwise chosen from the mood) |
+    | `@mood calm` | scene mood (calm, reflective, curious, tense, urgent, hopeful, triumphant, playful) |
+
+    An unknown value is ignored (the slide keeps its default) and listed in the job's warnings.
 - **Animated slides** (`--animated`, dashboard "Kiểu slide: Động", MCP `slides_engine="animated"`): titles and
   bullets move in time with the narration (letters flip up, sharpen from a blur, bounce in or are typed — chosen
   from each slide's mood), a slide about one number counts it up, and big-idea slides get a
   rotating 3D object. From a brief, Claude picks each slide's layout; with markdown slides the first slide is 3D and
-  the rest are bullets. It adds about 1–1.5 s of rendering per second of video. Needs Playwright's Chromium
+  the rest are bullets unless an `@layout` line says otherwise. It adds about 1–1.5 s of rendering per second of video. Needs Playwright's Chromium
   once: `uv run playwright install chromium --only-shell` (installed Google Chrome is used if it's missing).
 - Add `--music bg.mp3` for background music. It's automatically ducked under the voice.
 - Or pick from the built-in library of calm, free tracks: `mediaforge music sync` downloads them once,

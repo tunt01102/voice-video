@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
@@ -173,8 +174,62 @@ def figure_frame(
     return Path(out)
 
 
+# `@key value` lines set a slide's animated-slide fields (docs/SDD.md §7.2): "@layout stat 87% | nhãn",
+# "@layout 3d cube", "@stat 87% | nhãn", "@shape torus", "@fx type" (or "@text_fx"), "@mood calm".
+DIRECTIVE_RE = re.compile(r"@(layout|stat|shape|fx|text_fx|mood)\b\s*(.*)", re.I)
+MOODS = ("calm", "reflective", "curious", "tense", "urgent", "hopeful", "triumphant", "playful")
+
+
+def _stat(arg: str) -> dict | None:
+    value, _, label = arg.partition("|")
+    value, label = value.strip(), label.strip()
+    return {"value": value, "label": label} if value else None
+
+
+def apply_directive(slide: dict, key: str, arg: str) -> str | None:
+    """Set one `@key value` on a slide; returns a warning for a value the renderer does not know (then ignored)."""
+    from mediaforge.video.animate import LAYOUTS, SHAPES, TEXT_FX  # animate imports this module
+
+    key, arg = key.lower(), arg.strip()
+    head, _, rest = arg.partition(" ")
+    if key == "layout":
+        lay = head.lower()
+        if lay not in LAYOUTS:
+            return f"@layout {head!r}: dùng {', '.join(LAYOUTS)}"
+        slide["layout"] = lay
+        if lay == "stat" and rest.strip():
+            return apply_directive(slide, "stat", rest)
+        if lay == "3d" and rest.strip():
+            return apply_directive(slide, "shape", rest)
+        return None
+    if key == "stat":
+        st = _stat(arg)
+        if not st:
+            return "@stat cần một con số, VD: @stat 87% | nhãn"
+        slide["stat"] = st
+        slide.setdefault("layout", "stat")
+        return None
+    if key == "shape":
+        if head.lower() not in SHAPES:
+            return f"@shape {head!r}: dùng {', '.join(SHAPES)}"
+        slide["shape"] = head.lower()
+        slide.setdefault("layout", "3d")
+        return None
+    if key in ("fx", "text_fx"):
+        if head.lower() not in TEXT_FX:
+            return f"@fx {head!r}: dùng {', '.join(TEXT_FX)}"
+        slide["text_fx"] = head.lower()
+        return None
+    if head.lower() not in MOODS:
+        return f"@mood {head!r}: dùng {', '.join(MOODS)}"
+    slide["mood"] = head.lower()
+    return None
+
+
 def parse_markdown_slides(md: str) -> list[dict]:
-    """`# Title` starts a slide; `- bullet` lines are bullets; `> text` lines are narration."""
+    """`# Title` starts a slide; `- bullet` lines are bullets; `> text` lines are narration; `@layout …`, `@stat …`,
+    `@shape …`, `@fx …`, `@mood …` lines set the animated layout (DIRECTIVE_RE). A slide with a bad directive keeps
+    its default and lists the reason in `warnings`."""
     slides: list[dict] = []
     cur: dict | None = None
     for raw in md.splitlines():
@@ -190,6 +245,9 @@ def parse_markdown_slides(md: str) -> list[dict]:
             cur["narration"] = (cur["narration"] + " " + line.lstrip("> ").strip()).strip()
         elif m := MARKER_RE.fullmatch(line):  # [ảnh N] from an imported document: this slide's picture
             cur["image"] = int(m.group(1))
+        elif m := DIRECTIVE_RE.fullmatch(line):
+            if warn := apply_directive(cur, m.group(1), m.group(2)):
+                cur.setdefault("warnings", []).append(warn)
     for s in slides:
         if not s["narration"]:
             s["narration"] = ". ".join([s["title"], *s["bullets"]]) + "."

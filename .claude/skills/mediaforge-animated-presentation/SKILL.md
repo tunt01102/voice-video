@@ -36,7 +36,23 @@ Text effects (GSAP SplitText) on the title and bullets, from the scene's `mood` 
 | `type` | tense, urgent | typed letter by letter behind a blinking caret |
 
 With no layout the first slide is `3d` and the rest are `bullets`. The LLM planner fills `layout`/`stat`/`shape`
-for briefs; for `slides_markdown` edit the plan (`review=["plan"]` or a `plan_file`).
+for briefs. In `slides_markdown`, put directive lines under a slide's `# Title` (parsed by
+`slides.parse_markdown_slides`, never read aloud):
+
+```markdown
+# Khách hàng quay lại
+@layout stat 87% | khách hàng quay lại     ← or: @stat 87% | …
+@fx type                                    ← rise | blur | wave | type
+@mood tense                                 ← also drives music and the default fx
+> Gần chín phần mười khách hàng quay lại.
+
+# Hệ sinh thái
+@layout 3d network                          ← or: @shape network (globe | cube | torus | network)
+- …
+```
+
+`@layout bullets` on slide 1 stops the default 3D opener. Bad values are ignored and reported in
+`report.warnings` ("slide N: …").
 
 ## How it renders (for code changes)
 
