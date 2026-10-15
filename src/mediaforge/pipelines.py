@@ -396,6 +396,8 @@ def make_plan(p: dict[str, Any], kind: str, *, style: str, seconds: int) -> tupl
             sc["image"] = path if path and path not in used else None
             used.add(sc["image"] or "")
         plan_data["scenes"] = [sc for sc in plan_data["scenes"] if sc["narration"]]
+    if p.get("art_direction") is False:  # old-style render (P6-D A/B): scene prompts only, no shared look
+        plan_data["art_direction"] = {}
     if p.get("document_warnings"):
         plan_data["document_warnings"] = p["document_warnings"]
     lint_plan(plan_data, lang)
