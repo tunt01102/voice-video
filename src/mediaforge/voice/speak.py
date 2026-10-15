@@ -79,7 +79,82 @@ def _threshold(lang: str) -> float:
 def _duration_ratio(text: str, lang: str, audio: np.ndarray) -> float:
     n = max(1, len(N.qa_tokens(text, lang)))
     expected = n / RATE.get(lang, 3.5)
-    return (len(audio) / A.SR) / max(expected, 0.3)
+    # A two-syllable greeting is never read in 0.4 s: a floor keeps "Chào bạn." from looking like babble.
+    return (len(audio) / A.SR) / max(expected, 0.5)
+
+
+# Sentences this short ("Chào bạn.", "Cảm ơn.") are judged together with a neighbouring sentence: alone, Whisper
+# often mishears or hallucinates on under a second of audio ("Chào bà", "Hãy subscribe cho kênh…").
+SHORT_SYLLABLES = 3
+CONTEXT_GAP = 0.25   # seconds of silence between the short sentence and its context
+SHORT_PAD = 0.3      # silence around a short sentence heard alone
+
+
+def is_short(sentence: str, lang: str) -> bool:
+    return 0 < len(N.qa_tokens(sentence, lang)) <= SHORT_SYLLABLES
+
+
+@dataclass
+class Context:
+    """A neighbouring sentence (already synthesised) that a short sentence is heard with; only the short
+    sentence's own words are scored (asr.error_rate focus)."""
+    text: str
+    audio: np.ndarray
+    side: str  # "before" | "after"
+
+
+def _garbage(expected: str, heard: str, lang: str, qa: dict[str, Any]) -> bool:
+    """Whisper heard nothing usable for a short clip: a hallucination, a repeat, twice the words, or not one syllable
+    of the sentence. Only then may the neighbour's context overrule the verdict on the clip alone: a near miss
+    ("Chú ý nhá" for "Chú ý nhé") stays a failure, because in context Whisper's prior papers over a changed particle
+    (A/B on 48 correct and 48 wrong takes, SDD §5.2)."""
+    import difflib
+
+    ref, hyp = N.qa_tokens(expected, lang), N.qa_tokens(heard, lang)
+    shared = sum(m.size for m in difflib.SequenceMatcher(a=ref, b=hyp, autojunk=False).get_matching_blocks())
+    return bool(qa.get("repeat") or qa.get("judge")) or len(hyp) >= 2 * len(ref) or shared < 0.3 * max(1, len(ref))
+
+
+def _listen(x: np.ndarray, sentence: str, lang: str, lenient: set[str], ctx: Context | None) -> tuple[str, dict]:
+    """Transcribe and score one take. Returns (heard, qa).
+
+    A short sentence (is_short) with a neighbour is heard alone first; only when that hearing is garbage is it heard
+    again together with the neighbour, scoring its own words only (asr.error_rate focus)."""
+    hint = ", ".join(sorted(lenient)) if lenient else None
+
+    def hear(clip: np.ndarray, expected: str, focus: tuple[int, int] | None) -> tuple[str, dict]:
+        heard = asr.transcribe(clip, lang=lang, initial_prompt=hint, temperature=0.0)["text"]
+        judge_retry = False
+        if asr.judge_error(heard, lang, expected):
+            # The judge failed, not necessarily the voice: listen again primed with the intended sentence (F3).
+            judge_retry = True
+            heard = asr.transcribe(clip, lang=lang, initial_prompt=((hint + ". ") if hint else "") + expected,
+                                   temperature=0.0)["text"]
+        qa = asr.error_rate(expected, heard, lang, lenient, focus=focus)
+        qa["judge_retry"] = judge_retry
+        qa["judge"] = asr.judge_error(heard, lang, expected)
+        qa["repeat"] = asr.repetition(expected, heard, lang)
+        return heard, qa
+
+    if ctx is None:
+        if is_short(sentence, lang):
+            pad = np.zeros(int(SHORT_PAD * A.SR), dtype=np.float32)
+            x = np.concatenate([pad, x, pad])
+        return hear(x, sentence, None)
+    heard, qa = hear(x, sentence, None)
+    if qa["score"] <= _threshold(lang) or not _garbage(sentence, heard, lang, qa):
+        qa["context"] = {"side": ctx.side, "text": ctx.text, "used": False}
+        return heard, qa
+    alone = heard
+    gap = np.zeros(int(CONTEXT_GAP * A.SR), dtype=np.float32)
+    n_ctx, n_own = len(N.qa_tokens(ctx.text, lang)), len(N.qa_tokens(sentence, lang))
+    if ctx.side == "before":
+        clip, expected, focus = np.concatenate([ctx.audio, gap, x]), f"{ctx.text} {sentence}", (n_ctx, n_ctx + n_own)
+    else:
+        clip, expected, focus = np.concatenate([x, gap, ctx.audio]), f"{sentence} {ctx.text}", (0, n_own)
+    heard, qa = hear(clip, expected, focus)
+    qa["context"] = {"side": ctx.side, "text": ctx.text, "used": True, "heard": heard, "alone": alone}
+    return qa.get("heard_focus", heard), qa
 
 
 def _duration_penalty(text: str, lang: str, audio: np.ndarray) -> float:
@@ -116,7 +191,7 @@ def _tts_text(sentence: str, lang: str, engine_name: str, lexicon: dict[str, str
     return text if self_normalises(engine_name, lang) else N.normalise(text, lang)
 
 
-def _run_attempt(att: Attempt, sentence: str, lang: str, ref, lenient: set[str]) -> Attempt:
+def _run_attempt(att: Attempt, sentence: str, lang: str, ref, lenient: set[str], ctx: Context | None = None) -> Attempt:
     engine = get_engine(att.engine)
     t = time.time()
 
@@ -132,18 +207,7 @@ def _run_attempt(att: Attempt, sentence: str, lang: str, ref, lenient: set[str])
     att.seconds = round(time.time() - t, 2)
     # Hint rare spellings to Whisper so correct brand names are not reported as mistakes. Greedy decoding: the
     # sampling fallback is where Whisper hallucinates (CJK on Vietnamese audio).
-    hint = ", ".join(sorted(lenient)) if lenient else None
-    heard = asr.transcribe(x, lang=lang, initial_prompt=hint, temperature=0.0)["text"]
-    judge_retry = False
-    if asr.judge_error(heard, lang, sentence):
-        # The judge failed, not necessarily the voice: listen again primed with the intended sentence (F3).
-        judge_retry = True
-        heard = asr.transcribe(x, lang=lang, initial_prompt=((hint + ". ") if hint else "") + sentence,
-                               temperature=0.0)["text"]
-    qa = asr.error_rate(sentence, heard, lang, lenient)
-    qa["judge_retry"] = judge_retry
-    qa["judge"] = asr.judge_error(heard, lang, sentence)
-    qa["repeat"] = asr.repetition(sentence, heard, lang)
+    heard, qa = _listen(x, sentence, lang, lenient, ctx)
     qa["dur_ratio"] = round(_duration_ratio(sentence, lang, x), 2)
     att.audio, att.heard, att.qa = x, heard, qa
     att.score = round(qa["score"] + _duration_penalty(sentence, lang, x), 4)
@@ -219,7 +283,7 @@ def synth_sentence(
     max_attempts: int | None = None, learn: bool = True, ref_path: str | None = None,
     guide: dict[str, Any] | None | bool = None, phrase_first: bool = False, cache: bool = True,
     english: list[str] | set[str] | tuple[str, ...] | None = None, lock_engine: bool = False,
-    readings: dict[str, str] | None = None,
+    readings: dict[str, str] | None = None, context: Context | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Synthesise one sentence; retry/repair until it passes ASR QA. Returns (audio48k, report).
 
@@ -231,8 +295,10 @@ def synth_sentence(
     lock_engine:  "một giọng": every attempt (first pass and repairs) uses `engine` only — no "best", no engine
                   switch, no other engine's guide prompt.
     readings:     job-local readings {term: say} (pronounce.job_terms: never saved, never over an owner answer).
+    context:      a neighbouring sentence to hear a short sentence with (is_short); ignored for longer ones.
     """
     max_attempts = max_attempts or settings.qa_max_attempts
+    context = context if context is not None and is_short(sentence, lang) and len(context.audio) else None
     voice = profiles.get_voice(voice_id) if voice_id else None
     ref = profiles.ref_from_path(voice_id, ref_path, lang) if ref_path else None
     ref = ref or profiles.voice_ref(voice_id, lang)
@@ -303,8 +369,8 @@ def synth_sentence(
                           {k: lexicon[k] for k in N.terms_in(sentence, lexicon)}, lint_readings,
                           {e: {t: v[0] for t, v in d.items()} for e, d in lesson_readings.items()}, sorted(judged)]
                          + ([guide["id"]] if guide else []) + (["phrases"] if phrase_first else [])
-                         + ([["english", *sorted(eng)]] if eng else []) + (["locked"] if locked else []),
-                         ensure_ascii=False)
+                         + ([["english", *sorted(eng)]] if eng else []) + (["locked"] if locked else [])
+                         + ([["context", context.side, context.text]] if context else []), ensure_ascii=False)
     key = hashlib.sha256(key_src.encode()).hexdigest()[:24]
     cache_dir = settings.sub("cache", "tts")
     if cache and (cache_dir / f"{key}.wav").exists() and (cache_dir / f"{key}.json").exists():
@@ -341,14 +407,14 @@ def synth_sentence(
     def run(att: Attempt) -> Attempt:
         nonlocal ref
         try:
-            return _run_attempt(att, sentence, lang, ref, lenient)
+            return _run_attempt(att, sentence, lang, ref, lenient, context)
         except Exception:
             # The reference clip was deleted while this job ran: re-resolve (falls back to a clip that exists) once.
             if not ref or not ref.audio_path or Path(ref.audio_path).exists():
                 raise
             stale, ref = ref.audio_path, profiles.voice_ref(voice_id, lang)
             log.warning("reference %s vanished mid-job; retrying with %s", stale, ref.audio_path if ref else None)
-            return _run_attempt(att, sentence, lang, ref, lenient)
+            return _run_attempt(att, sentence, lang, ref, lenient, context)
 
     p_phrases, p_pauses = punct_phrases(sentence)
     if len(p_phrases) < 2 and L.is_long(sentence, lang):  # long and unpunctuated: split before conjunctions
@@ -483,6 +549,7 @@ def synth_sentence(
         "failure_class": None if passed else classify(chosen, sentence, lang),
         "lint": [k for k in lint_readings], "lessons": applied, "judge_accepted": sorted(judged),
         **({"english": sorted(eng)} if eng else {}), **({"locked": True} if locked else {}),
+        **({"context": chosen.qa.get("context")} if context else {}),
     }
     A.save(cache_dir / f"{key}.wav", chosen.audio)  # type: ignore[arg-type]
     (cache_dir / f"{key}.json").write_text(json.dumps(report, ensure_ascii=False))
@@ -526,13 +593,34 @@ def speak(
         raise ValueError("empty text")
     chunks, reports, gaps = [], [], []
     t0 = time.time()
-    locked = None
-    if one_voice:
-        langs = [N.detect_lang(s) for s in sentences] if lang == "auto" else [lang]
-        locked = job_engine(voice, max(set(langs), key=langs.count), engine)
+    langs = [N.detect_lang(s) if lang == "auto" else lang for s in sentences]
+    locked = job_engine(voice, max(set(langs), key=langs.count), engine) if one_voice else None
+    early: dict[int, tuple[np.ndarray, dict[str, Any]]] = {}
+
+    def synth(i: int, context: Context | None = None) -> tuple[np.ndarray, dict[str, Any]]:
+        if i in early:
+            return early.pop(i)
+        return synth_sentence(sentences[i], langs[i], voice, engine=locked or engine, lock_engine=bool(locked),
+                              seed=seed + i + 7919 * regen.get(_key(sentences[i]), 0), english=english,
+                              readings=readings, context=context)
+
+    def plain(i: int) -> bool:  # synthesised (not a take or a recording) and long enough to be a context
+        k = _key(sentences[i])
+        return not is_short(sentences[i], langs[i]) and not (k in takes and Path(takes[k]).exists()) \
+            and not (k in overrides and Path(overrides[k]).exists())
+
     for i, s in enumerate(sentences):
-        s_lang = N.detect_lang(s) if lang == "auto" else lang
+        s_lang = langs[i]
         progress(i / len(sentences) * 0.85, f"sentence {i + 1}/{len(sentences)}")
+        ctx = None
+        if is_short(s, s_lang):
+            # Hear a short sentence with its neighbour: the previous sentence, or else the next one (synthesised
+            # now and reused when its turn comes).
+            if chunks and reports[-1].get("lang") == s_lang:
+                ctx = Context(reports[-1]["text"], chunks[-1], "before")
+            elif i + 1 < len(sentences) and langs[i + 1] == s_lang and plain(i + 1):
+                early[i + 1] = synth(i + 1)
+                ctx = Context(sentences[i + 1], early[i + 1][0], "after")
         if _key(s) in takes and Path(takes[_key(s)]).exists():
             audio = A.load(takes[_key(s)])
             rep = {"text": s, "lang": s_lang, "engine": "take", "score": 0.0, "passed": True, "source": "take",
@@ -542,9 +630,7 @@ def speak(
             rep = {"text": s, "lang": s_lang, "engine": "recording", "score": 0.0, "passed": True, "source": "recording",
                    "heard": "", "respell": {}, "missing": [], "extra": [], "attempts": []}
         else:
-            audio, rep = synth_sentence(s, s_lang, voice, engine=locked or engine, lock_engine=bool(locked),
-                                        seed=seed + i + 7919 * regen.get(_key(s), 0), english=english,
-                                        readings=readings)
+            audio, rep = synth(i, ctx)
         rep = {"source": "tts", "missing": [], "extra": [], **rep, "index": i}  # older cache entries lack these
         chunks.append(audio)
         reports.append(rep)
