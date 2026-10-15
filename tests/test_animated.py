@@ -173,3 +173,29 @@ def test_real_render_is_exact_length(tmp_path):
         out = r.scene(tmp_path / "s.mp4", title="Xin chào thế giới", bullets=["một", "hai"], seconds=1.0,
                       layout="3d", shape="torus", text_fx="type", fps=30)
     assert abs(A.probe_duration(out) - 1.0) < 0.05
+
+
+@pytest.mark.skipif(not _chromium(), reason="headless Chromium / ffmpeg not available")
+def test_vertical_3d_and_text_stay_clear_of_the_subtitle_band(tmp_path):
+    """9:16: subtitles sit at MarginV 520/1920 (two lines ≈ 1180–1400 px), so the 3D canvas and the text block
+    must end above ~60 % of the height; long text shrinks to fit instead of running into the band."""
+    W, H = 540, 960
+    with animate.renderer(W, H) as r:
+        r.page.goto(f"{animate.ORIGIN}/scene.html")
+        r.page.wait_for_function("window.__ready === true")
+        r.page.evaluate("d => window.__setup(d)", {
+            "title": "Một tiêu đề rất dài để kiểm tra chữ có tự thu nhỏ khi không đủ chỗ hay không",
+            "bullets": ["Ý thứ nhất khá dài, xuống hai dòng trên điện thoại", "Ý hai dài không kém, thêm vài chữ",
+                        "Ý ba", "Ý bốn dài dài dài", "Ý năm"],
+            "text_fx": "rise", "seconds": 2, "width": W, "height": H, "colors": animate.colors("midnight"),
+            "layout": "3d", "shape": "cube", "stat": None, "background": False, "counter": "", "footer": "",
+            "progress0": 0, "progress1": 0})
+        r.page.evaluate("t => window.__seek(t)", 2.0)  # every text tween at rest
+        box = r.page.evaluate("""() => { const c = document.querySelector('#content'), t = document.querySelector('#three');
+            const last = [...c.querySelectorAll('li')].pop().getBoundingClientRect();
+            return {three: t.getBoundingClientRect().bottom, top: c.getBoundingClientRect().top, last: last.bottom,
+                    fits: c.scrollHeight <= c.clientHeight + 1,
+                    fit: parseFloat(c.style.getPropertyValue('--u') || '0.5') / 0.5}; }""")
+    band = H * 1180 / 1920
+    assert box["three"] <= box["top"] and box["fits"] and box["last"] <= band, box
+    assert box["fit"] >= 0.6, box  # the worst case (3-line title + 5 bullets) still reads on a phone
