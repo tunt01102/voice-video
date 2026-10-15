@@ -29,6 +29,7 @@ Easing names: `linear`, `inQuad`… `outExpo`, `inOutQuart`, `outBack`, `outElas
 v3 → v4: `anime.timeline()` → `createTimeline()`, `easing:` → `ease:`, `'easeOutExpo'` → `'outExpo'`,
 `anime.stagger` → `stagger`, `complete` → `onComplete`, `update` → `onUpdate`.
 
-Timing concepts in the installed `gsap-timeline` / `gsap-performance` skills (position parameter, transforms
-over layout properties) apply directly — but write anime.js, not GSAP (GSAP's licence is not on the project's
-allowed list).
+Timing concepts in the installed `gsap-*` skills (position parameter, transforms over layout properties) apply
+directly. The existing templates use anime.js — keep them on it. GSAP is allowed (owner decision 2026-10-16) when a
+new effect needs SplitText / MorphSVG / DrawSVG: vendor `gsap.min.js` + the plugin into `scene_web/vendor/`, build a
+paused `gsap.timeline({ paused: true })` and call `tl.seek(t)` from `__seek` — same determinism rules.

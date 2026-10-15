@@ -45,4 +45,5 @@ for briefs; for `slides_markdown` edit the plan (`review=["plan"]` or a `plan_fi
 Check a change: render one slide with `animate.renderer(1920, 1080)` → `scene(...)`, grab a frame with
 `settings.ffmpeg -ss 3 -i slide.mp4 -frames:v 1 x.png` and look at it, then `uv run pytest`.
 
-Related skills: `animejs`, `threejs`, `mediaforge-ffmpeg`, `gsap-timeline` (timing concepts only).
+Related skills: `animejs`, `threejs`, `mediaforge-ffmpeg`, `gsap-*` (GSAP allowed for new effects), `remotion-*`
+(for hand-built Remotion projects outside the MediaForge pipeline).
