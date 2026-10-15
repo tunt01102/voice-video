@@ -181,12 +181,15 @@ def _clip(op: str, i1: int, i2: int, j1: int, j2: int, a: int, b: int, n: int) -
 
 
 def error_rate(expected: str, heard: str, lang: str, lenient: set[str] | None = None,
-               focus: tuple[int, int] | None = None) -> dict[str, Any]:
+               focus: tuple[int, int] | None = None,
+               tone_groups: tuple[frozenset[str], ...] = ()) -> dict[str, Any]:
     """Score = mean(syllable WER, CER) for Vietnamese, WER for English; plus the word diff.
 
     Diff blocks whose expected side consists only of `lenient` terms are excluded from scoring.
     focus: score only expected tokens [a, b) — a short sentence heard together with a neighbouring sentence (its
     context), see speak.SHORT_SYLLABLES. `heard_focus` is then what was heard for that span.
+    tone_groups: a regional voice's merged tones (voice/region.py): a syllable heard with the same letters and a tone
+    of the same group is not a mistake.
     """
     import jiwer
 
@@ -209,6 +212,15 @@ def error_rate(expected: str, heard: str, lang: str, lenient: set[str] | None = 
         if op == "replace" and spelled_match(r_seg, h_seg):
             ignored.append(f"{' '.join(r_seg)} ≈ {' '.join(h_seg)} (đánh vần)")
             continue
+        if op == "replace" and tone_groups and len(r_seg) == len(h_seg):
+            from mediaforge.voice.region import regional_variant
+
+            pairs = [(r, h) for r, h in zip(r_seg, h_seg) if regional_variant(r, h, tone_groups)]
+            ignored += [f"{r} ~ {h} (thanh vùng miền)" for r, h in pairs]
+            r_seg = [r for r, h in zip(r_seg, h_seg) if (r, h) not in pairs]
+            h_seg = [h for r, h in zip(ref[i1:i2], h_seg) if (r, h) not in pairs]
+            if not r_seg:
+                continue
         keep_ref += r_seg
         keep_hyp += h_seg
         if op in ("replace", "delete"):
