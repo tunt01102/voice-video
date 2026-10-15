@@ -146,3 +146,13 @@ table.prescan label.check { margin: 0; font-size: 13px; }
 .preview-row #pv-text { flex: 1 1 260px; min-width: 0; }
 .preview-row audio { height: 32px; flex: 1 1 100%; }
 .preview-row select, .preview-row button { width: auto; flex: 0 0 auto; }
+
+/* pha giọng */
+.blend-bar { display: flex; height: 30px; border-radius: 9px; overflow: hidden; margin: 10px 0; font-size: 13px; }
+.blend-bar span { display: flex; align-items: center; padding: 0 10px; white-space: nowrap; overflow: hidden; }
+.blend-bar span:first-child { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.blend-bar span:last-child { background: color-mix(in srgb, var(--accent-2) 30%, transparent); }
+.blend-range { accent-color: var(--accent); }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.grid3 audio { width: 100%; }
+@media (max-width: 720px) { .grid3 { grid-template-columns: 1fr; } }

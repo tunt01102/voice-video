@@ -526,6 +526,13 @@ def run_enrol(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
     return {"sample": sample, "voice": profiles.get_voice(p["voice"])}
 
 
+def run_blend(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
+    """Pha giọng: calibrate and save a blend profile (owner dominant + a consenting partner), or change its share."""
+    from mediaforge.voice import blend
+
+    return blend.run_job(p, progress)
+
+
 def run_rerender(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
     from mediaforge import takes
 
@@ -560,6 +567,7 @@ RUNNERS: dict[str, Callable[..., dict[str, Any]]] = {
     "tts": run_tts, "image": run_image, "subtitle": run_subtitle, "video": run_video, "enrol": run_enrol,
     "rerender": run_rerender, "export": run_export, "prepare": run_prepare, "resubtitle": run_resubtitle,
     "repronounce": run_repronounce, "sing": run_sing, "recite": run_recite,
+    "blend": run_blend,
 }
 
 

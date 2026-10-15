@@ -130,11 +130,47 @@ def create_voice(name: str, voice_id: str | None = None, description: str = "") 
 
 
 def update_voice(voice_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+    from mediaforge.voice import blend
+
     p = get_voice(voice_id)
     for k in ("name", "description", "fx", "engines", "refs"):
         if k in patch and patch[k] is not None:
             p[k] = {**p[k], **patch[k]} if isinstance(p.get(k), dict) and isinstance(patch[k], dict) else patch[k]
+    if "consent" in patch:  # who may lend this voice to a blend (pha giọng); "none" clears it
+        if p.get("kind") == "blend":
+            raise ValueError("a blend profile has no consent of its own")
+        p["consent"] = blend.normalise_consent(patch["consent"])
+    if p.get("kind") == "blend":
+        p["engines"] = {"vi": blend.ENGINE, "en": blend.ENGINE}  # only VieNeu can render a blend
     return save_voice(p)
+
+
+def is_blend(voice_id: str | None) -> bool:
+    if not voice_id:
+        return False
+    try:
+        return get_voice(voice_id).get("kind") == "blend"
+    except KeyError:
+        return False
+
+
+def base_voice(voice_id: str | None) -> str | None:
+    """The real voice behind an id: a blend profile's owner (its lexicon, guides and learned respellings)."""
+    if not voice_id:
+        return voice_id
+    try:
+        p = get_voice(voice_id)
+    except KeyError:
+        return voice_id
+    return p["blend"]["owner"] if p.get("kind") == "blend" else voice_id
+
+
+def blend_slug(owner_id: str, partner_id: str, amount: float) -> str:
+    base = f"{owner_id}-x-{partner_id}-{round(amount * 100)}"
+    vid, n = base, 2
+    while (_dir(vid) / "profile.json").exists():
+        vid, n = f"{base}-{n}", n + 1
+    return vid
 
 
 def delete_voice(voice_id: str) -> None:
@@ -158,6 +194,8 @@ def add_sample(voice_id: str, src: str | Path, *, lang: str | None = None, text:
     from mediaforge import asr
 
     profile = get_voice(voice_id)
+    if profile.get("kind") == "blend":
+        raise ValueError(f"{voice_id!r} is a blend (pha giọng): record samples on its own voices instead")
     d = _dir(voice_id)
     sid = uuid.uuid4().hex[:8]
     raw = d / "raw" / f"{sid}{Path(src).suffix or '.wav'}"
@@ -249,6 +287,8 @@ def voice_ref(voice_id: str | None, lang: str) -> VoiceRef | None:
     if not voice_id:
         return None
     p = get_voice(voice_id)
+    if p.get("kind") == "blend":
+        return _blend_ref(p, lang)
     # A clip can vanish under us (deleted on the Voices tab mid-job, restored backup): only use files that exist.
     present = [s for s in p["samples"] if (settings.data_dir / s["file"]).exists()]
     sid = p.get("refs", {}).get(lang)
@@ -260,6 +300,22 @@ def voice_ref(voice_id: str | None, lang: str) -> VoiceRef | None:
     if sample is None:
         return None
     return VoiceRef(audio_path=str(settings.data_dir / sample["file"]), text=sample["text"], lang=sample["lang"])
+
+
+def _blend_ref(p: dict[str, Any], lang: str) -> VoiceRef:
+    """The owner's reference clip, carrying the partner's clip and the calibrated weight (VieNeu mixes them)."""
+    from dataclasses import replace
+
+    from mediaforge.tts.base import BlendSpec
+
+    b = p["blend"]
+    try:
+        a, other = voice_ref(b["owner"], lang), voice_ref(b["partner"], lang)
+    except KeyError as e:
+        raise ValueError(f"blend {p['id']!r}: one of its voices was deleted ({e})") from e
+    if a is None or other is None:
+        raise ValueError(f"blend {p['id']!r}: both voices need at least one recording")
+    return replace(a, blend=BlendSpec(other.audio_path, float(b["weight"]), b["partner"]))
 
 
 def ref_from_path(voice_id: str | None, path: str | None, lang: str) -> VoiceRef | None:
@@ -280,6 +336,7 @@ def create_demo_voice(voice_id: str = "demo") -> dict[str, Any]:
     except KeyError:
         pass
     create_voice("Demo (macOS say)", voice_id, "Placeholder voice; replace with your own recordings.")
+    update_voice(voice_id, {"consent": {"kind": "synthetic", "note": "macOS say"}})
     tmp = settings.sub("tmp")
     for lang, sys_voice in (("vi", "Linh"), ("en", "Samantha")):
         text = ENROL_PROMPTS[lang][0]
@@ -296,7 +353,7 @@ def default_voice() -> str | None:
         vid = marker.read_text().strip()
         if (_dir(vid) / "profile.json").exists():
             return vid
-    voices = [v for v in list_voices() if v.get("samples")]
+    voices = [v for v in list_voices() if v.get("samples") and v.get("kind") != "blend"]
     real = [v for v in voices if v["id"] != "demo"]
     return (real or voices or [{}])[0].get("id")
 

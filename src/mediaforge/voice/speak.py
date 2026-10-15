@@ -16,7 +16,7 @@ from mediaforge import audio as A
 from mediaforge import asr, llm
 from mediaforge.config import settings
 from mediaforge.text import normalize as N
-from mediaforge.tts.base import DEFAULT_ROUTE, VoiceRef, engines_for, get_engine, self_normalises
+from mediaforge.tts.base import DEFAULT_ROUTE, VoiceRef, blend_engines, engines_for, get_engine, self_normalises
 from mediaforge.voice import fx as FX
 from mediaforge.voice import profiles
 
@@ -151,13 +151,25 @@ def synth_sentence(
     voice = profiles.get_voice(voice_id) if voice_id else None
     ref = profiles.ref_from_path(voice_id, ref_path, lang) if ref_path else None
     ref = ref or profiles.voice_ref(voice_id, lang)
+    # A blend profile (pha giọng) borrows its owner's lexicon, guides and learned respellings.
+    base_id = profiles.base_voice(voice_id)
     if guide is None:
-        guide = profiles.guide_for(voice_id, sentence)
+        guide = profiles.guide_for(base_id, sentence)
     guide = guide or None
-    lexicon = N.merged_lexicon(voice_id, lang)
+    lexicon = N.merged_lexicon(base_id, lang)
     capable = engines_for(lang)
+    if ref is not None and ref.blend is not None:
+        # Only engines with a speaker vector can render the blend; never fall back to one that would drop it.
+        capable = blend_engines(lang)
+        if not capable:
+            raise ValueError(f"no engine can render a blended voice in {lang!r}")
+        if engine and engine not in capable:
+            log.info("blend voice %s: engine %s cannot blend, using %s", voice_id, engine, capable[0])
+            engine = None
     # "best" (try every capable engine) may come from the request or from the voice's saved routing.
     preferred = engine or (voice or {}).get("engines", {}).get(lang) or DEFAULT_ROUTE[lang]
+    if ref is not None and ref.blend is not None and preferred not in capable:
+        preferred = capable[0]
     if not engine and preferred != "best" and preferred not in capable:
         log.warning("voice %s routes %s to unknown engine %r; using %s", voice_id, lang, preferred, DEFAULT_ROUTE[lang])
         preferred = DEFAULT_ROUTE[lang]
@@ -167,6 +179,7 @@ def synth_sentence(
     # Sentence-level cache: identical requests are free. A new guide changes the key, so a sentence the owner
     # corrected is re-synthesised with the guide instead of returning the cached failure.
     key_src = json.dumps([sentence, lang, voice_id, ref.audio_path if ref else None, plan_engines, seed,
+                          ref.blend.key if ref and ref.blend else None,
                           {k: lexicon[k] for k in N.terms_in(sentence, lexicon)}]
                          + ([guide["id"]] if guide else []) + (["phrases"] if phrase_first else []), ensure_ascii=False)
     key = hashlib.sha256(key_src.encode()).hexdigest()[:24]
@@ -268,7 +281,7 @@ def synth_sentence(
     chosen = best()
     if learn and chosen.respell and chosen.score <= thr:
         for term, say in chosen.respell.items():
-            N.learn(voice_id, lang, term, say)
+            N.learn(base_id, lang, term, say)
     report = {
         "text": sentence, "lang": lang, "engine": chosen.engine, "score": chosen.score, "passed": chosen.score <= thr,
         "heard": chosen.heard, "respell": chosen.respell, "source": "tts", "strategy": chosen.strategy,
