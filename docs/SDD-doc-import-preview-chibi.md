@@ -48,6 +48,8 @@ CPU in the request thread (no model is called, so it does not go through the GPU
   - Duplicates (same SHA-1) are dropped, because headers and footers repeat on every page.
   - Formats Pillow cannot open (EMF/WMF/SVG) are skipped with a warning.
   - At most 40 images are kept.
+- **Shredded PDFs** (Google Docs/Skia: one word per text operator → one word per line) are fixed in
+  [SDD-pdf-import-fix.md](SDD-pdf-import-fix.md).
 - **Scanned PDFs.** A PDF with images but no text layer is rejected with a clear message. OCR is out of scope.
 - **Size.** Text is capped at 60 000 characters, with a warning. That is about 4 hours of narration and fits the
   LLM prompt.

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import itertools
 import logging
 import re
 import shutil
@@ -28,6 +29,10 @@ SUPPORTED = {".docx", ".pdf", *CONVERT}
 
 END = (".", "!", "?", "…", ":", ";", ",", '"', "”", ")")  # already ends a phrase: no full stop added
 MARKER_RE = re.compile(r"\[\s*(?:ảnh|anh|image|img|hình|hinh)\s*(\d+)\s*\]", re.IGNORECASE)
+# "Phần 4 …", "Chương 2 …", "4.1 …", "4.1.2. …", "3. …" — a bare "2025 là năm…" is not a heading.
+HEADING_RE = re.compile(r"^(?:(?:Phần|Chương|Mục|Bài|Part|Chapter|Section)\s+\w+|\d+(?:\.\d+)+\.?|\d+[.)])\s+\S",
+                        re.IGNORECASE)
+BULLET_RE = re.compile(r"^([-•▪●*]|\d+[.)])\s")
 
 
 def marker(n: int) -> str:
@@ -162,6 +167,7 @@ def _pdf(path: Path, c: _Collector) -> str:
     except Exception as e:  # noqa: BLE001
         raise DocumentError(f"Không mở được PDF: {e}") from e
     title = ((r.metadata or {}).get("/Title") or "").strip() if r.metadata else ""
+    log.debug("pdf producer: %s", (r.metadata or {}).get("/Producer") if r.metadata else None)
     n_chars, n_pages_img = 0, 0
     for page in r.pages:
         try:
@@ -169,8 +175,9 @@ def _pdf(path: Path, c: _Collector) -> str:
         except Exception as e:  # noqa: BLE001
             log.warning("pdf text failed on a page: %s", e)
             raw = ""
-        n_chars += len(raw.strip())
-        for para in re.split(r"\n\s*\n", _unwrap(raw)):
+        paras = _page_paragraphs(page, raw)
+        n_chars += sum(len(p) for p in paras)
+        for para in paras:
             c.text(para)
         try:
             imgs = list(page.images)
@@ -197,6 +204,101 @@ def _png(img: Image.Image) -> bytes:
     return b.getvalue()
 
 
+def _page_paragraphs(page, raw: str) -> list[str]:
+    """One page's text as paragraphs. A shredded text layer (one word per text operator, e.g. Google Docs/Skia)
+    is rebuilt from the page geometry instead. docs/SDD-pdf-import-fix.md §3."""
+    if _shredded(raw):
+        try:
+            paras = _geometric(page)
+            if paras:
+                return paras
+        except Exception as e:  # noqa: BLE001
+            log.warning("pdf geometric extraction failed: %s", e)
+        try:
+            lay = page.extract_text(extraction_mode="layout", layout_mode_space_vertically=False) or ""
+            lay = "\n".join(re.sub(r"[ \t]{2,}", " ", x).strip() for x in lay.splitlines())
+            if lay.strip():
+                raw = lay
+        except Exception as e:  # noqa: BLE001
+            log.warning("pdf layout extraction failed: %s", e)
+    return [p for p in re.split(r"\n\s*\n", _unwrap(raw)) if p.strip()]
+
+
+def _shredded(raw: str) -> bool:
+    """True when the text layer came out one word per line: ≥ 60 % of ≥ 3 non-blank lines hold one token."""
+    lines = [x for x in raw.splitlines() if x.strip()]
+    return len(lines) >= 3 and sum(len(x.split()) == 1 for x in lines) >= 0.6 * len(lines)
+
+
+def _geometric(page) -> list[str]:
+    """Lines from the fragments' baselines; paragraphs from line gaps, font-size changes and headings.
+
+    Fragments stay in content-stream order, so spaces drawn as their own operators survive as spaces and a word
+    split over two operators stays one word. A new line starts when the baseline moves by half a font size.
+    """
+    lines: list[dict[str, Any]] = []
+
+    def visit(text, cm, tm, font_dict, font_size) -> None:
+        if not text:
+            return
+        cur = lines[-1] if lines else None
+        if not text.strip():
+            if cur is not None:
+                cur["parts"].append(" ")
+            return
+        y = tm[4] * cm[1] + tm[5] * cm[3] + cm[5]
+        size = abs(font_size * (tm[3] or 1) * (cm[3] or 1))
+        if cur is None or abs(cur["y"] - y) >= 0.5 * max(cur["size"], size, 1):
+            lines.append({"y": y, "size": size, "parts": [text]})
+        else:
+            cur["parts"].append(text)
+            cur["size"] = max(cur["size"], size)
+
+    page.extract_text(visitor_text=visit)
+    for ln in lines:
+        t = re.sub(r"\s+", " ", "".join(ln["parts"])).strip()
+        ln["text"] = re.sub(r" ([,.;:!?…)\]”’])", r"\1", t)
+    lines = [ln for ln in lines if ln["text"]]
+    if len(lines) < 2:
+        return []
+    gaps = sorted(a["y"] - b["y"] for a, b in itertools.pairwise(lines) if a["y"] > b["y"])
+    pitch = gaps[len(gaps) // 2] if gaps else 0.0
+    chars: dict[float, int] = {}
+    for ln in lines:  # body size = the size carrying the most text
+        chars[round(ln["size"], 1)] = chars.get(round(ln["size"], 1), 0) + len(ln["text"])
+    body = max(chars, key=chars.get)
+    full = max(len(ln["text"]) for ln in lines)
+
+    def is_heading(ln: dict[str, Any]) -> bool:
+        t = ln["text"]
+        return ln["size"] > body + 0.5 or bool(HEADING_RE.match(t) and len(t) < 0.6 * full and not t.endswith(END))
+
+    paras: list[list[str]] = []
+    heads: list[bool] = []
+    prev: dict[str, Any] | None = None
+    for ln in lines:
+        t, head = ln["text"], is_heading(ln)
+        new = (prev is None or head or heads[-1]
+               or prev["y"] < ln["y"]                                  # went back up: text box / column
+               or (pitch and prev["y"] - ln["y"] > 1.2 * pitch)       # paragraph spacing
+               or abs(ln["size"] - prev["size"]) > 0.5
+               or bool(BULLET_RE.match(t))
+               or (prev["text"].endswith((".", "!", "?", "…")) and len(prev["text"]) < 0.75 * full))  # ragged end
+        if new:
+            paras.append([t])
+            heads.append(head)
+        elif re.search(r"\w-$", paras[-1][-1]):
+            paras[-1][-1] = paras[-1][-1][:-1] + t
+        else:
+            paras[-1].append(t)
+        prev = ln
+    out = []
+    for para, head in zip(paras, heads):
+        s = " ".join(para)
+        out.append(s + "." if head and not s.endswith(END) else s)
+    return out
+
+
 def _unwrap(raw: str) -> str:
     """PDF text breaks at every visual line: re-join lines of one paragraph.
 
@@ -215,13 +317,20 @@ def _unwrap(raw: str) -> str:
             continue
         cur = paras[-1]
         nxt = next((x for x in lines[i + 1:] if x), "")
-        if len(s) < 0.6 * full and not s.endswith(END) and nxt[:1].isupper() and not re.search(r"\w-$", s):
+        short = len(s) < 0.6 * full and not s.endswith(END) and not re.search(r"\w-$", s)
+        if short and HEADING_RE.match(s):
+            # A numbered heading always stands alone, even after a line without end punctuation.
+            if cur:
+                paras.append([])
+            paras[-1].append(s + ".")
+            paras.append([])
+        elif short and (nxt[:1].isupper() or nxt[:1].isdigit()):
             if cur and not cur[-1].endswith(END):
                 cur[-1] = f"{cur[-1]} {s}."
             else:
                 cur.append(s + ".")
             paras.append([])
-        elif re.match(r"^([-•▪●*]|\d+[.)])\s", s) and cur:
+        elif BULLET_RE.match(s) and cur:
             paras.append([s])
         elif not cur or cur[-1].endswith((".", "!", "?", ":", "…")):
             cur.append(s)
