@@ -327,7 +327,15 @@ def synth_sentence(
 
     used: Counter[str] = Counter()
     tried_phrases = any(a.phrases for a in attempts)
-    step, stall, best_score = 0, 0, best().score
+    # First-pass attempts count towards the stall rule: when "best" already tried both engines (and phrases) without
+    # improving, the loop gets one class-directed repair instead of two more blind tries (SDD-review-upgrade §6).
+    step, stall, best_score = 0, 0, attempts[0].score
+    for a in attempts[1:]:
+        if a.score < best_score - 0.005:
+            best_score, stall = a.score, 0
+        else:
+            stall += 1
+    best_score = best().score
     classes: list[str] = []
     while best().score > thr and len(attempts) < budget and stall < STALL_LIMIT:
         b = best()

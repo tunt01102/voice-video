@@ -44,12 +44,16 @@ def run(p: dict[str, Any], progress: Callable[[float, str], None], job_id: str |
         rows = rows[: int(p["limit"])]
     voice = p.get("voice")
     out, t0 = [], time.time()
+    # Rows are written as they finish, so an interrupted run still leaves its measurements.
+    f = settings.sub("evals") / f"voice-{time.strftime('%Y%m%d-%H%M%S')}.json"
     for i, row in enumerate(rows):
         progress(i / max(len(rows), 1), f"eval {i + 1}/{len(rows)}")
         _, rep = S.synth_sentence(row["text"], row.get("lang", "vi"), voice, engine=p.get("engine"), learn=False,
                                   cache=False)
         out.append({**row, "passed": rep["passed"], "score": rep["score"], "heard": rep["heard"],
-                    "engine": rep["engine"], "attempts": len(rep["attempts"]), "failure_class": rep.get("failure_class")})
+                    "engine": rep["engine"], "attempts": len(rep["attempts"]), "failure_class": rep.get("failure_class"),
+                    "tries": [[a["strategy"], a["engine"], a["score"]] for a in rep["attempts"]]})
+        f.write_text(json.dumps({"summary": {"partial": f"{len(out)}/{len(rows)}"}, "rows": out}, ensure_ascii=False, indent=2))
     by: dict[str, list[int]] = {}
     for r in out:
         by.setdefault(r.get("class", "other"), [0, 0])
@@ -61,7 +65,6 @@ def run(p: dict[str, Any], progress: Callable[[float, str], None], job_id: str |
                "mean_attempts_failed": round(sum(r["attempts"] for r in out if not r["passed"]) /
                                              max(1, sum(not r["passed"] for r in out)), 2),
                "elapsed": round(time.time() - t0, 1)}
-    f = settings.sub("evals") / f"voice-{time.strftime('%Y%m%d-%H%M%S')}.json"
     f.write_text(json.dumps({"summary": summary, "rows": out}, ensure_ascii=False, indent=2))
     progress(1.0, "done")
     return {"summary": summary, "file": str(f)}

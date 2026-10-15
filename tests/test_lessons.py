@@ -207,6 +207,18 @@ def test_repair_stops_when_nothing_improves(monkeypatch):
     assert sig and sig[0]["payload"]["class"] in ("other", "terms")
 
 
+def test_best_engine_first_pass_counts_towards_the_stall_rule(monkeypatch):
+    # Both engines fail alike → one class-directed repair, not two more blind tries (≤ 3 attempts).
+    calls = _fake_loop(monkeypatch, lambda a: (0.5, "sai"))
+    _, rep = S.synth_sentence("Vẫn không bao giờ đúng.", "vi", "vb", engine="best", cache=False, max_attempts=6)
+    assert not rep["passed"] and len(calls) == 3
+    assert [c.strategy for c in calls[:2]] == ["whole", "whole"] and calls[0].engine != calls[1].engine
+    # A repair that improves keeps the loop going.
+    calls = _fake_loop(monkeypatch, lambda a: (0.5 - 0.1 * len(calls), "sai"))
+    _, rep = S.synth_sentence("Lần nào cũng khá hơn một chút.", "vi", "vb", engine="best", cache=False, max_attempts=6)
+    assert len(calls) > 3
+
+
 # ---------------------------------------------------------------- ratings → preferences, plan rules; incidents
 
 def _job(jid, **params):
