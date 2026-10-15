@@ -292,7 +292,7 @@ def list_voices() -> list[dict[str, Any]]:
         item = {"id": v["id"], "name": v["name"], "kind": v.get("kind", "voice"), "fx": v.get("fx"),
                 "default": v["id"] == default}
         if v.get("kind") == "blend":
-            item.update(parts=v["parts"], amount=v["blend"]["amount"], languages=["en", "vi"])
+            item.update(parts=v.get("parts"), amount=(v.get("blend") or {}).get("amount"), languages=["en", "vi"])
         elif v.get("kind") == "stock":
             item.update(gender=v.get("gender"), region=v.get("region"), style=v.get("style"), languages=["vi"],
                         preview_url=f"http://127.0.0.1:8765/api/voices/{v['id']}/preview")
