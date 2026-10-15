@@ -160,3 +160,89 @@ def test_backing_ducks_under_the_voice():
     v[48000:] = 0.5 * np.sin(np.arange(48000) / 10)
     g = P.duck_curve(v, v.size)
     assert g[:24000].min() > 0.95 and g[60000:90000].max() < 0.5
+
+
+def test_interrupted_song_resumes_at_the_next_line(monkeypatch, tmp_path):
+    """Lines already sung are kept (sung/line_NN.npy + stages); a resumed job only synthesises the rest."""
+    from types import SimpleNamespace
+
+    from mediaforge import asr
+    from mediaforge.voice import speak as S
+
+    synth = []
+
+    def fake_synth(text, lang, voice, *, engine=None, seed=0):
+        synth.append(text)
+        return np.full(A.SR // 2, 0.1, dtype=np.float32), {"engine": "vieneu", "score": 0.0}
+
+    monkeypatch.setattr(S, "synth_sentence", fake_synth)
+    monkeypatch.setattr(asr, "transcribe", lambda y, lang: {"text": "x", "words": []})
+    monkeypatch.setattr(asr, "align_script", lambda text, words, dur: [SimpleNamespace(start=0.0, end=dur, text="x")])
+    monkeypatch.setattr(resynth, "analyse", lambda a: None)
+    monkeypatch.setattr(resynth, "median_f0", lambda an: 120.0)
+    monkeypatch.setattr(resynth, "refine_bounds", lambda an, b, w: b)
+    monkeypatch.setattr(resynth, "sing_line", lambda an, b, notes, tonic, **kw: np.full(A.SR, 0.2, dtype=np.float32))
+    monkeypatch.setattr(P, "clarity", lambda text, heard: {"score": 1.0})
+    lines = tones.parse(POEM)
+    mel = melody.plan(lines, style="ngam", mood="hung-trang")
+    state = {}
+
+    def crash_after_first(v):
+        state.update(v)
+        if len(v["lines"]) == 1:
+            raise RuntimeError("server restarted")
+
+    with pytest.raises(RuntimeError):
+        P.sing_vocal(lines, mel, voice=None, engine=None, seed=1, out=tmp_path, progress=lambda *a: None,
+                     checkpoint=crash_after_first)
+    assert len(synth) == 1 and (tmp_path / "sung" / "line_01.npy").exists()
+    vo = P.sing_vocal(lines, mel, voice=None, engine=None, seed=1, out=tmp_path, progress=lambda *a: None,
+                      resume=state, checkpoint=state.update)
+    assert len(synth) == 2 and [r["line"] for r in vo["lines"]] == [0, 1] and vo["tonic"] == state["tonic"]
+
+
+def test_resumed_song_job_skips_reading_mix_and_drawn_shots(monkeypatch):
+    from collections import Counter
+    from pathlib import Path
+
+    from mediaforge import image
+    from mediaforge.video import compose
+
+    calls = Counter()
+
+    def interpret(text, **kw):
+        calls["interpret"] += 1
+        return {"mood": "tram-mac", "spirit_vi": "", "title": "T", "opening": "o", "lines": ["a", "b"], "closing": "c",
+                "llm": None}
+
+    def vocal(lines, mel, **kw):
+        return {"vocal": np.zeros(A.SR, dtype=np.float32), "tonic": 110.0, "lines": []}
+
+    def acc_mix(p, mel, vo, *, out, **kw):
+        calls["mix"] += 1
+        return {"audio": str(A.save(out / "song.wav", np.zeros(A.SR, dtype=np.float32))), "mp3": "", "vocal": "",
+                "accompaniment": None}
+
+    def generate(prompt, *, out_path, **kw):
+        calls["image"] += 1
+        if calls["image"] == 3:
+            raise RuntimeError("server restarted")
+        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(out_path).write_bytes(b"png")
+        return {"image": str(out_path)}
+
+    monkeypatch.setattr(P.profiles, "get_voice", lambda v: {})
+    monkeypatch.setattr(P, "interpret", interpret)
+    monkeypatch.setattr(P, "sing_vocal", vocal)
+    monkeypatch.setattr(P, "_accompany_and_mix", acc_mix)
+    monkeypatch.setattr(image, "generate", generate)
+    monkeypatch.setattr(A, "probe_duration", lambda f: 30.0)
+    monkeypatch.setattr(compose, "compose", lambda scenes, *a, **k: str(a[1]))
+    monkeypatch.setattr(compose, "thumbnail", lambda f, out, **k: str(out))
+    params = {"text": POEM, "voice": "v", "video": True}
+    with pytest.raises(RuntimeError):
+        P.run(params, lambda *a: None, "song-resume")
+    res = P.run(params, lambda *a: None, "song-resume")
+    assert calls["interpret"] == 1 and calls["mix"] == 1 and res["mood"] == "tram-mac"
+    assert calls["image"] == 3 + 2  # shots 1–2 kept; shot 3 retried, then 4
+    assert len(res["images"]) == 4

@@ -116,17 +116,26 @@ CANDIDATES = [(None, 0), ("vieneu", 101), ("voxcpm", 202), (None, 303), ("vieneu
 
 def sing_vocal(lines: list[list[tones.Syllable]], mel: melody.Melody, *, voice: str | None, engine: str | None,
                seed: int, out: Path, progress: Progress, key_shift: float = 0.0, tries: int = 6,
-               prosody: float = PROSODY) -> dict[str, Any]:
+               prosody: float = PROSODY, resume: dict[str, Any] | None = None,
+               checkpoint: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
     """Speak each line in the owner's voice, re-sing it on the melody, and listen back.
 
     Self-repair: when Whisper does not catch every syllable of the sung line, the line is spoken again
     (another seed / engine) and re-sung; the clearest take wins. The speech is always the owner's cloned voice.
+    resume/checkpoint: {"tonic", "lines": [report…]} of the lines already sung (each kept as sung/line_NN.npy), so an
+    interrupted job carries on at the next line.
     """
     sung: list[tuple[float, np.ndarray]] = []
-    reports, tonic = [], None
+    reports, tonic = [], (resume or {}).get("tonic")
+    done = (resume or {}).get("lines") or []
     for li, line in enumerate(lines):
         text = " ".join(s.text for s in line)
         notes = [n for n in mel.notes if n.line == li]
+        kept = out / "sung" / f"line_{li + 1:02d}.npy"
+        if li < len(done) and kept.exists():
+            sung.append((notes[0].start, np.load(kept)))
+            reports.append(done[li])
+            continue
         best: dict[str, Any] | None = None
         plan = [(engine, 0)] + [c for c in CANDIDATES[1:]] if engine else CANDIDATES
         for k, (eng, off) in enumerate(plan[:max(1, tries)]):
@@ -150,9 +159,13 @@ def sing_vocal(lines: list[list[tones.Syllable]], mel: melody.Melody, *, voice: 
                 break
         assert best is not None
         A.save(out / "speech" / f"line_{li + 1:02d}.wav", best["audio"])
+        kept.parent.mkdir(parents=True, exist_ok=True)
+        np.save(kept, best["y"])
         sung.append((notes[0].start, best["y"]))
         reports.append({"line": li, "text": text, "engine": best["engine"], "tts_score": best["tts_score"],
                         "take": best["take"], "takes_tried": k + 1, **{f"sung_{a}": b for a, b in best["clarity"].items()}})
+        if checkpoint:
+            checkpoint({"tonic": float(tonic), "lines": reports})
     return {"vocal": resynth.place(sung, mel.length), "tonic": float(tonic or 110.0), "lines": reports}
 
 
@@ -260,7 +273,9 @@ def write_lyrics(mel: melody.Melody, out_base: Path, *, width: int, height: int,
 
 
 def make_video(mel: melody.Melody, song_wav: str, interp: dict[str, Any], out: Path, *, aspect: str, seed: int,
-               title: str | None, author: str | None, progress: Progress) -> dict[str, Any]:
+               title: str | None, author: str | None, progress: Progress, drawn: list[int] | None = None,
+               checkpoint: Callable[[list[int]], None] | None = None) -> dict[str, Any]:
+    """drawn/checkpoint: indices of the shots already generated (kept in images/), skipped on a resumed job."""
     W, H = compose.RESOLUTIONS[aspect]
     lines = mel.lines()
     # Shots: opening (prelude), one per line, closing (from the last line's end to the outro's end).
@@ -271,11 +286,17 @@ def make_video(mel: melody.Melody, song_wav: str, interp: dict[str, Any], out: P
     img_aspect = aspect if aspect in image.ASPECTS else "16:9"
     scenes = []
     motions = ["zoom_in", "pan_right", "zoom_out", "pan_left", "pan_up", "zoom_in_tl"]
+    drawn = list(drawn or [])
     for i, (pr, d) in enumerate(zip(prompts, durs)):
         progress(i / len(prompts) * 0.8, f"image {i + 1}/{len(prompts)}")
-        img = image.generate(pr, out_path=out / "images" / f"shot_{i + 1:02d}.png", aspect=img_aspect, seed=seed + i,
-                             style=VISUAL_STYLE, quality="standard")
-        scenes.append(compose.Scene(img["image"], d, motion="zoom_in" if i == 0 else motions[i % len(motions)]))
+        shot = out / "images" / f"shot_{i + 1:02d}.png"
+        if i not in drawn or not shot.exists():
+            shot = Path(image.generate(pr, out_path=shot, aspect=img_aspect, seed=seed + i, style=VISUAL_STYLE,
+                                       quality="standard")["image"])
+            drawn.append(i)
+            if checkpoint:
+                checkpoint(drawn)
+        scenes.append(compose.Scene(str(shot), d, motion="zoom_in" if i == 0 else motions[i % len(motions)]))
     subs = write_lyrics(mel, out / "lyrics", width=W, height=H, title=title, author=author)
     progress(0.82, "composing")
     final = compose.compose(scenes, song_wav, out / "final.mp4", aspect=aspect, subtitles_ass=subs["ass"],
@@ -285,6 +306,31 @@ def make_video(mel: melody.Melody, song_wav: str, interp: dict[str, Any], out: P
 
 
 # ------------------------------------------------------------------ job entry
+
+def _accompany_and_mix(p: dict[str, Any], mel: melody.Melody, vo: dict[str, Any], *, mood: str, style: str, seed: int,
+                       fxp: FX.VoiceFX, out: Path, progress: Progress) -> dict[str, str]:
+    progress(0.57, "accompaniment")
+    acc = p.get("accompaniment", "auto")
+    backing = None
+    if acc in ("auto", "traditional", None):
+        backing = accompany.arrange(mel, vo["tonic"], seed=seed)
+    elif acc in ("ace", "ace+traditional"):
+        # AI arrangement bed (ACE-Step sidecar) under the key-locked traditional instruments.
+        progress(0.58, "accompaniment: ACE-Step")
+        bed = ace.bed(mood=mood, style=style, seconds=mel.length + 1, tonic_hz=vo["tonic"], scale=mel.scale,
+                      bpm=mel.bpm, seed=seed)
+        trad = accompany.arrange(mel, vo["tonic"], seed=seed)
+        n = max(bed.shape[1], trad.shape[1])
+        backing = np.zeros((2, n), dtype=np.float32)
+        backing[:, :bed.shape[1]] += bed * (0.55 if acc == "ace+traditional" else 1.0)
+        if acc == "ace+traditional":
+            backing[:, :trad.shape[1]] += trad * 0.75
+        backing /= np.abs(backing).max() + 1e-9
+    elif acc not in ("none", ""):
+        backing = library_backing(acc, mel.length + 1)
+    progress(0.62, "mixing")
+    return mix(vo["vocal"], backing, style=style, fxp=fxp, out=out)
+
 
 def run(p: dict[str, Any], progress: Progress, job_id: str | None = None, *, kind: str = "recite") -> dict[str, Any]:
     """kind 'recite' (ngâm thơ, default style ngam) | 'sing' (hát, default style hat)."""
@@ -310,43 +356,43 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None, *, kin
     vprof = profiles.get_voice(voice) if voice else None
     fxp = FX.VoiceFX.from_dict({**((vprof or {}).get("fx") or {}), **(p.get("fx") or {})})
 
+    # Checkpoints (like run_video's stages.json): a resumed job skips the reading, the lines already sung, the mix and
+    # the shots already drawn.
+    from mediaforge.pipelines import save_stage_state, stage_state
+
+    state = stage_state(out)
+
+    def save(stage: str, **data: Any) -> None:
+        state[stage] = {**state.get(stage, {}), **data, "at": time.time()}
+        save_stage_state(out, state)
+
     progress(0.01, "reading the poem")
     want_video = bool(p.get("video", False))
     mood = p.get("mood") or "auto"
     interp: dict[str, Any] | None = None
-    if mood == "auto" or want_video:
-        interp = interpret(text, title=title, author=author, spirit=p.get("spirit"), n_lines=len(lines), style=style)
-        title = title or interp["title"]
-        if mood == "auto":
-            mood = interp["mood"]
-    mood = mood if mood in melody.MOODS else "hung-trang"
+    if state.get("interpret", {}).get("done"):
+        interp, title, mood = state["interpret"]["interp"], state["interpret"]["title"], state["interpret"]["mood"]
+    else:
+        if mood == "auto" or want_video:
+            interp = interpret(text, title=title, author=author, spirit=p.get("spirit"), n_lines=len(lines), style=style)
+            title = title or interp["title"]
+            if mood == "auto":
+                mood = interp["mood"]
+        mood = mood if mood in melody.MOODS else "hung-trang"
+        save("interpret", done=True, interp=interp, title=title, mood=mood)
     mel = melody.plan(lines, style=style, mood=mood, bpm=p.get("bpm"), tempo=float(p.get("tempo", 1.0)))
     (out / "melody.json").write_text(json.dumps(mel.as_dict(), ensure_ascii=False, indent=1))
 
     vo = sing_vocal(lines, mel, voice=voice, engine=p.get("engine"), seed=seed, out=out,
                     progress=_sub(progress, 0.05, 0.55), key_shift=float(p.get("key_shift", fxp.pitch)),
-                    prosody=float(p.get("prosody", PROSODY)))
-    progress(0.57, "accompaniment")
+                    prosody=float(p.get("prosody", PROSODY)), resume=state.get("vocal"),
+                    checkpoint=lambda v: save("vocal", **v))
+    if state.get("mix", {}).get("done") and Path(state["mix"]["files"]["audio"]).exists():
+        files = state["mix"]["files"]
+    else:
+        files = _accompany_and_mix(p, mel, vo, mood=mood, style=style, seed=seed, fxp=fxp, out=out, progress=progress)
+        save("mix", done=True, files=files)
     acc = p.get("accompaniment", "auto")
-    backing = None
-    if acc in ("auto", "traditional", None):
-        backing = accompany.arrange(mel, vo["tonic"], seed=seed)
-    elif acc in ("ace", "ace+traditional"):
-        # AI arrangement bed (ACE-Step sidecar) under the key-locked traditional instruments.
-        progress(0.58, "accompaniment: ACE-Step")
-        bed = ace.bed(mood=mood, style=style, seconds=mel.length + 1, tonic_hz=vo["tonic"], scale=mel.scale,
-                      bpm=mel.bpm, seed=seed)
-        trad = accompany.arrange(mel, vo["tonic"], seed=seed)
-        n = max(bed.shape[1], trad.shape[1])
-        backing = np.zeros((2, n), dtype=np.float32)
-        backing[:, :bed.shape[1]] += bed * (0.55 if acc == "ace+traditional" else 1.0)
-        if acc == "ace+traditional":
-            backing[:, :trad.shape[1]] += trad * 0.75
-        backing /= np.abs(backing).max() + 1e-9
-    elif acc not in ("none", ""):
-        backing = library_backing(acc, mel.length + 1)
-    progress(0.62, "mixing")
-    files = mix(vo["vocal"], backing, style=style, fxp=fxp, out=out)
     words = lyric_words(mel)
     result: dict[str, Any] = {
         **files, "kind": kind, "style": style, "mood": mood, "title": title, "author": author, "text": text,
@@ -361,7 +407,8 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None, *, kin
     if want_video:
         aspect = p.get("aspect") or "16:9"
         vid = make_video(mel, files["audio"], interp or {}, out, aspect=aspect, seed=seed, title=title, author=author,
-                         progress=_sub(progress, 0.64, 0.99))
+                         progress=_sub(progress, 0.64, 0.99), drawn=state.get("video", {}).get("drawn"),
+                         checkpoint=lambda d: save("video", drawn=d))
         result.update(vid)
         result["report"]["visual_prompts"] = [interp["opening"], *interp["lines"], interp["closing"]] if interp else None
     result["elapsed"] = round(time.time() - t0, 1)
