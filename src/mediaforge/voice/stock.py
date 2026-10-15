@@ -23,8 +23,10 @@ Progress = Callable[[float, str], None]
 PREVIEW_TEXT = ("Xin chào quý vị và các bạn. Chào mừng quý vị đến với bản tin sáng nay, thứ Năm, ngày mười lăm "
                 "tháng mười. Trong số hôm nay, chúng ta sẽ cùng điểm lại ba sự kiện đáng chú ý nhất của tuần qua.")
 
-CONSENT_PRESET = {"kind": "synthetic", "note": "VieNeu-TTS preset speaker (Apache-2.0)",
-                  "verify": "preset speaker provenance not stated by VieNeu [VERIFY: owner/compliance]"}
+# The VieNeu-TTS-v3-Turbo card (2026-10-15): Apache-2.0 covers the preset-voice assets; the publisher states the
+# speakers "granted appropriate rights and consent" but names no source.
+CONSENT_PRESET = {"kind": "synthetic", "note": "VieNeu-TTS preset speaker (Apache-2.0; consent asserted by publisher)",
+                  "verify": "speakers and consent process not disclosed [VERIFY: owner/compliance before commercial use]"}
 CONSENT_DESIGN = {"kind": "synthetic", "note": "VoxCPM2 voice design from a text description (no person)"}
 
 # The catalogue. fx is tuned by the review (docs/SDD-stock-voices.md §4); pace 1.0 = the engine's own rate.

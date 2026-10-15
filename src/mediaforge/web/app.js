@@ -866,7 +866,9 @@ const STOCK_STYLE = { tin_tuc: "Tin tức", tu_nhien: "Tự nhiên", doc_truyen:
 function renderStock() {
   const all = voices.filter((v) => v.kind === "stock");
   const region = $("#stock-region").value;
-  const list = all.filter((v) => (!stockGender || v.gender === stockGender) && (!region || v.region === region));
+  const order = { tin_tuc: 0, mc: 1, tu_nhien: 2, doc_truyen: 3 };
+  const list = all.filter((v) => (!stockGender || v.gender === stockGender) && (!region || v.region === region))
+    .sort((a, b) => (a.gender > b.gender ? 1 : a.gender < b.gender ? -1 : 0) || (order[a.style] ?? 9) - (order[b.style] ?? 9));
   const missing = all.filter((v) => !v.preview_ready).length;
   $("#stock-list").innerHTML = (!all.length || missing ? `<div class="warn-box" style="grid-column:1/-1">${all.length
       ? `${missing} giọng chưa có bản nghe thử.` : "Chưa cài giọng mẫu."}
@@ -874,7 +876,9 @@ function renderStock() {
       <small class="muted">chạy một lần, vài phút</small></div>` : "") +
     list.map((v) => `<div class="stock-item" data-id="${v.id}">
       <button class="play ghost" ${v.preview_ready ? "" : "disabled"} title="Nghe thử">${stockPlaying === v.id ? "■" : "▶"}</button>
-      <div class="meta"><b>${esc(v.name)}</b><small class="muted">${v.gender === "female" ? "Nữ" : "Nam"} · ${esc(v.region || "")} · ${STOCK_STYLE[v.style] || esc(v.style || "")}${v.engine === "voxcpm" ? " · thiết kế" : ""}</small></div>
+      <div class="meta"><b>${esc(v.name)}</b><small class="muted">${v.preview_ready
+        ? `${v.engine === "voxcpm" ? "giọng thiết kế" : "giọng có sẵn"}${v.preview?.duration ? ` · ${Math.round(v.preview.duration)} giây` : ""}`
+        : "chưa có bản nghe thử"}</small></div>
       <button class="ghost small use">Dùng</button></div>`).join("");
   $$("#stock-list .play").forEach((b) => b.onclick = () => {
     const id = b.closest(".stock-item").dataset.id;
