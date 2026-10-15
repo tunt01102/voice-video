@@ -16,24 +16,22 @@ Written 2026-10-15 at the end of the session that built P6-A…D. Read this, the
 
 ## Open items, in priority order
 
-1. **Repair budget: mean attempts on failing sentences 4.3 → ≤ 3** (SDD §6).
-   - Cause: `engine=best` spends two first-pass attempts, then the stall rule needs two more.
-   - Idea: when the first pass of `best` fails on both engines with the same class, start the repair from the
-     class strategy instead of re-seeding both.
-   - Measure with `mediaforge eval voice --voice gi-ng-t` on a data-store copy.
-2. **Corpus ≥ 80 %** (now 20/36). The remaining failures:
-   - 8 × "thoăn thoắt": owner ✓ Nghe đúng rồi; do not "fix" them in code.
-   - 3 × babble/repeat on long sentences: try phrase-first for VI sentences > 25 words, not only > 35.
-   - 4 × lone acronyms ("A.I.", "S, M, E.", "dot V.N."): lint could expand dotted acronyms with the lexicon.
-   - 1 fragment.
-3. **`engine_route` lessons** (SDD §5.1.3): now signals only (`reading_win`, `qa_fail` with class/engine). Promote to
-   a lesson when one engine repairs a class ≥ 3 times; apply it in `synth_sentence` engine order.
-4. **Sing/recite checkpoints**: an interrupted job re-runs from the start. Add stage checkpoints to
-   `sing/pipeline.py` like `run_video`'s `stages.json`.
-5. **P6-D owner A/B**: prepare 3 topics rendered old-style (`critique=false`, `cards=false`, no art direction) vs
-   new. The owner rates blind with ⭐. Do not rate on the owner's behalf.
-6. **P6-E evaluate** (licence review first, SDD §3 rules): an image–text consistency score (CLIP/SigLIP), WavLM-SV.
-   [VERIFY: licences before adding any model]
+Status 2026-10-15 (second session, branch `feature/p6-repair-budget`, not merged/pushed; numbers in
+SDD-review-upgrade §11.2–11.4):
+
+1. ✅ **Repair budget ≤ 3** — 3.0 mean attempts on failing sentences (was 4.27), passes unchanged at 21/36, eval
+   time 466 s → 296 s.
+2. ◐ **Corpus ≥ 80 %** — 21/36 now; 29/36 (81 %) once the owner gives ✓ Nghe đúng rồi to the 8 "thoăn thoắt"
+   rows (the owner's call). Done in code: phrase-first for VI > 25 words, dotted acronyms via the lexicon. Left:
+   3 long babble/repeat, "A.I." (English row, no English `AI` lexicon entry), "chấm Vi En." (Whisper
+   hallucination on a fragment), the cut fragment "ệu PNJ…".
+3. ✅ **`engine_route` lessons** — `lessons.propose_route`/`route`; applied in engine order and in repair.
+4. ✅ **Sing/recite checkpoints** — interpret, each sung line, mix, each drawn shot.
+5. ◐ **P6-D owner A/B** — 3 topics rendered old vs new on the data-store copy, copied (random A/B order) to
+   `~/.local/share/mediaforge/outputs/ab-p6d/`. The owner rates with ⭐ in `DANH-GIA.md`; `.key.json` holds the
+   mapping. Do not rate on the owner's behalf.
+6. ✅ **P6-E licence review** — SigLIP (Apache-2.0) allowed; WavLM-SV rejected (CC BY-SA 3.0); SpeechBrain ECAPA
+   a candidate [VERIFY: VoxCeleb training-data terms]. No model added.
 
 ## How to work safely (see memory: e2e-testing-safety)
 

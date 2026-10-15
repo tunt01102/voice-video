@@ -100,7 +100,8 @@ licence), vinorm (non-commercial, Linux binary), WhisperX VI aligners and
 ctc-forced-aligner default model (CC-BY-NC-4.0), Wav2Lip (non-commercial models),
 Remotion (company licence), aeneas (AGPL), VibeVoice (TTS removed upstream),
 CosyVoice/Chatterbox/Qwen3-TTS/Kokoro (no Vietnamese), DiffusionKit (archived), Seed-VC (GPL-3.0 singing
-voice conversion), SoulX-Singer / YingMusic-Singer (no Vietnamese; licences unclear).
+voice conversion), SoulX-Singer / YingMusic-Singer (no Vietnamese; licences unclear), WavLM-SV / UniSpeech
+checkpoints (CC BY-SA 3.0 — use SpeechBrain ECAPA (Apache-2.0) or VieNeu's speaker encoder instead).
 
 ## 4. Architecture
 
