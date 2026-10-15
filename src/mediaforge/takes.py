@@ -244,10 +244,13 @@ def rerender(p: dict[str, Any], progress: Progress, job_id: str | None = None) -
     seed = int(job["params"].get("seed", 1234)) + 104_729 * (n_prev + 1) + idx
     # A "một giọng" job keeps its one engine for re-renders too (no voice change at this sentence).
     from mediaforge import pipelines as P
+    from mediaforge.tts.base import engines_for
 
     jp = job["params"]
     lock = P.one_voice(jp, r.get("lang") or lang) if job["type"] != "tts" else bool(jp.get("one_voice"))
     engine = S.job_engine(voice_id, r.get("lang") or lang, jp.get("engine")) if lock else jp.get("engine")
+    if lock and "one_voice" not in jp and sent.get("engine") in engines_for(lang):
+        engine = sent["engine"]  # a video made before one_voice existed: keep the engine this sentence was read with
     audio, rep = S.synth_sentence(text, lang, voice_id, engine=engine, seed=seed, lock_engine=lock,
                                   ref_path=sent.get("ref"), guide=guide, phrase_first=True)
     if guide:
