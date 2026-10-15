@@ -29,29 +29,29 @@ CONSENT_PRESET = {"kind": "synthetic", "note": "VieNeu-TTS preset speaker (Apach
                   "verify": "speakers and consent process not disclosed [VERIFY: owner/compliance before commercial use]"}
 CONSENT_DESIGN = {"kind": "synthetic", "note": "VoxCPM2 voice design from a text description (no person)"}
 
-# The catalogue. fx is tuned by the review (docs/SDD-stock-voices.md §4); pace 1.0 = the engine's own rate.
+# The catalogue. fx = the best variant of review run 2 (docs/SDD-stock-voices.md §5.2); pace 1.0 = the engine's rate.
 CATALOGUE: list[dict[str, Any]] = [
-    {"id": "stock-nu-bac-tin-tuc", "name": "Nữ · Bắc · Tin tức", "gender": "female", "region": "Bắc",
+    {"id": "stock-nu-bac-tin-tuc", "fx": {"pitch": 0.0, "pace": 1.05, "warmth": 0.2, "clarity": 0.8}, "name": "Nữ · Bắc · Tin tức", "gender": "female", "region": "Bắc",
      "style": "tin_tuc", "engine": "vieneu", "preset": "Mai Anh"},
-    {"id": "stock-nu-nam-tin-tuc", "name": "Nữ · Nam · Tin tức", "gender": "female", "region": "Nam",
+    {"id": "stock-nu-nam-tin-tuc", "fx": {"pitch": 0.0, "pace": 1.1, "warmth": 0.2, "clarity": 0.8}, "name": "Nữ · Nam · Tin tức", "gender": "female", "region": "Nam",
      "style": "tin_tuc", "engine": "vieneu", "preset": "Thùy Dung"},
-    {"id": "stock-nu-bac-tu-nhien", "name": "Nữ · Bắc · Tự nhiên", "gender": "female", "region": "Bắc",
+    {"id": "stock-nu-bac-tu-nhien", "fx": {"pitch": 0.0, "pace": 1.05, "warmth": 0.2, "clarity": 0.8}, "name": "Nữ · Bắc · Tự nhiên", "gender": "female", "region": "Bắc",
      "style": "tu_nhien", "engine": "vieneu", "preset": "Trúc Ly"},
-    {"id": "stock-nu-bac-ke-chuyen", "name": "Nữ · Bắc · Kể chuyện", "gender": "female", "region": "Bắc",
+    {"id": "stock-nu-bac-ke-chuyen", "fx": {"pitch": 0.0, "pace": 1.1, "warmth": 0.2, "clarity": 0.8}, "name": "Nữ · Bắc · Kể chuyện", "gender": "female", "region": "Bắc",
      "style": "doc_truyen", "engine": "vieneu", "preset": "Ngọc Linh"},
-    {"id": "stock-nam-bac-tin-tuc", "name": "Nam · Bắc · Tin tức", "gender": "male", "region": "Bắc",
+    {"id": "stock-nam-bac-tin-tuc", "fx": {"pitch": 0.0, "pace": 1.1, "warmth": 0.2, "clarity": 0.8}, "name": "Nam · Bắc · Tin tức", "gender": "male", "region": "Bắc",
      "style": "tin_tuc", "engine": "vieneu", "preset": "Minh Đức"},
-    {"id": "stock-nam-nam-tin-tuc", "name": "Nam · Nam · Tin tức", "gender": "male", "region": "Nam",
+    {"id": "stock-nam-nam-tin-tuc", "fx": {"pitch": 0.0, "pace": 1.1, "warmth": 0.2, "clarity": 0.8}, "name": "Nam · Nam · Tin tức", "gender": "male", "region": "Nam",
      "style": "tin_tuc", "engine": "vieneu", "preset": "Minh Triết"},
-    {"id": "stock-nam-bac-tu-nhien", "name": "Nam · Bắc · Tự nhiên", "gender": "male", "region": "Bắc",
+    {"id": "stock-nam-bac-tu-nhien", "fx": {"pitch": 0.0, "pace": 1.1, "warmth": 0.2, "clarity": 0.8}, "name": "Nam · Bắc · Tự nhiên", "gender": "male", "region": "Bắc",
      "style": "tu_nhien", "engine": "vieneu", "preset": "Hải Đăng"},
-    {"id": "stock-nam-bac-ke-chuyen", "name": "Nam · Bắc · Kể chuyện", "gender": "male", "region": "Bắc",
+    {"id": "stock-nam-bac-ke-chuyen", "fx": {"pitch": 0.0, "pace": 1.1, "warmth": 0.2, "clarity": 0.8}, "name": "Nam · Bắc · Kể chuyện", "gender": "male", "region": "Bắc",
      "style": "doc_truyen", "engine": "vieneu", "preset": "Thiện Minh"},
-    {"id": "stock-nu-mc-thiet-ke", "name": "Nữ · MC (thiết kế)", "gender": "female", "region": "Bắc",
+    {"id": "stock-nu-mc-thiet-ke", "fx": {"pitch": 0.0, "pace": 1.1, "warmth": 0.2, "clarity": 0.8}, "name": "Nữ · MC (thiết kế)", "gender": "female", "region": "Bắc",
      "style": "mc", "engine": "voxcpm",
      "instruct": "A professional Vietnamese female television presenter, clear and confident, warm bright voice, "
                  "standard northern accent, measured pace, crisp articulation"},
-    {"id": "stock-nam-mc-thiet-ke", "name": "Nam · MC (thiết kế)", "gender": "male", "region": "Bắc",
+    {"id": "stock-nam-mc-thiet-ke", "fx": {"pitch": 0.0, "pace": 1.05, "warmth": 0.2, "clarity": 0.8}, "name": "Nam · MC (thiết kế)", "gender": "male", "region": "Bắc",
      "style": "mc", "engine": "voxcpm",
      "instruct": "A professional Vietnamese male television presenter, deep warm authoritative voice, clear "
                  "articulation, standard northern accent, steady measured pace"},

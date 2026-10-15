@@ -99,7 +99,7 @@ def test_preview_is_built_once_and_served(monkeypatch, stock_profiles):
     assert built == ["stock-nu-bac-tin-tuc"]                     # the second run reuses the current preview
     r = client.get("/api/voices/stock-nu-bac-tin-tuc/preview")
     assert r.status_code == 200 and r.content == b"ID3"
-    profiles.update_voice("stock-nu-bac-tin-tuc", {"fx": {"pace": 1.05}})
+    profiles.update_voice("stock-nu-bac-tin-tuc", {"fx": {"pace": 1.2}})
     assert stock.preview_file("stock-nu-bac-tin-tuc") is None    # new fx → preview is stale
 
 

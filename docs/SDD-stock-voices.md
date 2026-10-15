@@ -1,6 +1,6 @@
 # SDD — Giọng mẫu (stock presenter voices)
 
-v1.0, 2026-10-15. Status: built on branch `feature/stock-voices`, reviewed on a copy of the data store. Not yet
+v1.0, 2026-10-15. Status: built on branch `feature/stock-voices` (off `feature/p6-repair-budget`), reviewed on a copy of the data store. Not yet
 deployed to the live service; the owner decides that after listening.
 
 ## 1. Goal
@@ -66,4 +66,62 @@ then rebuild because they are stale.
 
 ## 5. Results
 
-See §5.1 (filled in by the first review run).
+### 5.1 Run 1 (2026-10-15, data-store copy, 10 voices + the owner's gi-ng-t as yardstick, 1 144 s)
+
+| Voice | Composite | Clarity | Tones | Stability | Pace (syll/s) | Pitch std (st) | Speaker cos | Gaps/comma |
+|---|---|---|---|---|---|---|---|---|
+| Nữ · Bắc · Tự nhiên | **96.5** | 97.4 | 97.7 | 93.8 | 4.89 | 3.6 | 0.91 | 0.73 |
+| Nam · Bắc · Tự nhiên | **95.7** | 99.1 | 100 | 87.5 | 4.71 | 3.6 | 0.90 | 1.02 |
+| Nam · Bắc · Kể chuyện | 92.9 | 97.8 | 98.7 | 81.2 | 4.51 | 4.1 | 0.92 | 0.97 |
+| Nữ · Nam · Tin tức | 92.0 | 90.9 | 94.4 | 81.2 | 4.93 | 3.2 | 0.92 | 1.08 |
+| Nữ · Bắc · Kể chuyện | 90.8 | 98.5 | 97.5 | 81.2 | 4.29 | 3.0 | 0.91 | 0.57 |
+| Nam · Nam · Tin tức | 90.8 | 92.7 | 99.5 | 75.0 | 4.57 | 2.8 | 0.92 | 1.08 |
+| Nữ · Bắc · Tin tức | 89.7 | 97.9 | 98.7 | 87.5 | 4.02 | 3.9 | 0.92 | 1.23 |
+| Nữ · MC (thiết kế) | 88.4 | 98.2 | 100 | 87.5 | 4.60 | 3.1 | **0.69** | 0.75 |
+| Nam · MC (thiết kế) | 87.2 | 98.4 | 98.9 | 81.2 | 4.46 | 4.0 | **0.73** | 1.00 |
+| Nam · Bắc · Tin tức | 85.5 | 98.5 | 100 | 81.2 | **3.68** | 4.7 | 0.93 | **2.37** |
+| *gi-ng-t (owner, not ranked)* | *85.8* | | | 87.5 | 3.31 | 2.3 | 0.92 | 1.53 |
+
+Findings:
+
+1. **Clarity and tones are not the problem.** Every voice is heard at 0.5–4.6 % error. The two Southern presets
+   are the least clear to Whisper (3.7–4.6 %). This may be the judge's Northern bias rather than the voices.
+2. **Designed voices drift.** A VoxCPM2 `instruct` voice is a different person on every call: its speaker cosine
+   is 0.69–0.73, against 0.90+ for presets. Fix: anchor each designed voice once (`stock.anchor_designed`). The
+   clearest of 4 designed takes becomes a synthetic reference clip, and later sentences clone that clip.
+3. **The "Tin tức" presets read slowly and over-pause.** Nam · Bắc · Tin tức reads 3.7 syll/s with 2.4 silent
+   gaps per comma, so it breaks inside phrases. Every voice picked the fastest fx variant (pace 1.05), so the
+   grid gained pace 1.1.
+4. Pitch movement (2.8–4.7 st) is in the lively range for all voices; none is monotone.
+
+### 5.2 Run 2 (after anchoring + pace 1.1, `--apply`, 780 s)
+
+| Voice | Composite (run 1 →) | fx kept (pace / warmth / clarity) | Pace (syll/s) | Speaker cos | Gaps/comma |
+|---|---|---|---|---|---|
+| Nam · MC (thiết kế) | 87.2 → **97.2** | 1.05 / 0.2 / 0.8 | 4.88 | 0.73 → **0.94** | 1.72 |
+| Nữ · Bắc · Tự nhiên | 96.5 → 96.5 | 1.05 / 0.2 / 0.8 | 4.89 | 0.91 | 0.63 |
+| Nam · Bắc · Tự nhiên | 95.7 → 96.1 | 1.1 / 0.2 / 0.8 | 4.94 | 0.89 | 0.98 |
+| Nam · Bắc · Kể chuyện | 92.9 → 94.4 | 1.1 / 0.2 / 0.8 | 4.73 | 0.92 | 0.97 |
+| Nữ · MC (thiết kế) | 88.4 → **93.2** | 1.1 / 0.2 / 0.8 | 4.30 | 0.69 → **0.95** | 1.70 |
+| Nữ · Nam · Tin tức | 92.0 → 92.4 | 1.1 / 0.2 / 0.8 | 5.17 | 0.91 | 1.03 |
+| Nữ · Bắc · Kể chuyện | 90.8 → 92.0 | 1.1 / 0.2 / 0.8 | 4.49 | 0.91 | 0.60 |
+| Nam · Nam · Tin tức | 90.8 → 91.7 | 1.1 / 0.2 / 0.8 | 4.78 | 0.91 | 0.78 |
+| Nữ · Bắc · Tin tức | 89.7 → 89.6 | 1.05 / 0.2 / 0.8 | 4.02 | 0.92 | 1.23 |
+| Nam · Bắc · Tin tức | 85.5 → 87.2 | 1.1 / 0.2 / 0.8 | 3.85 | 0.92 | 2.13 |
+| *gi-ng-t (owner)* | *85.9* | | 3.14 | 0.92 | 1.53 |
+
+- Anchoring fixed the drift of the designed voices. "Nam · MC (thiết kế)" is now the top-scored voice.
+- Every voice keeps clarity 0.8 and warmth 0.2, so presenters sound brighter than the narrator default
+  (clarity 0.6).
+- The two Northern "Tin tức" presets still pause too often inside phrases (2.1 and 1.2 gaps per comma). Time
+  stretching does not remove pauses. Next options, if the owner's ears agree: shorten internal silences (pause
+  compression), or drop them from the catalogue.
+- The tuned fx are written into `CATALOGUE`, so a fresh install gets them.
+- Machine top 2 per gender: **Nam · MC (thiết kế)**, **Nam · Bắc · Tự nhiên**; **Nữ · Bắc · Tự nhiên**,
+  **Nữ · MC (thiết kế)**. The owner's ⭐ in `outputs/giong-mau-review/DANH-GIA.md` decides.
+
+### 5.3 Owner listening
+
+Ten previews (tuned fx), ranked by the composite, are in `~/.local/share/mediaforge/outputs/giong-mau-review/`
+with a rating sheet. Not deployed to the live service yet: merge, `scripts/service.sh update`, then
+**Giọng nói → Giọng mẫu → Cài giọng mẫu** (about 2 minutes; it anchors the designed voices and renders previews).
