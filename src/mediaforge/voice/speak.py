@@ -234,7 +234,7 @@ def synth_sentence(
     plan_engines = capable if preferred == "best" else [preferred]
     alternates = [e for e in capable if e not in plan_engines]
     # An active engine_route lesson for the class this sentence is likely to fail with puts that engine first; with
-    # "best", a pass on it ends the first pass early (SDD-review-upgrade §5.1.3).
+    # "best", a perfect take on it (score 0) ends the first pass early (SDD-review-upgrade §5.1.3).
     route = lessons.route(base_id, lang, expected_class(sentence, lang)) if len(plan_engines) > 1 and not guide else None
     if route and route[0] in plan_engines:
         plan_engines = [route[0]] + [e for e in plan_engines if e != route[0]]
@@ -336,8 +336,8 @@ def synth_sentence(
         if phrase_first and len(p_phrases) > 1:
             first.append(make(plan_engines[0], seed + 29, 0.7, phrases=p_phrases, pauses=p_pauses, strategy="phrases"))
     for att in first:
-        if route and attempts and attempts[0].score <= thr:
-            break  # the routed engine passed: the other engines are not needed
+        if route and attempts and attempts[0].score == 0:
+            break  # the routed engine read the sentence perfectly: nothing left to compare
         attempts.append(run(att))
         if guide and attempts[-1].score <= thr and (attempts[-1].prompt is None or attempts[-1].strategy == learned):
             break  # a guided candidate with the canonical timbre (or the strategy that worked before) passes
