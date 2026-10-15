@@ -97,8 +97,9 @@ def job_readings(job: dict[str, Any], plan_text: str, lang: str) -> dict[str, st
         for term, e in N.load_lexicon(old_base).get(lang, {}).items():
             if e.get("source") in ("manual", "verified"):
                 found[term] = e["say"]
-    found.update({str(k): str(v) for k, v in (p.get("pronunciations") or {}).items()})
-    for t in p.get("verified_terms") or []:
+    own = p.get("owner_terms") or {}  # the owner's plan-gate answers; a request's own terms stay job-local
+    found.update({str(k): str(v) for k, v in (own.get("pronunciations") or {}).items()})
+    for t in own.get("verified_terms") or []:
         found.setdefault(str(t), str(t))
     for entry in r.get("repronounced") or []:
         found.update(entry.get("readings") or {})
@@ -109,8 +110,10 @@ def job_readings(job: dict[str, Any], plan_text: str, lang: str) -> dict[str, st
 
 
 def job_english(job: dict[str, Any], plan_text: str, lang: str) -> set[str]:
-    """Terms this video read as English ("đọc tiếng Anh"): the request's english_terms and the old voice's marks."""
-    terms = set(job["params"].get("english_terms") or []) | N.english_terms(profiles.base_voice(T.job_voice(job)), lang)
+    """Terms this video read as English ("đọc tiếng Anh") by the owner's choice: plan-gate answers and the old voice's
+    marks (a request's english_terms are carried job-local instead, see run)."""
+    own = job["params"].get("owner_terms") or {}
+    terms = set(own.get("english_terms") or []) | N.english_terms(profiles.base_voice(T.job_voice(job)), lang)
     return set(N.terms_in(plan_text, terms))
 
 
@@ -179,7 +182,10 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
                               "duration": r.get("duration"), "qa_failed": len(r.get("qa_failed_sentences") or [])}
             ts = time.time()
             vp = {"engine": engine, "fx": fx, "seed": job["params"].get("seed", 1234),
-                  "karaoke": job["params"].get("karaoke")}
+                  "karaoke": job["params"].get("karaoke"),
+                  # the request's own terms stay job-local for the new voice too (never saved, owner answers win)
+                  **{k: job["params"][k] for k in ("pronunciations", "verified_terms", "english_terms")
+                     if job["params"].get(k)}}
             P.voice_stage(vp, plan_data, work, lang=lang, voice=new_voice, width=W, height=H,
                           progress=P._sub(progress, 0.0, 0.6))
             meta["voice_seconds"] = round(time.time() - ts, 1)

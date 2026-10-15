@@ -196,3 +196,42 @@ def remember(lang: str, readings: dict[str, str], verified: list[str] | tuple[st
             en.append(term)
     N.save_lexicon(data, voice)
     return {"lang": lang, "voice": voice, "saved": saved, "verified": ok, "english": en}
+
+
+OWNER_SOURCES = ("manual", "verified", "english")
+
+
+def job_terms(lang: str, voice: str | None, readings: dict[str, str] | None = None,
+              verified: list[str] | tuple[str, ...] = (), english: list[str] | tuple[str, ...] = ()) -> dict[str, Any]:
+    """Readings that came with a request (MCP / REST): they apply to this job only and are never saved. A term the
+    owner already answered in the lexicon (manual / verified / english, global or for `voice`) keeps the owner's
+    answer; the conflict is reported in `kept_owner` (term → {owner, request})."""
+    lex = {**N.load_lexicon(None).get(lang, {}), **(N.load_lexicon(voice).get(lang, {}) if voice else {})}
+    owned = {t.casefold(): e for t, e in lex.items() if e.get("source") in OWNER_SOURCES}
+    out: dict[str, str] = {}
+    eng: list[str] = []
+    kept: dict[str, dict[str, str]] = {}
+
+    def owner_says(term: str) -> str | None:
+        e = owned.get(term.casefold())
+        return None if e is None else ("tiếng Anh" if e.get("source") == "english" else e["say"])
+
+    asked = [(str(t).strip(), str(v).strip()) for t, v in (readings or {}).items()]
+    asked += [(str(t).strip(), str(t).strip()) for t in verified or ()]
+    for term, say in asked:
+        if not term or not say:
+            continue
+        mine = owner_says(term)
+        if mine is None:
+            out[term] = say
+        elif mine != say:
+            kept[term] = {"owner": mine, "request": say}
+    for term in (str(t).strip() for t in english or ()):
+        if not term:
+            continue
+        mine = owner_says(term)
+        if mine is None:
+            eng.append(term)
+        elif mine != "tiếng Anh":
+            kept[term] = {"owner": mine, "request": "tiếng Anh"}
+    return {"scope": "job", "readings": out, "english": eng, "kept_owner": kept}

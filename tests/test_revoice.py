@@ -367,3 +367,24 @@ def test_rest_and_estimate(env):
     img = db.create_job("image", {"prompt": "x"})
     db.update_job(img["id"], status="done", result={"images": []})
     assert client.post(f"/api/jobs/{img['id']}/revoice", json={"voice": "stock-x"}).status_code == 409
+
+
+def test_request_terms_are_job_local_and_never_over_owner_answers(env):
+    pronounce.remember("vi", {"Claude Code": "clốt cốt"})                 # the owner's own answer
+    src = source_video({"pronunciations": {"Zentrix": "Den trích", "Claude Code": "cờ lau cốt"},
+                        "english_terms": ["Claude Code", "GitHub"]})
+    terms = src["result"]["report"]["job_terms"]
+    assert terms["readings"] == {"Zentrix": "Den trích"} and terms["english"] == ["GitHub"]
+    assert terms["kept_owner"] == {"Claude Code": {"owner": "clốt cốt", "request": "tiếng Anh"}}
+    lex = N.load_lexicon(None)["vi"]
+    assert "Zentrix" not in lex and lex.get("GitHub", {}).get("source") != "english" and lex["Claude Code"]["say"] == "clốt cốt"
+    assert "pronunciations" not in src["result"]["report"]               # nothing was saved
+    res, _ = run_revoice(src)                                             # nor carried into the new voice's lexicon
+    assert res["readings_saved"].get("Zentrix") is None and "Zentrix" not in N.merged_lexicon("stock-x", "vi")
+
+
+def test_owner_gate_answers_are_saved(env):
+    src = source_video({"owner_terms": {"pronunciations": {"PNJ": "Pê En Giây"}, "english_terms": ["GitHub"],
+                                        "lexicon_voice": "old"}})
+    assert src["result"]["report"]["pronunciations"]["saved"] == {"PNJ": "Pê En Giây"}
+    assert N.merged_lexicon("old", "vi")["PNJ"] == "Pê En Giây" and "GitHub" in N.english_terms("old")

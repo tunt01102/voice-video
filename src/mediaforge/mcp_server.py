@@ -111,7 +111,10 @@ async def prepare_video(brief: str | None = None, script: str | None = None, kin
     create_video(plan_file=..., pronunciations={term: reading}, verified_terms=[terms that read fine as written],
     english_terms=[English words/names to read in English, e.g. 'Claude Code', 'pull request']). English terms keep
     the narrator's voice: the same engine reads them with English pronunciation inside the Vietnamese sentence.
-    The answers are saved to the pronunciation lexicon for every later render.
+    Candidates may be multi-word terms ('pull request', 'Claude Code'): answer them as one term.
+    These answers apply to THIS video only: they are not saved to the owner's lexicon, and a term the owner already
+    answered (manual / verified / English) keeps the owner's answer; the job report lists those in
+    job_terms.kept_owner. Only answers the owner gives in the dashboard are saved.
     document / document_as / style: as in create_video.
     """
     return await _submit("prepare", {"brief": brief, "script": script, "kind": kind, "lang": lang, "voice": voice,
@@ -140,6 +143,7 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
     a job_id immediately — poll job_status.
     plan_file / pronunciations / verified_terms / english_terms: from prepare_video (recommended: avoids
     mispronounced audio). english_terms: read these as English, as written, in the same voice (Vietnamese videos).
+    These apply to this job only (never saved; the owner's own lexicon answers win — see report.job_terms).
     karaoke: highlight the word being spoken (default on).
     style: cinematic, photo, illustration, 3d, minimal, tech, chibi (scenes acted out by cute chibi characters).
     document: local .docx/.pdf (.doc/.rtf/.odt) path used as the content instead of brief/script; its pictures are

@@ -314,7 +314,7 @@ function renderPrescan(job, type, params) {
       const text = reading ? sentence.split(c.term).join(reading) : sentence;
       b.disabled = true; b.textContent = "⏳";
       try {
-        const j = await api("/api/jobs?wait=true&timeout=300", { method: "POST", body: JSON.stringify({ type: "tts", source: "dashboard", params: { text, voice: params.voice, lang: r.lang, fx: params.fx, english_terms: en.checked ? [c.term] : [] } }) });
+        const j = await api("/api/jobs?wait=true&timeout=300", { method: "POST", body: JSON.stringify({ type: "tts", source: "dashboard", params: { text, voice: params.voice, lang: r.lang, fx: params.fx, english_terms: en.checked ? [c.term] : [], from_owner: true } }) });
         const url = fileUrl(j.files?.mp3) || fileUrl(j.files?.audio);
         if (url) new Audio(url).play(); else toast("Chưa nghe thử được: " + (j.message || j.status));
       } catch (err) { toast(err.message); }

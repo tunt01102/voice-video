@@ -202,7 +202,7 @@ def synth_sentence(
     sentence: str, lang: str, voice_id: str | None, *, engine: str | None = None, seed: int = 1234,
     max_attempts: int | None = None, learn: bool = True, ref_path: str | None = None,
     guide: dict[str, Any] | None | bool = None, phrase_first: bool = False, cache: bool = True,
-    english: list[str] | set[str] | tuple[str, ...] | None = None,
+    english: list[str] | set[str] | tuple[str, ...] | None = None, readings: dict[str, str] | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Synthesise one sentence; retry/repair until it passes ASR QA. Returns (audio48k, report).
 
@@ -211,6 +211,7 @@ def synth_sentence(
                   False = do not use one. A guide is reference data only, never part of the output.
     phrase_first: also try phrase-wise synthesis (split at punctuation) in the first pass.
     english:      extra "đọc tiếng Anh" terms (besides the lexicon's `english` entries), e.g. a not-yet-saved answer.
+    readings:     job-local readings {term: say} (pronounce.job_terms: never saved, never over an owner answer).
     """
     max_attempts = max_attempts or settings.qa_max_attempts
     voice = profiles.get_voice(voice_id) if voice_id else None
@@ -221,7 +222,7 @@ def synth_sentence(
     if guide is None:
         guide = profiles.guide_for(base_id, sentence)
     guide = guide or None
-    lexicon = N.merged_lexicon(base_id, lang)
+    lexicon = {**N.merged_lexicon(base_id, lang), **(readings or {})}
     # "Đọc tiếng Anh" (the owner's choice per term): the term stays as written — no lexicon, lint, lesson or LLM
     # respelling touches it — and the sentence stays on one engine whose G2P reads English words inside Vietnamese
     # (VieNeu / sea_g2p), so the voice does not change at the English words.
@@ -476,6 +477,7 @@ def speak(
     progress: Progress | None = None, timings: bool = True,
     overrides: dict[str, str] | None = None, regen: dict[str, int] | None = None,
     takes: dict[str, str] | None = None, english: list[str] | None = None,
+    readings: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Text → finished voice track (wav + mp3) with QA report and word timings.
 
@@ -483,6 +485,7 @@ def speak(
     regen:     {sentence text: n} — re-synthesise that sentence with a fresh seed (n-th retry).
     takes:     {sentence text: raw take wav} — an AI re-render chosen in the dashboard (pre-FX, 48 kHz).
     english:   terms to read as English in the same voice (added to the lexicon's `english` entries).
+    readings:  job-local readings {term: say} applied on top of the lexicon (not saved).
     """
     takes = {_key(k): v for k, v in (takes or {}).items()}
     overrides = {_key(k): v for k, v in (overrides or {}).items()}
@@ -512,7 +515,7 @@ def speak(
                    "heard": "", "respell": {}, "missing": [], "extra": [], "attempts": []}
         else:
             audio, rep = synth_sentence(s, s_lang, voice, engine=engine, seed=seed + i + 7919 * regen.get(_key(s), 0),
-                                        english=english)
+                                        english=english, readings=readings)
         rep = {"source": "tts", "missing": [], "extra": [], **rep, "index": i}  # older cache entries lack these
         chunks.append(audio)
         reports.append(rep)
