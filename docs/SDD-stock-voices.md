@@ -123,5 +123,7 @@ Findings:
 ### 5.3 Owner listening
 
 Ten previews (tuned fx), ranked by the composite, are in `~/.local/share/mediaforge/outputs/giong-mau-review/`
-with a rating sheet. Not deployed to the live service yet: merge, `scripts/service.sh update`, then
-**Giọng nói → Giọng mẫu → Cài giọng mẫu** (about 2 minutes; it anchors the designed voices and renders previews).
+with a rating sheet. **Deployed 2026-10-15 at the owner's request** from the unmerged branch `feature/stock-voices`
+(`scripts/service.sh update`). The `stock_previews` job then ran on the live store and created the 10 profiles,
+2 anchors and 10 previews; the owner's voice is still the default. To roll back, run `scripts/service.sh update`
+from `main`; the stock profiles stay in `voices/stock-*`, and main's dashboard does not list them correctly.

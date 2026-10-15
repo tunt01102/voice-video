@@ -7,7 +7,8 @@ Written 2026-10-15 at the end of the session that built P6-A…D. Read this, the
 
 - `main` = `b4b4a10` (merge of `feature/sdd-review-upgrade`). 127 tests pass. **Not pushed**: `main` is 10 commits
   ahead of `origin/main`. Push only if the owner asks.
-- The live service (`ai.block8.mediaforge`, :8765) runs this code (`scripts/service.sh update` from this checkout).
+- The live service (`ai.block8.mediaforge`, :8765) runs **`feature/stock-voices`** (unmerged; it contains
+  `feature/p6-repair-budget` + giọng mẫu), deployed 2026-10-15 at the owner's request. `main` is unchanged.
 - Live data: the old `learned` lexicon entries were migrated into lessons. 14 were retired (backup
   `~/.local/share/mediaforge/backups/lexicon-gi-ng-t-20261015-142619.json`). The candidate `for → pho` awaits the
   owner's decision.
