@@ -198,11 +198,27 @@ def _overlaps(term: str, english: set[str]) -> bool:
     return any(N.terms_in(e, [term]) or N.terms_in(term, [e]) for e in english)
 
 
+def job_engine(voice_id: str | None, lang: str, engine: str | None = None) -> str:
+    """The one engine every sentence of a "một giọng" job uses (SDD §5.2 one_voice): a stock voice's own engine, an
+    explicit engine, the voice's route, or — for route "best" — the language's default (VieNeu for vi: its G2P reads
+    English words inside Vietnamese). Blend voices keep an engine that can render the blend."""
+    voice = profiles.get_voice(voice_id) if voice_id else None
+    if (voice or {}).get("kind") == "stock":
+        return voice["engine"]  # type: ignore[index]
+    pick = engine if engine and engine != "best" else (voice or {}).get("engines", {}).get(lang)
+    capable = engines_for(lang)
+    if (voice or {}).get("kind") == "blend":
+        capable = blend_engines(lang) or capable
+    if pick in capable:
+        return pick
+    return DEFAULT_ROUTE[lang] if DEFAULT_ROUTE[lang] in capable else capable[0]
+
+
 def synth_sentence(
     sentence: str, lang: str, voice_id: str | None, *, engine: str | None = None, seed: int = 1234,
     max_attempts: int | None = None, learn: bool = True, ref_path: str | None = None,
     guide: dict[str, Any] | None | bool = None, phrase_first: bool = False, cache: bool = True,
-    english: list[str] | set[str] | tuple[str, ...] | None = None,
+    english: list[str] | set[str] | tuple[str, ...] | None = None, lock_engine: bool = False,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Synthesise one sentence; retry/repair until it passes ASR QA. Returns (audio48k, report).
 
@@ -211,6 +227,8 @@ def synth_sentence(
                   False = do not use one. A guide is reference data only, never part of the output.
     phrase_first: also try phrase-wise synthesis (split at punctuation) in the first pass.
     english:      extra "đọc tiếng Anh" terms (besides the lexicon's `english` entries), e.g. a not-yet-saved answer.
+    lock_engine:  "một giọng": every attempt (first pass and repairs) uses `engine` only — no "best", no engine
+                  switch, no other engine's guide prompt.
     """
     max_attempts = max_attempts or settings.qa_max_attempts
     voice = profiles.get_voice(voice_id) if voice_id else None
@@ -249,6 +267,9 @@ def synth_sentence(
         log.warning("voice %s routes %s to unknown engine %r; using %s", voice_id, lang, preferred, DEFAULT_ROUTE[lang])
         preferred = DEFAULT_ROUTE[lang]
     plan_engines = capable if preferred == "best" else [preferred]
+    locked = bool(lock_engine and engine and engine in capable)
+    if locked:
+        capable = plan_engines = [engine]  # type: ignore[list-item]
     if eng and len(capable) > 1:
         keep = preferred if preferred in capable else ("vieneu" if "vieneu" in capable else plan_engines[0])
         capable = plan_engines = [keep]
@@ -280,7 +301,8 @@ def synth_sentence(
                           {k: lexicon[k] for k in N.terms_in(sentence, lexicon)}, lint_readings,
                           {e: {t: v[0] for t, v in d.items()} for e, d in lesson_readings.items()}, sorted(judged)]
                          + ([guide["id"]] if guide else []) + (["phrases"] if phrase_first else [])
-                         + ([["english", *sorted(eng)]] if eng else []), ensure_ascii=False)
+                         + ([["english", *sorted(eng)]] if eng else []) + (["locked"] if locked else []),
+                         ensure_ascii=False)
     key = hashlib.sha256(key_src.encode()).hexdigest()[:24]
     cache_dir = settings.sub("cache", "tts")
     if cache and (cache_dir / f"{key}.wav").exists() and (cache_dir / f"{key}.json").exists():
@@ -458,7 +480,7 @@ def synth_sentence(
         ],
         "failure_class": None if passed else classify(chosen, sentence, lang),
         "lint": [k for k in lint_readings], "lessons": applied, "judge_accepted": sorted(judged),
-        **({"english": sorted(eng)} if eng else {}),
+        **({"english": sorted(eng)} if eng else {}), **({"locked": True} if locked else {}),
     }
     A.save(cache_dir / f"{key}.wav", chosen.audio)  # type: ignore[arg-type]
     (cache_dir / f"{key}.json").write_text(json.dumps(report, ensure_ascii=False))
@@ -475,7 +497,7 @@ def speak(
     fx: dict | None = None, out_dir: str | Path | None = None, name: str = "voice", seed: int = 1234,
     progress: Progress | None = None, timings: bool = True,
     overrides: dict[str, str] | None = None, regen: dict[str, int] | None = None,
-    takes: dict[str, str] | None = None, english: list[str] | None = None,
+    takes: dict[str, str] | None = None, english: list[str] | None = None, one_voice: bool = False,
 ) -> dict[str, Any]:
     """Text → finished voice track (wav + mp3) with QA report and word timings.
 
@@ -483,6 +505,7 @@ def speak(
     regen:     {sentence text: n} — re-synthesise that sentence with a fresh seed (n-th retry).
     takes:     {sentence text: raw take wav} — an AI re-render chosen in the dashboard (pre-FX, 48 kHz).
     english:   terms to read as English in the same voice (added to the lexicon's `english` entries).
+    one_voice: every sentence uses one engine, chosen once (job_engine), with no engine switch during repair.
     """
     takes = {_key(k): v for k, v in (takes or {}).items()}
     overrides = {_key(k): v for k, v in (overrides or {}).items()}
@@ -499,6 +522,10 @@ def speak(
         raise ValueError("empty text")
     chunks, reports, gaps = [], [], []
     t0 = time.time()
+    locked = None
+    if one_voice:
+        langs = [N.detect_lang(s) for s in sentences] if lang == "auto" else [lang]
+        locked = job_engine(voice, max(set(langs), key=langs.count), engine)
     for i, s in enumerate(sentences):
         s_lang = N.detect_lang(s) if lang == "auto" else lang
         progress(i / len(sentences) * 0.85, f"sentence {i + 1}/{len(sentences)}")
@@ -511,8 +538,8 @@ def speak(
             rep = {"text": s, "lang": s_lang, "engine": "recording", "score": 0.0, "passed": True, "source": "recording",
                    "heard": "", "respell": {}, "missing": [], "extra": [], "attempts": []}
         else:
-            audio, rep = synth_sentence(s, s_lang, voice, engine=engine, seed=seed + i + 7919 * regen.get(_key(s), 0),
-                                        english=english)
+            audio, rep = synth_sentence(s, s_lang, voice, engine=locked or engine, lock_engine=bool(locked),
+                                        seed=seed + i + 7919 * regen.get(_key(s), 0), english=english)
         rep = {"source": "tts", "missing": [], "extra": [], **rep, "index": i}  # older cache entries lack these
         chunks.append(audio)
         reports.append(rep)
@@ -534,7 +561,7 @@ def speak(
         "fx": fxp.as_dict(), "sentences": reports, "words": words, "voice_id": voice,
         "qa_passed": all(r["passed"] for r in reports),
         "qa_failed_sentences": [r["text"] for r in reports if not r["passed"]],
-        "lint": lint_findings,
+        "lint": lint_findings, **({"one_voice": locked} if locked else {}),
         "elapsed": round(time.time() - t0, 1),
     }
     (out_dir / f"{name}.report.json").write_text(json.dumps(result, ensure_ascii=False, indent=2))

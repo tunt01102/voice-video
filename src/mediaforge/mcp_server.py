@@ -53,7 +53,7 @@ def _fx(**kw: float | None) -> dict[str, float] | None:
 @mcp.tool()
 async def speak(text: str, voice: str | None = None, lang: str = "auto", pitch: float | None = None,
                 pace: float | None = None, warmth: float | None = None, clarity: float | None = None,
-                engine: str | None = None, english_terms: list[str] | None = None,
+                engine: str | None = None, english_terms: list[str] | None = None, one_voice: bool = False,
                 wait_seconds: float = 300) -> dict[str, Any]:
     """Synthesise speech in a cloned voice (English 'en', Vietnamese 'vi', or 'auto' per sentence).
 
@@ -63,9 +63,10 @@ async def speak(text: str, voice: str | None = None, lang: str = "auto", pitch: 
     recognition and automatically regenerated/respelled if mispronounced. Returns wav/mp3 + SRT/VTT/ASS paths.
     english_terms: words in Vietnamese text to read as English, as written, in the same voice (no respelling, no
     engine switch); terms saved as "đọc tiếng Anh" in the lexicon apply automatically.
+    one_voice: read every sentence with one engine (no voice change between sentences, no engine switch on repair).
     """
     return await _submit("tts", {"text": text, "voice": voice, "lang": lang, "engine": engine,
-                                 "english_terms": english_terms,
+                                 "english_terms": english_terms, "one_voice": one_voice or None,
                                  "fx": _fx(pitch=pitch, pace=pace, warmth=warmth, clarity=clarity)}, wait_seconds)
 
 
@@ -130,7 +131,7 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
                        english_terms: list[str] | None = None, karaoke: bool = True, document: str | None = None, document_as: str = "brief",
                        structure: str = "auto", cards: bool | None = None, critique: bool = True,
                        review: list[str] | None = None, slides_engine: str = "animated", theme: str = "midnight",
-                       wait_seconds: float = 0) -> dict[str, Any]:
+                       one_voice: bool | None = None, wait_seconds: float = 0) -> dict[str, Any]:
     """Create a narrated video with cloned voice, generated visuals and subtitles.
 
     kind: 'narrated' (16:9 AI visuals), 'short' (9:16 with karaoke subtitles), 'explainer' (slides).
@@ -155,6 +156,8 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
     'layout'/'stat'/'shape' in a plan_file; in slides_markdown a line '@layout stat 87% | label', '@layout 3d cube',
     '@shape torus', '@fx type' (rise|blur|wave|type) or '@mood calm' under a slide's '# Title'). theme: midnight |
     ocean | paper | block8.
+    one_voice: every sentence on one engine, chosen once for the video (VieNeu for Vietnamese under route 'best'),
+    never switched during repair — no voice change mid-video. Default (None): on for Vietnamese, off otherwise.
     """
     return await _submit(kind, {"brief": brief, "script": script, "lang": lang, "voice": voice, "seconds": seconds,
                                 "style": style, "aspect": aspect, "music": music, "fx": _fx(pitch=pitch),
@@ -164,7 +167,8 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
                                 "english_terms": english_terms, "karaoke": karaoke, "document": document, "document_as": document_as,
                                 "structure": structure, "critique": critique, "review": review or [],
                                 "slides_engine": slides_engine, "theme": theme,
-                                **({"cards": cards} if cards is not None else {})},
+                                **({"cards": cards} if cards is not None else {}),
+                                **({"one_voice": one_voice} if one_voice is not None else {})},
                          wait_seconds)
 
 

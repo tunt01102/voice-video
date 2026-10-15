@@ -242,7 +242,13 @@ def rerender(p: dict[str, Any], progress: Progress, job_id: str | None = None) -
     progress(0.15, "AI đang đọc lại câu")
     n_prev = len(sent.get("takes") or [])
     seed = int(job["params"].get("seed", 1234)) + 104_729 * (n_prev + 1) + idx
-    audio, rep = S.synth_sentence(text, lang, voice_id, engine=job["params"].get("engine"), seed=seed,
+    # A "một giọng" job keeps its one engine for re-renders too (no voice change at this sentence).
+    from mediaforge import pipelines as P
+
+    jp = job["params"]
+    lock = P.one_voice(jp, r.get("lang") or lang) if job["type"] != "tts" else bool(jp.get("one_voice"))
+    engine = S.job_engine(voice_id, r.get("lang") or lang, jp.get("engine")) if lock else jp.get("engine")
+    audio, rep = S.synth_sentence(text, lang, voice_id, engine=engine, seed=seed, lock_engine=lock,
                                   ref_path=sent.get("ref"), guide=guide, phrase_first=True)
     if guide:
         profiles.update_correction(store_id, text, guide["id"], strategy=rep["strategy"], score=rep["score"],
