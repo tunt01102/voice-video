@@ -61,3 +61,31 @@ def test_voice_scope():
     P.remember("vi", {"CSR": "Xi Ét A"}, voice="v-test")
     assert N.load_lexicon("v-test")["vi"]["CSR"]["say"] == "Xi Ét A"
     assert "CSR" not in N.load_lexicon(None)["vi"]
+
+
+PHRASES = ("Hôm nay mình dùng Claude Code để review pull request. Pull request thứ hai dùng slash command /init. "
+           "Claude rất giỏi, còn AI agent thì sao? Gõ PNJ, API nhé.")
+
+
+def test_multi_word_english_terms_are_one_term():
+    found = {c["term"]: c for c in P.scan(PHRASES, "vi", use_llm=False)}
+    assert {"Claude Code", "pull request", "slash command", "AI agent"} <= set(found)
+    assert found["pull request"]["count"] == 2           # "Pull request" at a sentence start is the same term
+    assert found["Claude Code"]["reasons"] == ["phrase"] and "Claude Code" in found["Claude Code"]["context"]
+    assert found["Claude"]["count"] == 1                 # only the standalone "Claude", not the one in "Claude Code"
+    assert "review" in found and "review pull request" not in found  # cut around the standalone "pull request"
+    assert not {"Code", "slash", "command", "agent"} & set(found)
+
+
+def test_punctuation_and_long_clauses_break_phrases():
+    found = terms(P.scan("Dùng Claude, Code và GitHub. Make every simple test pass fast nhé.", "vi", use_llm=False))
+    assert {"Claude", "Code", "GitHub"} <= found and "Claude, Code" not in found
+    assert "Make" in found and not any(" " in t for t in found)  # a 6-word English clause stays as single words
+
+
+def test_lexicon_phrase_splits_a_longer_run():
+    N.save_lexicon({"vi": {"pull request": {"say": "pull request", "source": "english", "hits": 0}}}, "phr")
+    found = terms(P.scan("Hãy review pull request này.", "vi", voice="phr", use_llm=False))
+    assert {"review", "pull request"} <= found
+    found = terms(P.scan("Hãy review pull request này.", "vi", use_llm=False))
+    assert found == {"review pull request"}             # no other evidence: one term, ticked once

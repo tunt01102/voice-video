@@ -39,6 +39,7 @@ REASONS = {
     "symbol": "ký hiệu",
     "diacritics": "tên có dấu tiếng Việt",
     "llm": "AI đoán dễ đọc sai",
+    "phrase": "cụm từ nước ngoài",
 }
 
 
@@ -75,6 +76,67 @@ def reasons_for(token: str, lang: str) -> list[str]:
                 out.append("foreign")
         elif any(c in VI_DIACRITICS for c in token.lower()):
             out.append("diacritics")
+    return out
+
+
+# Reasons that let a word join its neighbours into one multi-word term ("pull request", "Claude Code", "AI agent").
+PHRASE_REASONS = {"foreign", "camel", "acronym"}
+PHRASE_MAX = 4
+
+
+def _runs(text: str, lang: str) -> list[list[tuple[int, int, str, list[str]]]]:
+    """Risky tokens, grouped: adjacent foreign/brand/acronym words separated by spaces only (no punctuation, no line
+    break) form one run, so the owner ticks "tiếng Anh" once for "slash command". A run longer than PHRASE_MAX words
+    (an English clause) is left as single words."""
+    runs: list[list[tuple[int, int, str, list[str]]]] = []
+    cur: list[tuple[int, int, str, list[str]]] = []
+
+    def flush() -> None:
+        if cur:
+            runs.extend([cur[:]] if len(cur) <= PHRASE_MAX else [[t] for t in cur])
+            cur.clear()
+
+    for m in TOKEN.finditer(text):
+        tok = m.group(0).strip("'’.-_/")
+        why = reasons_for(tok, lang)
+        if not why:
+            flush()
+            continue
+        start = m.start() + m.group(0).index(tok) if tok else m.start()
+        item = (start, start + len(tok), tok, why)
+        joins = set(why) <= PHRASE_REASONS
+        if cur and joins and set(cur[-1][3]) <= PHRASE_REASONS and re.fullmatch(r"[ \t]+", text[cur[-1][1]:start]):
+            cur.append(item)
+            continue
+        flush()
+        cur.append(item)
+        if not joins:
+            flush()
+    flush()
+    return runs
+
+
+def _split_known(runs: list[list[tuple[int, int, str, list[str]]]], text: str,
+                 known: set[str]) -> list[list[tuple[int, int, str, list[str]]]]:
+    """Cut a run around the longest part that is a term on its own elsewhere ("review pull request" → "review" +
+    "pull request" when "Pull request" also stands alone, or the lexicon has "pull request")."""
+    phrases = known | {text[r[0][0]:r[-1][1]].casefold() for r in runs if len(r) > 1}
+    out: list[list[tuple[int, int, str, list[str]]]] = []
+    for run in runs:
+        best = None
+        for n in range(len(run) - 1, 1, -1):
+            for i in range(len(run) - n + 1):
+                part = run[i:i + n]
+                if text[part[0][0]:part[-1][1]].casefold() in phrases:
+                    best = (i, n)
+                    break
+            if best:
+                break
+        if not best:
+            out.append(run)
+            continue
+        i, n = best
+        out += [[t] for t in run[:i]] + [run[i:i + n]] + [[t] for t in run[i + n:]]
     return out
 
 
@@ -121,24 +183,32 @@ def scan(text: str, lang: str, *, voice: str | None = None, use_llm: bool = True
     lex_g, lex_v = N.load_lexicon(None).get(lang, {}), (N.load_lexicon(voice).get(lang, {}) if voice else {})
     lex = {**lex_g, **lex_v}
     found: dict[str, dict[str, Any]] = {}
-    for m in TOKEN.finditer(text):
-        tok = m.group(0).strip("'’.-_/")
-        why = reasons_for(tok, lang)
-        if not why:
-            continue
+    spans: list[tuple[int, int]] = []  # where multi-word terms sit (their words are not counted again alone)
+    for run in _split_known(_runs(text, lang), text, {t.casefold() for t in lex if " " in t}):
+        if len(run) == 1:
+            tok, why = run[0][2], run[0][3]
+        else:
+            tok, why = text[run[0][0]:run[-1][1]], ["phrase"]
+            spans.append((run[0][0], run[-1][1]))
         item = found.setdefault(tok, {"term": tok, "reasons": why, "count": 0})
         item["count"] += 1
     # "Slide" at the start of a sentence and "slide" are one term (a lower-case lexicon term matches any case).
     for tok in [t for t in found if t[:1].isupper() and t[1:].islower() and t.lower() in found]:
         found[tok.lower()]["count"] += found.pop(tok)["count"]
-    # Lexicon terms that occur in the text (multi-word or ordinary-looking ones the heuristics miss).
+    # Lexicon terms that occur in the text (multi-word or ordinary-looking ones the heuristics miss), counted only
+    # where they are not part of a multi-word term already listed ("Claude" inside "Claude Code").
     for term, entry in lex.items():
-        if term not in found and re.search(rf"(?<!\w){re.escape(term)}(?!\w)", text):
-            found[term] = {"term": term, "reasons": [], "count": len(re.findall(rf"(?<!\w){re.escape(term)}(?!\w)", text))}
+        if term in found:
+            continue
+        hits = [m for m in re.finditer(rf"(?<!\w){re.escape(term)}(?!\w)", text)
+                if not any(a <= m.start() and m.end() <= b and (a, b) != m.span() for a, b in spans)]
+        if hits:
+            found[term] = {"term": term, "reasons": [], "count": len(hits)}
     if use_llm:
         unknown = [t for t in found if t not in lex]
+        seen = {t.casefold() for t in found}
         for term, say in _llm_suggestions(text, lang, unknown).items():
-            if lex.get(term, {}).get("source") == "verified":
+            if lex.get(term, {}).get("source") == "verified" or (term not in found and term.casefold() in seen):
                 continue
             item = found.setdefault(term, {"term": term, "reasons": ["llm"], "count": text.count(term)})
             item.setdefault("suggest", say)
