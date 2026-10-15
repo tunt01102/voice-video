@@ -133,7 +133,7 @@ src/mediaforge/
   llm.py             Claude CLI → Ollama fallback; JSON-mode helpers
   models.py          lazy model cache with eviction (LRU by memory class)
   text/normalize.py  language detection, VI/EN normalisation, lexicon, sentence split
-  text/documents.py  Word/PDF import → text with [ảnh N] markers + pictures (SDD-doc-import-preview-chibi.md)
+  text/documents.py  Word/PDF import → text with [ảnh N] markers + pictures (SDD-doc-import-preview-chibi.md; PDF fix: SDD-pdf-import-fix.md)
   tts/base.py        TTSEngine protocol + SynthResult
   tts/vieneu.py      VieNeu adapter
   tts/voxcpm.py      VoxCPM2 (mlx-audio) adapter
