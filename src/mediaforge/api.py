@@ -515,6 +515,16 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "sample not found")
         return FileResponse(settings.data_dir / s["file"], media_type="audio/wav")
 
+    @app.get("/api/voices/{vid}/preview")
+    def voice_preview(vid: str):
+        """The pre-rendered preview of a stock voice (giọng mẫu): plays at once, no job."""
+        from mediaforge.voice import stock
+
+        f = stock.preview_file(vid)
+        if not f:
+            raise HTTPException(404, "no preview yet (run the stock_previews job)")
+        return FileResponse(f, media_type="audio/mpeg")
+
     # ---------------------------------------------------------------- lexicon
     @app.get("/api/lexicon")
     def get_lexicon(voice: str | None = None):

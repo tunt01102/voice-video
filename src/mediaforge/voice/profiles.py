@@ -142,6 +142,8 @@ def update_voice(voice_id: str, patch: dict[str, Any]) -> dict[str, Any]:
         p["consent"] = blend.normalise_consent(patch["consent"])
     if p.get("kind") == "blend":
         p["engines"] = {"vi": blend.ENGINE, "en": blend.ENGINE}  # only VieNeu can render a blend
+    if p.get("kind") == "stock":
+        p["engines"] = {"vi": p["engine"], "en": p["engine"]}    # a preset/design exists in one engine only
     return save_voice(p)
 
 
@@ -196,6 +198,8 @@ def add_sample(voice_id: str, src: str | Path, *, lang: str | None = None, text:
     profile = get_voice(voice_id)
     if profile.get("kind") == "blend":
         raise ValueError(f"{voice_id!r} is a blend (pha giọng): record samples on its own voices instead")
+    if profile.get("kind") == "stock":
+        raise ValueError(f"{voice_id!r} is a stock voice (giọng mẫu): it has no recordings")
     d = _dir(voice_id)
     sid = uuid.uuid4().hex[:8]
     raw = d / "raw" / f"{sid}{Path(src).suffix or '.wav'}"
@@ -289,6 +293,8 @@ def voice_ref(voice_id: str | None, lang: str) -> VoiceRef | None:
     p = get_voice(voice_id)
     if p.get("kind") == "blend":
         return _blend_ref(p, lang)
+    if p.get("kind") == "stock":
+        return VoiceRef(audio_path="", text="", lang=lang, preset=p.get("preset"), instruct=p.get("instruct"))
     # A clip can vanish under us (deleted on the Voices tab mid-job, restored backup): only use files that exist.
     present = [s for s in p["samples"] if (settings.data_dir / s["file"]).exists()]
     sid = p.get("refs", {}).get(lang)

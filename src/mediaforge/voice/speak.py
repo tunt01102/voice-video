@@ -224,6 +224,10 @@ def synth_sentence(
         if engine and engine not in capable:
             log.info("blend voice %s: engine %s cannot blend, using %s", voice_id, engine, capable[0])
             engine = None
+    stock = ref is not None and bool(ref.preset or ref.instruct)
+    if stock:
+        # A stock voice (preset speaker / designed voice) exists in one engine only: no alternates, no "best".
+        capable, engine = [voice["engine"]], voice["engine"]  # type: ignore[index]
     # "best" (try every capable engine) may come from the request or from the voice's saved routing.
     preferred = engine or (voice or {}).get("engines", {}).get(lang) or DEFAULT_ROUTE[lang]
     if ref is not None and ref.blend is not None and preferred not in capable:
@@ -255,7 +259,7 @@ def synth_sentence(
 
     # Sentence-level cache: identical requests are free. A new guide changes the key, so a sentence the owner
     # corrected is re-synthesised with the guide instead of returning the cached failure.
-    key_src = json.dumps([sentence, lang, voice_id, ref.audio_path if ref else None, plan_engines, seed,
+    key_src = json.dumps([sentence, lang, voice_id, ref.key if ref else None, plan_engines, seed,
                           ref.blend.key if ref and ref.blend else None,
                           {k: lexicon[k] for k in N.terms_in(sentence, lexicon)}, lint_readings,
                           {e: {t: v[0] for t, v in d.items()} for e, d in lesson_readings.items()}, sorted(judged)]
@@ -299,7 +303,7 @@ def synth_sentence(
             return _run_attempt(att, sentence, lang, ref, lenient)
         except Exception:
             # The reference clip was deleted while this job ran: re-resolve (falls back to a clip that exists) once.
-            if not ref or Path(ref.audio_path).exists():
+            if not ref or not ref.audio_path or Path(ref.audio_path).exists():
                 raise
             stale, ref = ref.audio_path, profiles.voice_ref(voice_id, lang)
             log.warning("reference %s vanished mid-job; retrying with %s", stale, ref.audio_path if ref else None)
@@ -426,7 +430,7 @@ def synth_sentence(
     report = {
         "text": sentence, "lang": lang, "engine": chosen.engine, "score": chosen.score, "passed": chosen.score <= thr,
         "heard": chosen.heard, "respell": chosen.respell, "source": "tts", "strategy": chosen.strategy,
-        "ref": ref.audio_path if ref else None, "guide": guide["id"] if guide else None,
+        "ref": (ref.audio_path or ref.key) if ref else None, "guide": guide["id"] if guide else None,
         "phrases": chosen.phrases, "pauses": chosen.pauses if chosen.phrases else None,
         "missing": chosen.qa.get("missing", []), "extra": chosen.qa.get("extra", []), "attempts": [
             {"engine": a.engine, "seed": a.seed, "temperature": a.temperature, "score": a.score, "heard": a.heard,

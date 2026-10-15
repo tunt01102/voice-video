@@ -947,11 +947,17 @@ def run_eval(p: dict[str, Any], progress: Progress, job_id: str | None = None) -
     return evals.run(p, progress, job_id)
 
 
+def run_stock_previews(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
+    from mediaforge.voice import stock
+
+    return stock.build_previews(p, progress, job_id)
+
+
 RUNNERS: dict[str, Callable[..., dict[str, Any]]] = {
     "tts": run_tts, "image": run_image, "subtitle": run_subtitle, "video": run_video, "enrol": run_enrol,
     "rerender": run_rerender, "export": run_export, "prepare": run_prepare, "resubtitle": run_resubtitle,
     "repronounce": run_repronounce, "sing": run_sing, "recite": run_recite,
-    "blend": run_blend, "eval": run_eval, "restage": run_restage,
+    "blend": run_blend, "eval": run_eval, "restage": run_restage, "stock_previews": run_stock_previews,
 }
 
 

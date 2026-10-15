@@ -105,6 +105,8 @@ def consent_of(profile: dict[str, Any]) -> str | None:
 def check_partner(profile: dict[str, Any]) -> None:
     if profile.get("kind") == "blend":
         raise ValueError("giọng pha không thể là một giọng pha khác")
+    if profile.get("kind") == "stock":
+        raise ValueError("giọng mẫu chưa pha được (không có bản ghi tham chiếu)")
     if not consent_of(profile):
         raise PermissionError(
             f"Giọng '{profile.get('name', profile.get('id'))}' chưa có ghi nhận đồng ý. Giọng nói là dữ liệu sinh trắc "
@@ -216,8 +218,8 @@ def create(owner_id: str, partner_id: str, amount: float = 0.25, *, name: str | 
     amount = _amount(amount)
     owner = profiles.get_voice(owner_id)
     partner = profiles.get_voice(partner_id)
-    if owner.get("kind") == "blend":
-        raise ValueError("giọng chính phải là một giọng thật, không phải giọng pha")
+    if owner.get("kind") in ("blend", "stock"):
+        raise ValueError("giọng chính phải là một giọng có bản ghi, không phải giọng pha hay giọng mẫu")
     check_partner(partner)
     if owner_id == partner_id:
         raise ValueError("chọn hai giọng khác nhau")

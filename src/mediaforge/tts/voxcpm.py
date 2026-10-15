@@ -31,7 +31,12 @@ class VoxCPMEngine:
 
         mx.random.seed(seed)
         kwargs: dict = {"text": text}
-        if ref is not None:
+        if ref is not None and ref.instruct:
+            # Stock voice designed from a description: no reference audio.
+            if "instruct" not in self._params:
+                raise RuntimeError("this mlx-audio VoxCPM2 build has no voice design (instruct)")
+            kwargs["instruct"] = ref.instruct
+        elif ref is not None:
             kwargs["ref_audio"] = ref.audio_path
             if prompt is not None and prompt.text:
                 # Guided repair: timbre from the canonical clip, prosody continued from the owner's guide.

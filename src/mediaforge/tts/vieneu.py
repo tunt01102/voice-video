@@ -35,7 +35,9 @@ class VieNeuEngine:
         np.random.seed(seed % (2**32))
         torch.manual_seed(seed)
         kwargs = dict(temperature=temperature, apply_watermark=True)
-        if ref is not None and ref.blend is not None:
+        if ref is not None and ref.preset:
+            kwargs["voice"] = ref.preset   # a preset speaker shipped with VieNeu (stock voice)
+        elif ref is not None and ref.blend is not None:
             kwargs["voice"] = self.blend_voice(ref.audio_path, ref.blend.partner_audio, ref.blend.weight)
         elif ref is not None:
             kwargs["ref_audio"] = ref.audio_path

@@ -23,10 +23,23 @@ class BlendSpec:
 
 @dataclass(frozen=True)
 class VoiceRef:
-    audio_path: str      # cleaned reference clip (48 kHz mono wav)
+    audio_path: str      # cleaned reference clip (48 kHz mono wav); "" for a stock voice
     text: str            # transcript of the clip
     lang: str            # language of the clip
     blend: BlendSpec | None = None   # set for blend profiles; only engines with `blends = True` honour it
+    # Stock voices (voice/stock.py) have no recording: a VieNeu preset speaker, or a VoxCPM2 voice designed from a
+    # text description. Only the engine named in the profile can render them.
+    preset: str | None = None
+    instruct: str | None = None
+
+    @property
+    def key(self) -> str:
+        """Identity of the speaker for caches."""
+        if self.preset:
+            return f"preset:{self.preset}"
+        if self.instruct:
+            return f"instruct:{self.instruct}"
+        return self.audio_path
 
 
 class TTSEngine(Protocol):
