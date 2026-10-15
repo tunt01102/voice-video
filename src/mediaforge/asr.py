@@ -167,10 +167,26 @@ def spelled_match(ref_seg: list[str], hyp_seg: list[str]) -> bool:
     return difflib.SequenceMatcher(a=rk, b=hk, autojunk=False).ratio() >= SPELLED_MIN_SIMILARITY
 
 
-def error_rate(expected: str, heard: str, lang: str, lenient: set[str] | None = None) -> dict[str, Any]:
+def _clip(op: str, i1: int, i2: int, j1: int, j2: int, a: int, b: int, n: int) -> tuple[int, int, int, int] | None:
+    """The part of a diff block that lies in the scored span [a, b) of the expected tokens (n = all of them); the
+    heard side is cut in proportion. An insertion counts inside the span or at its outer edge (start/end of the
+    whole clip), not at the seam with the context."""
+    if op == "insert":
+        return (i1, i2, j1, j2) if a < i1 < b or i1 == a == 0 or i1 == b == n else None
+    lo, hi = max(i1, a), min(i2, b)
+    if lo >= hi:
+        return None
+    span, m = i2 - i1, j2 - j1
+    return lo, hi, j1 + round(m * (lo - i1) / span), j1 + round(m * (hi - i1) / span)
+
+
+def error_rate(expected: str, heard: str, lang: str, lenient: set[str] | None = None,
+               focus: tuple[int, int] | None = None) -> dict[str, Any]:
     """Score = mean(syllable WER, CER) for Vietnamese, WER for English; plus the word diff.
 
     Diff blocks whose expected side consists only of `lenient` terms are excluded from scoring.
+    focus: score only expected tokens [a, b) — a short sentence heard together with a neighbouring sentence (its
+    context), see speak.SHORT_SYLLABLES. `heard_focus` is then what was heard for that span.
     """
     import jiwer
 
@@ -178,8 +194,14 @@ def error_rate(expected: str, heard: str, lang: str, lenient: set[str] | None = 
     if not ref:
         return {"score": 0.0, "wer": 0.0, "cer": 0.0, "missing": [], "extra": [], "ignored": []}
     soft = {t for term in (lenient or ()) for t in qa_tokens(term, lang)}
-    keep_ref, keep_hyp, missing, extra, ignored = [], [], [], [], []
+    keep_ref, keep_hyp, missing, extra, ignored, heard_focus = [], [], [], [], [], []
     for op, i1, i2, j1, j2 in difflib.SequenceMatcher(a=ref, b=hyp, autojunk=False).get_opcodes():
+        if focus is not None:
+            cut = _clip(op, i1, i2, j1, j2, focus[0], focus[1], len(ref))
+            if cut is None:
+                continue
+            i1, i2, j1, j2 = cut
+            heard_focus += hyp[j1:j2]
         r_seg, h_seg = ref[i1:i2], hyp[j1:j2]
         if op != "equal" and r_seg and all(t in soft for t in r_seg):
             ignored.append(f"{' '.join(r_seg)} → {' '.join(h_seg)}")
@@ -199,7 +221,7 @@ def error_rate(expected: str, heard: str, lang: str, lenient: set[str] | None = 
     # syllable ("Hà Nội" → "Hà Lội") fails, while tone-mark spelling noise alone does not.
     score = (wer + cer) / 2 if lang == "vi" else wer
     return {"score": round(score, 4), "wer": round(wer, 4), "cer": round(cer, 4), "missing": missing,
-            "extra": extra, "ignored": ignored}
+            "extra": extra, "ignored": ignored, **({"heard_focus": " ".join(heard_focus)} if focus is not None else {})}
 
 
 # ---------------------------------------------------------------- alignment
