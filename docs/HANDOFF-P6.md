@@ -21,10 +21,12 @@ SDD-review-upgrade §11.2–11.4):
 
 1. ✅ **Repair budget ≤ 3** — 3.0 mean attempts on failing sentences (was 4.27), passes unchanged at 21/36, eval
    time 466 s → 296 s.
-2. ◐ **Corpus ≥ 80 %** — 21/36 now; 29/36 (81 %) once the owner gives ✓ Nghe đúng rồi to the 8 "thoăn thoắt"
-   rows (the owner's call). Done in code: phrase-first for VI > 25 words, dotted acronyms via the lexicon. Left:
-   3 long babble/repeat, "A.I." (English row, no English `AI` lexicon entry), "chấm Vi En." (Whisper
-   hallucination on a fragment), the cut fragment "ệu PNJ…".
+2. ◐ **Corpus ≥ 80 %** — **25/36 (69 %)** on the original 36 rows (was 21); **33/36 (92 %)** once the owner gives
+   ✓ Nghe đúng rồi to the 8 "thoăn thoắt" rows. Without that ✓ the ceiling is 28/36 (78 %), because those rows
+   must not be "fixed" in code. Done in code: phrase-first for VI > 25 words, dotted acronyms (lexicon; letters
+   in English), Whisper outro hallucinations ("subscribe … Ghiền Mì Gõ") re-judged. Left: 2 long babble/repeat,
+   the cut fragment "ệu PNJ…", "Ây Ai - ét-em-i". The corpus on the data-store copy grew to 40 rows (qa_fail
+   signals from the A/B renders): 26/40.
 3. ✅ **`engine_route` lessons** — `lessons.propose_route`/`route`; applied in engine order and in repair.
 4. ✅ **Sing/recite checkpoints** — interpret, each sung line, mix, each drawn shot.
 5. ◐ **P6-D owner A/B** — 3 topics rendered old vs new on the data-store copy, copied (random A/B order) to

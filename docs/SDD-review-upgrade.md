@@ -540,6 +540,9 @@ creative features (P6-D) need ratings to learn from.
   8 × "thoăn thoắt" (awaiting the owner's ✓ — with it the corpus is 29/36 = 81 %), 3 long babble/repeat, "A.I."
   (tagged English; the English lexicon has no `AI`), "chấm Vi En.", the cut fragment "ệu PNJ…", and one sentence
   with "Ây Ai - ét-em-i".
+- **Corpus, v1.2b** (+ Whisper outro hallucinations count as judge errors, English dotted acronyms spelled):
+  25/36 on the original rows ("chấm Vi En." and "A.I." now pass), 26/40 with 4 new `qa_fail` rows from the A/B
+  renders; mean attempts on failing sentences 3.0. With the owner's ✓ on the 8 "thoăn thoắt" rows: 33/36.
 - **Gated 16:9 video, end to end** (copy of the data store, 25 s brief, chibi, 3 scenes): plan 38 s (with
   self-critique) → voice 47 s → visuals 85 s → compose 7.5 s. Redrawing one scene at the storyboard took ≈ 25 s.
   Changing the music of the finished video (compose-only restage) took ≈ 10 s. The art direction kept one
