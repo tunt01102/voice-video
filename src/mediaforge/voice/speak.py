@@ -135,14 +135,14 @@ def _run_attempt(att: Attempt, sentence: str, lang: str, ref, lenient: set[str])
     hint = ", ".join(sorted(lenient)) if lenient else None
     heard = asr.transcribe(x, lang=lang, initial_prompt=hint, temperature=0.0)["text"]
     judge_retry = False
-    if asr.judge_error(heard, lang):
+    if asr.judge_error(heard, lang, sentence):
         # The judge failed, not necessarily the voice: listen again primed with the intended sentence (F3).
         judge_retry = True
         heard = asr.transcribe(x, lang=lang, initial_prompt=((hint + ". ") if hint else "") + sentence,
                                temperature=0.0)["text"]
     qa = asr.error_rate(sentence, heard, lang, lenient)
     qa["judge_retry"] = judge_retry
-    qa["judge"] = asr.judge_error(heard, lang)
+    qa["judge"] = asr.judge_error(heard, lang, sentence)
     qa["repeat"] = asr.repetition(sentence, heard, lang)
     qa["dur_ratio"] = round(_duration_ratio(sentence, lang, x), 2)
     att.audio, att.heard, att.qa = x, heard, qa
@@ -167,6 +167,17 @@ def classify(att: Attempt, sentence: str, lang: str) -> str:
     if any(w.strip(",.;:!?").isupper() or (lang == "vi" and not is_vi_syllable(w.strip(",.;:!?"))) for w in raw_missing):
         return "terms"
     return "other"
+
+
+def expected_class(sentence: str, lang: str) -> str | None:
+    """The failure class a sentence is likely to hit before any synthesis: terms (acronyms, non-Vietnamese words) or
+    truncated (long sentences); None when nothing stands out."""
+    from mediaforge.text.pronounce import is_vi_syllable
+
+    words = [w.strip(",.;:!?\"'()") for w in sentence.split()]
+    if any(sum(c.isupper() for c in w) >= 2 or (lang == "vi" and w.isalpha() and not is_vi_syllable(w)) for w in words):
+        return "terms"
+    return "truncated" if L.is_long(sentence, lang) else None
 
 
 # Which repair strategy to try next for each failure class; each strategy has a use limit per sentence.
@@ -213,6 +224,10 @@ def synth_sentence(
         if engine and engine not in capable:
             log.info("blend voice %s: engine %s cannot blend, using %s", voice_id, engine, capable[0])
             engine = None
+    stock = (voice or {}).get("kind") == "stock"
+    if stock:
+        # A stock voice (preset speaker / designed voice) exists in one engine only: no alternates, no "best".
+        capable, engine = [voice["engine"]], voice["engine"]  # type: ignore[index]
     # "best" (try every capable engine) may come from the request or from the voice's saved routing.
     preferred = engine or (voice or {}).get("engines", {}).get(lang) or DEFAULT_ROUTE[lang]
     if ref is not None and ref.blend is not None and preferred not in capable:
@@ -222,10 +237,17 @@ def synth_sentence(
         preferred = DEFAULT_ROUTE[lang]
     plan_engines = capable if preferred == "best" else [preferred]
     alternates = [e for e in capable if e not in plan_engines]
+    # An active engine_route lesson for the class this sentence is likely to fail with puts that engine first; with
+    # "best", a perfect take on it (score 0) ends the first pass early (SDD-review-upgrade §5.1.3).
+    route = lessons.route(base_id, lang, expected_class(sentence, lang)) if len(plan_engines) > 1 and not guide else None
+    if route and route[0] in plan_engines:
+        plan_engines = [route[0]] + [e for e in plan_engines if e != route[0]]
+    else:
+        route = None
 
     # What the engine is given: lint's TTS-only readings (acronym runs, domains) < learned readings (lessons,
     # per engine) < the owner's lexicon. Subtitles keep the written sentence.
-    lint_readings = L.tts_readings(sentence, lang)
+    lint_readings = L.tts_readings(sentence, lang, lexicon)
     lesson_readings = {e: {t: v for t, v in lessons.readings(base_id, lang, e).items() if N.terms_in(sentence, [t])}
                        for e in capable}
 
@@ -237,7 +259,7 @@ def synth_sentence(
 
     # Sentence-level cache: identical requests are free. A new guide changes the key, so a sentence the owner
     # corrected is re-synthesised with the guide instead of returning the cached failure.
-    key_src = json.dumps([sentence, lang, voice_id, ref.audio_path if ref else None, plan_engines, seed,
+    key_src = json.dumps([sentence, lang, voice_id, ref.key if ref else None, plan_engines, seed,
                           ref.blend.key if ref and ref.blend else None,
                           {k: lexicon[k] for k in N.terms_in(sentence, lexicon)}, lint_readings,
                           {e: {t: v[0] for t, v in d.items()} for e, d in lesson_readings.items()}, sorted(judged)]
@@ -281,7 +303,7 @@ def synth_sentence(
             return _run_attempt(att, sentence, lang, ref, lenient)
         except Exception:
             # The reference clip was deleted while this job ran: re-resolve (falls back to a clip that exists) once.
-            if not ref or Path(ref.audio_path).exists():
+            if not ref or not ref.audio_path or Path(ref.audio_path).exists():
                 raise
             stale, ref = ref.audio_path, profiles.voice_ref(voice_id, lang)
             log.warning("reference %s vanished mid-job; retrying with %s", stale, ref.audio_path if ref else None)
@@ -318,6 +340,8 @@ def synth_sentence(
         if phrase_first and len(p_phrases) > 1:
             first.append(make(plan_engines[0], seed + 29, 0.7, phrases=p_phrases, pauses=p_pauses, strategy="phrases"))
     for att in first:
+        if route and attempts and attempts[0].score == 0:
+            break  # the routed engine read the sentence perfectly: nothing left to compare
         attempts.append(run(att))
         if guide and attempts[-1].score <= thr and (attempts[-1].prompt is None or attempts[-1].strategy == learned):
             break  # a guided candidate with the canonical timbre (or the strategy that worked before) passes
@@ -327,7 +351,18 @@ def synth_sentence(
 
     used: Counter[str] = Counter()
     tried_phrases = any(a.phrases for a in attempts)
-    step, stall, best_score = 0, 0, best().score
+    # First-pass attempts count towards the stall rule: when "best" already tried both engines (and phrases) without
+    # improving, the loop gets one class-directed repair instead of two more blind tries (SDD-review-upgrade §6).
+    step, stall, best_score = 0, 0, attempts[0].score
+    for a in attempts[1:]:
+        if a.score < best_score - 0.005:
+            best_score, stall = a.score, 0
+        else:
+            stall += 1
+    if len(attempts) > 1 and best().score > thr:
+        # Several engines/strategies already failed: further repairs continue only while they improve.
+        stall = max(stall, STALL_LIMIT - 1)
+    best_score = best().score
     classes: list[str] = []
     while best().score > thr and len(attempts) < budget and stall < STALL_LIMIT:
         b = best()
@@ -336,11 +371,14 @@ def synth_sentence(
         ok = {"reseed": True, "engine": bool(alternates), "phrases": not tried_phrases and len(p_phrases) > 1,
               "respell": True}
         strat = next((k for k in REPAIR_ORDER[cls] if ok[k] and used[k] < REPAIR_LIMIT[k]), "reseed")
+        fix = lessons.route(base_id, lang, cls)
+        if fix and fix[0] in alternates and fix[0] != b.engine and used["engine"] < REPAIR_LIMIT["engine"]:
+            strat = "engine"  # this engine has repaired this class before
         used[strat] += 1
         if strat == "reseed":
             att = derive(b, b.engine, seed + 17 + 101 * step, 0.55, b.respell)
         elif strat == "engine":
-            att = derive(b, alternates[0], seed, 0.7, b.respell)
+            att = derive(b, fix[0] if fix and fix[0] in alternates else alternates[0], seed, 0.7, b.respell)
         elif strat == "phrases":  # long sentences truncate/babble: synthesise phrase by phrase
             att = make(b.engine, seed + 29, 0.7, b.respell, phrases=p_phrases, pauses=p_pauses, strategy="phrases")
             tried_phrases = True
@@ -376,8 +414,15 @@ def synth_sentence(
             else:
                 lessons.signal("reading_not_causal", {"voice": base_id, "lang": lang, "respell": new, "sentence": sentence})
     applied = [lid for t, (_, lid) in lesson_readings.get(attempts[0].engine, {}).items()]
+    if route:
+        applied.append(route[1])
     if learn:  # evaluations (learn=False) must not feed the lessons they measure
         lessons.record_use(applied, attempts[0].score <= thr)
+        # A plain take of another engine passed where the first engine failed: evidence for an engine_route.
+        if passed and attempts[0].score > thr and chosen.engine != attempts[0].engine and chosen.strategy == "whole" \
+                and not chosen.respell:
+            lessons.propose_route(base_id, lang, classify(attempts[0], sentence, lang), chosen.engine,
+                                  attempts[0].engine, sentence)
     if not passed and learn:
         lessons.signal("qa_fail", {"voice": base_id, "lang": lang, "engine": chosen.engine, "text": sentence,
                                    "heard": chosen.heard, "score": chosen.score,
@@ -385,7 +430,7 @@ def synth_sentence(
     report = {
         "text": sentence, "lang": lang, "engine": chosen.engine, "score": chosen.score, "passed": chosen.score <= thr,
         "heard": chosen.heard, "respell": chosen.respell, "source": "tts", "strategy": chosen.strategy,
-        "ref": ref.audio_path if ref else None, "guide": guide["id"] if guide else None,
+        "ref": (ref.audio_path or ref.key) if ref else None, "guide": guide["id"] if guide else None,
         "phrases": chosen.phrases, "pauses": chosen.pauses if chosen.phrases else None,
         "missing": chosen.qa.get("missing", []), "extra": chosen.qa.get("extra", []), "attempts": [
             {"engine": a.engine, "seed": a.seed, "temperature": a.temperature, "score": a.score, "heard": a.heard,

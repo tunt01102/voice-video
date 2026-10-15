@@ -72,3 +72,12 @@ def test_chapters_are_overlaid_after_the_title_card(tmp_path):
     assert "Style: Chapter" in text and "0:00:02.70" in text and "0:00:11.70" in text and "Gọi xác nhận" in text
     assert "Chapter" not in ass.read_text()  # exported subtitles untouched
     assert P.chapter_ass(str(ass), {"scenes": [{}]}, [3.0], tmp_path, height=1080) == str(ass)
+
+
+def test_old_style_render_drops_the_art_direction(monkeypatch):
+    monkeypatch.setattr(P, "plan", lambda brief, **kw: {"title": "T", "art_direction": {"motif": "a red fox"},
+                                                        "scenes": [{"narration": "Một.", "visual_prompt": "a hill"}]})
+    data, _ = P.make_plan({"brief": "x", "lang": "vi", "art_direction": False}, "narrated", style="cinematic", seconds=20)
+    assert data["art_direction"] == {} and P.art_prompt("a hill", data["art_direction"]) == "a hill"
+    data, _ = P.make_plan({"brief": "x", "lang": "vi"}, "narrated", style="cinematic", seconds=20)
+    assert data["art_direction"]["motif"] == "a red fox"

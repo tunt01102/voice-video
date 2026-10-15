@@ -380,8 +380,8 @@ Rendered with Pillow (`video/slides.py` already does this), using the art-direct
 
 #### 5.4.5 Evaluate later (not adopted here)
 
-- An image–text consistency score (e.g. an open CLIP/SigLIP model) to auto-reject off-prompt images. [VERIFY:
-  licence and weights before adding; SDD §3 rule]
+- An image–text consistency score (e.g. an open CLIP/SigLIP model) to auto-reject off-prompt images. Licence
+  review done 2026-10-15 (§11.4); not adopted yet.
 - LTX-2 clips for 1–2 "hero" scenes per video instead of all or none. Weights licence is already flagged
   [VERIFY: confirm with compliance] in SDD §3.
 
@@ -448,7 +448,7 @@ SDD §10, because none of the above needs it. CSS gets design tokens (`:root` va
 |---|---|---|---|
 | Video sentences failing QA | 4.3 % (6/141) | ≤ 1.5 % | job reports, Insights |
 | Regression corpus pass rate | 0 % (25 never-passed) | ≥ 80 %, the rest `judge_accept` or known-engine-limit | `mediaforge eval voice` |
-| Mean attempts on failing sentences | 4–5 | ≤ 3 | report attempts |
+| Mean attempts on failing sentences | 4–5 | ≤ 3 — **3.0 measured 2026-10-15** (§11.2) | report attempts |
 | Harmful learned readings | 12 of the voice's 15 `learned` entries (§3.3) | 0 active; gate unit-tested | `lessons` + tests |
 | Manual retries of the same sentence | ~25 for 2 sentences | ≤ 3, then "nghe đúng rồi" or a lesson | signals |
 | Work lost on restart | whole job (≤ 15 min) | ≤ 1 stage | resume test |
@@ -471,10 +471,10 @@ SDD §10, because none of the above needs it. CSS gets design tokens (`:root` va
 
 | Phase | Scope | Exit criterion | Status |
 |---|---|---|---|
-| **P6-A Learning hygiene + lint** | §5.1.4 gate + migration, §5.2.1 lint, §5.2.3 judge hardening + repetition detector + class-aware budget, "✓ Nghe đúng rồi", regression corpus + `eval` | 0 harmful active readings; corpus ≥ 80 %; unit tests for gate and lint | Done 2026-10-15 — 0 harmful active readings; corpus 20/36 (56 %) pass + 8 awaiting the owner's ✓ (see §11.2) |
+| **P6-A Learning hygiene + lint** | §5.1.4 gate + migration, §5.2.1 lint, §5.2.3 judge hardening + repetition detector + class-aware budget, "✓ Nghe đúng rồi", regression corpus + `eval` | 0 harmful active readings; corpus ≥ 80 %; unit tests for gate and lint | Done 2026-10-15 — 0 harmful active readings; corpus 32/36 (89 %) after v1.2 and the owner's ✓ on "thoăn thoắt" (see §11.2) |
 | **P6-B Lessons store + review** | §5.1.1–5.1.3, 5.1.5; ratings; job page (§5.5.2 step 6); Kinh nghiệm tab; undo toasts; app.js modules | Lessons visible and applied with chips; rating stored; digest prints | Done 2026-10-15 |
 | **P6-C Staged pipeline** | §5.3 stages, resume, gates, restage, stage timings, upload validation; Studio flow steps 1–5 | Kill the server mid-visuals → job resumes at visuals; restage one scene ≤ 60 s + compose | Done 2026-10-15 (resume unit-tested with a simulated crash; live restage measured, §11.2) |
-| **P6-D Creative direction** | §5.4.1–5.4.4 art direction, structure templates, hook variants, self-critique, mood motion table, cards, mood music + envelopes | Blind A/B of 3 topics (old vs new) rated by the owner; new wins ≥ 2/3 | Built 2026-10-15; the owner's A/B is still to do |
+| **P6-D Creative direction** | §5.4.1–5.4.4 art direction, structure templates, hook variants, self-critique, mood motion table, cards, mood music + envelopes | Blind A/B of 3 topics (old vs new) rated by the owner; new wins ≥ 2/3 | Done 2026-10-15 — owner's blind A/B: new style preferred in 3/3 topics |
 | P6-E Evaluate | §5.4.5 candidates, WavLM-SV (already P4) | Licence review done | Open |
 
 P6-A comes first because it is cheap and stops the active harm (the polluted lexicon). P6-B is next, because
@@ -505,10 +505,11 @@ creative features (P6-D) need ratings to learn from.
 
 | Concern | Files |
 |---|---|
-| Lessons, signals, ratings, reading gate, migration, insights, incidents | `lessons.py`, tables in `db.py` |
-| Script lint (L1–L5), TTS-only readings, long-sentence phrasing | `text/lint.py` |
+| Lessons, signals, ratings, reading gate, engine routes, migration, insights, incidents | `lessons.py` (`propose_route`, `route`), tables in `db.py` |
+| Script lint (L1–L5), TTS-only readings (incl. dotted acronyms via the lexicon), long-sentence phrasing | `text/lint.py` |
+| Sing/recite checkpoints | `sing/pipeline.py` (`run` stages, `sing_vocal(resume=, checkpoint=)`, `make_video(drawn=)`) |
 | Judge: greedy decoding, CJK retry, repetition, spelled-acronym match | `asr.py` (`judge_error`, `repetition`, `spelled_match`) |
-| Class-aware repair, counterfactual learning, lesson readings per engine | `voice/speak.py` (`classify`, `REPAIR_ORDER`, `STALL_LIMIT`) |
+| Class-aware repair, counterfactual learning, lesson readings per engine, engine routes | `voice/speak.py` (`classify`, `expected_class`, `REPAIR_ORDER`, `STALL_LIMIT` — first-pass attempts count towards it) |
 | Regression corpus + eval job | `voice_regression.jsonl`, `evals.py`, `mediaforge eval voice` |
 | Stages, gates, resume, plan edits, recompose, cards, chapters, auto music | `pipelines.py` (`run_video`, `AwaitApproval`, `apply_plan_edits`, `recompose`, `add_cards`, `chapter_ass`, `auto_music`), `restage.py`, `jobs.py` (`waiting`, `requeue`, `RESUMABLE`), `db.init` |
 | Mood motion/transitions, music fades | `video/compose.py` (`MOOD_STYLE`, `assign_styles`, `audio_graph(total=)`) |
@@ -523,9 +524,26 @@ creative features (P6-D) need ratings to learn from.
   5/36 after the first P6-A pass → **20/36 (56 %)** after adding the spelled-acronym judge (acronym class 18/22).
   The remaining 16: 8 × "thoăn thoắt" (both engines are heard as "thoán thoát"; this needs the owner's ✓ Nghe đúng
   rồi, after which they count as judge-accepted), 3 engine babble/repeat on long sentences, 4 acronym-only
-  fragments ("A.I.", "S, M, E."), 1 cut fragment. Mean attempts on failing sentences is still 4.3 (target ≤ 3, not
-  met): the stall rule stops after two non-improving tries, but the first pass already spends two attempts with
-  `engine=best`.
+  fragments ("A.I.", "S, M, E."), 1 cut fragment. Mean attempts on failing sentences was still 4.3: the stall rule
+  stopped after two non-improving tries, but the first pass already spent two attempts with `engine=best`.
+- **Repair budget, v1.2** (same corpus and data-store copy, one run each, `eval-voice` rows now keep every try):
+
+  | Code | Passed | Mean attempts, failing | Eval time |
+  |---|---|---|---|
+  | main (baseline) | 21/36 | 4.27 | 466 s |
+  | first-pass attempts seed the stall counter | 20/36 | 3.69 | 360 s |
+  | + a failed multi-attempt first pass allows only improving repairs; phrase-first > 25 VI words; dotted acronyms | **21/36** | **3.0** | **296 s** |
+
+  Rows lost against main: "chấm Vi En." and one 20-word sentence, which main passed only at attempt 5 after three
+  identical scores (Whisper hallucinates "Ghiền Mì Gõ" on the 3-word fragment). Rows gained: the 30-word
+  "Thuật toán chấm điểm…" (phrase-first now applies above 25 words) and one 21-word sentence. Still failing (15):
+  8 × "thoăn thoắt" (awaiting the owner's ✓ — with it the corpus is 29/36 = 81 %), 3 long babble/repeat, "A.I."
+  (tagged English; the English lexicon has no `AI`), "chấm Vi En.", the cut fragment "ệu PNJ…", and one sentence
+  with "Ây Ai - ét-em-i".
+- **Corpus, v1.2b** (+ Whisper outro hallucinations and decoder loops count as judge errors, English dotted
+  acronyms spelled): **27/36** on the original rows ("chấm Vi En.", "A.I." and the two "lưu lư lư…" long
+  sentences now pass), 29/40 with 4 new `qa_fail` rows from the A/B renders; mean attempts on failing sentences
+  3.0. After the owner's ✓ Nghe đúng rồi on "thoăn thoắt": **32/36 (89 %)**, 34/40 (85 %) — target ≥ 80 % met.
 - **Gated 16:9 video, end to end** (copy of the data store, 25 s brief, chibi, 3 scenes): plan 38 s (with
   self-critique) → voice 47 s → visuals 85 s → compose 7.5 s. Redrawing one scene at the storyboard took ≈ 25 s.
   Changing the music of the finished video (compose-only restage) took ≈ 10 s. The art direction kept one
@@ -547,15 +565,42 @@ creative features (P6-D) need ratings to learn from.
   clusters ("vn", "pnj"), so ordinary English words are never forgiven ("cat"→"cats" still fails). Some letter
   names are also Vietnamese words (`em`, `đi`, `ca`, `vi`); a false match needs a misheard run of ≥ 3 of them with
   near-identical letters, because keys under 3 letters must match exactly — rare, but possible.
-- Art direction is asked for in English (it goes into image prompts); the plan gate says so.
+- Art direction is asked for in English (it goes into image prompts); the plan gate says so. `art_direction: false`
+  (job param, REST only) drops it for an old-style render — used for the P6-D blind A/B.
+- v1.2: Vietnamese sentences over 25 words (was 35) are read phrase-first and get the L2 lint note. Cost: such
+  sentences spend 3 first-pass attempts with `best` even when they pass. Dotted acronyms ("A.I.", "S.M.E.") read
+  like the undotted lexicon term; without a lexicon entry they stay as written.
+- v1.2 repair budget: first-pass attempts count towards `STALL_LIMIT`, and once a first pass of several attempts
+  has failed, repairs continue only while they improve the best score. Measured in §11.2.
 - No "✂ Tách câu" button: 🔁 Tạo lại already renders phrase-first.
 - `app.js` was not split. New UI lives in ES modules under `web/js/` that use `app.js`'s globals, which avoids
   churn in working code.
-- `engine_route` lessons are recorded as signals only (no automatic routing yet). Mood "duration bias" is not
-  implemented, because scene length is the narration length.
+- `engine_route` lessons (v1.2): when a plain take of another engine passes where the first engine failed, the
+  failure class gets evidence (`lessons.propose_route`, signal `route_win`); 3 different sentences make it active,
+  2 repairs by another engine retire it. It is applied twice in `synth_sentence`: (1) the engine is put first for
+  sentences whose *expected* class (`expected_class`: acronyms/non-Vietnamese words → `terms`, long → `truncated`)
+  has a route; with `best`, only a perfect take (score 0) on it skips the other engine, so `best` still compares
+  otherwise; (2) in the repair loop, the routed engine is the next strategy for that class. Route uses are counted
+  like other lessons (`record_use`). Mood "duration bias" is not implemented, because scene length is the
+  narration length.
 - `music: "auto"` is available (dashboard: "🎵 Tự chọn theo không khí video"), but the default stays "no music"
   so existing MCP callers see no change.
-- Sing/recite: an interrupted job is re-queued and re-runs from the start (no per-stage checkpoints). This still
-  replaces "failed (interrupted)". Resumes are limited to 2 per job, and enrol/rerender/export are never re-run.
+- Sing/recite (v1.2): checkpoints in the song folder's `stages.json` like `run_video`: the poem reading
+  (`interpret`), every sung line (`sung/line_NN.npy` + its report and the key), the mix, and each video shot
+  already drawn. A resumed job carries on at the next line/shot. Resumes are limited to 2 per job, and
+  enrol/rerender/export are never re-run.
 - Jobs → Thư viện: thumbnails, text search, "⧉ Làm thêm bản như vầy" and a `waiting` filter were added to the
   Jobs tab instead of a new tab.
+
+### 11.4 P6-E licence review (2026-10-15, no model added)
+
+| Candidate | Use | Licence found | Verdict |
+|---|---|---|---|
+| SigLIP / SigLIP 2 (`google/siglip-base-patch16-224`, `google/siglip2-base-patch16-224`) | image–text consistency score | Apache-2.0 (HF model card) | **Allowed.** Preferred: permissive weights; prompts are English. |
+| OpenAI CLIP (`openai/clip-vit-base-patch32`) | same | Code MIT (openai/CLIP); the HF card puts "any deployed use" out of scope (a model-card statement, not a licence term) | Allowed by the §3 rule, but SigLIP first because of the card's scope note. |
+| WavLM-SV (`microsoft/wavlm-base-plus-sv`) | speaker similarity of takes | Points to the UniSpeech LICENSE = **CC BY-SA 3.0** (checked on raw.githubusercontent.com) | **Rejected** (ShareAlike is outside the Apache/MIT/BSD rule); added to SDD §3 Rejected. |
+| SpeechBrain ECAPA-TDNN (`speechbrain/spkrec-ecapa-voxceleb`) | speaker similarity (WavLM-SV replacement) | Apache-2.0 (HF card); trained on VoxCeleb 1+2; EER 0.80 % | **Candidate.** [VERIFY: VoxCeleb training-data terms before adoption.] VieNeu's own 192-d speaker encoder (`VieNeuEngine.speaker_embedding`) is already in the stack and needs no new model; try it first. |
+
+Next step (not done): measure SigLIP on the scene images of 10 finished videos (score vs the owner's redraws)
+before wiring an auto-reject.
+

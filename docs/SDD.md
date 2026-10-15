@@ -100,7 +100,8 @@ licence), vinorm (non-commercial, Linux binary), WhisperX VI aligners and
 ctc-forced-aligner default model (CC-BY-NC-4.0), Wav2Lip (non-commercial models),
 Remotion (company licence), aeneas (AGPL), VibeVoice (TTS removed upstream),
 CosyVoice/Chatterbox/Qwen3-TTS/Kokoro (no Vietnamese), DiffusionKit (archived), Seed-VC (GPL-3.0 singing
-voice conversion), SoulX-Singer / YingMusic-Singer (no Vietnamese; licences unclear).
+voice conversion), SoulX-Singer / YingMusic-Singer (no Vietnamese; licences unclear), WavLM-SV / UniSpeech
+checkpoints (CC BY-SA 3.0 — use SpeechBrain ECAPA (Apache-2.0) or VieNeu's speaker encoder instead).
 
 ## 4. Architecture
 
@@ -142,6 +143,8 @@ src/mediaforge/
   voice/fx.py        pitch/formant, pace, clarity chain, loudness
   voice/speak.py     sentence-level synth + QA + self-repair loop
   voice/blend.py     pha giọng: consent, speaker-vector blend calibration, blend profiles (SDD-artistry-voice-blend.md §6)
+  voice/stock.py     giọng mẫu: VieNeu preset / VoxCPM2-designed presenter voices, anchors, instant previews (SDD-stock-voices.md)
+  voice/stock_review.py  multi-dimensional review of stock voices (`mediaforge eval stock`)
   asr.py             transcribe, word timings, script alignment, similarity score
   subtitles.py       cue building, SRT/VTT/ASS karaoke writers
   image.py           image generation
@@ -182,6 +185,13 @@ Routing default: `vi → vieneu`, `en → voxcpm`, configurable per voice and pe
 4. Pick the best reference per language (SNR, duration 6–12 s, ASR confidence).
 5. Store under `data/voices/<id>/` with `profile.json` (default pitch/pace/clarity,
    preferred engine per language). **Voice data never leaves the machine.**
+
+### 5.1a Stock voices (giọng mẫu)
+Ready-made Vietnamese presenter voices with no recording. A profile has `kind: "stock"` and uses either a VieNeu
+preset speaker or a VoxCPM2 voice designed from a description. A designed voice is then anchored to one synthetic
+take of itself. Each stock voice is rendered by one engine only, and is named by gender · region · style, never
+after a person. Previews are pre-rendered (`stock_previews` job) and play instantly. Review, results and
+provenance: SDD-stock-voices.md.
 
 ### 5.2 Synthesis — `speak(text, voice, lang, params)`
 1. **Normalise**: language detect per sentence (`auto` supports mixed EN/VI);

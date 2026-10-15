@@ -363,6 +363,14 @@ def eval_voice(voice: Optional[str] = None, engine: Optional[str] = None, limit:
     _run("eval", params, local)
 
 
+@eval_app.command("stock")
+def eval_stock(voices: Optional[list[str]] = typer.Option(None, "--voice"), reference: Optional[str] = None,
+               apply: bool = typer.Option(False, help="keep each stock voice's best fx"), local: bool = False) -> None:
+    """Review the stock voices (giọng mẫu): clarity, tones, stability, pace, pitch movement, pauses, consistency."""
+    params = {"suite": "stock", "voices": voices, "reference": reference, "apply": apply or None}
+    _run("eval", params, local)
+
+
 # ------------------------------------------------------------------ ops
 
 @music_app.command("list")

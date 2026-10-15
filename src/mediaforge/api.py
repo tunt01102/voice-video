@@ -398,8 +398,12 @@ def create_app() -> FastAPI:
     # ---------------------------------------------------------------- voices
     @app.get("/api/voices")
     def list_voices():
+        from mediaforge.voice import stock
+
         default = profiles.default_voice()
-        return [{**v, "default": v["id"] == default} for v in profiles.list_voices()]
+        return [{**v, "default": v["id"] == default,
+                 **({"preview_ready": bool(stock.preview_file(v["id"]))} if v.get("kind") == "stock" else {})}
+                for v in profiles.list_voices()]
 
     @app.post("/api/voices/{vid}/default")
     def make_default(vid: str):
@@ -514,6 +518,16 @@ def create_app() -> FastAPI:
         if not s:
             raise HTTPException(404, "sample not found")
         return FileResponse(settings.data_dir / s["file"], media_type="audio/wav")
+
+    @app.get("/api/voices/{vid}/preview")
+    def voice_preview(vid: str):
+        """The pre-rendered preview of a stock voice (giọng mẫu): plays at once, no job."""
+        from mediaforge.voice import stock
+
+        f = stock.preview_file(vid)
+        if not f:
+            raise HTTPException(404, "no preview yet (run the stock_previews job)")
+        return FileResponse(f, media_type="audio/mpeg")
 
     # ---------------------------------------------------------------- lexicon
     @app.get("/api/lexicon")

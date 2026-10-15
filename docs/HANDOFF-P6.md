@@ -7,7 +7,8 @@ Written 2026-10-15 at the end of the session that built P6-A…D. Read this, the
 
 - `main` = `b4b4a10` (merge of `feature/sdd-review-upgrade`). 127 tests pass. **Not pushed**: `main` is 10 commits
   ahead of `origin/main`. Push only if the owner asks.
-- The live service (`ai.block8.mediaforge`, :8765) runs this code (`scripts/service.sh update` from this checkout).
+- The live service (`ai.block8.mediaforge`, :8765) runs **`feature/stock-voices`** (unmerged; it contains
+  `feature/p6-repair-budget` + giọng mẫu), deployed 2026-10-15 at the owner's request. `main` is unchanged.
 - Live data: the old `learned` lexicon entries were migrated into lessons. 14 were retired (backup
   `~/.local/share/mediaforge/backups/lexicon-gi-ng-t-20261015-142619.json`). The candidate `for → pho` awaits the
   owner's decision.
@@ -16,24 +17,23 @@ Written 2026-10-15 at the end of the session that built P6-A…D. Read this, the
 
 ## Open items, in priority order
 
-1. **Repair budget: mean attempts on failing sentences 4.3 → ≤ 3** (SDD §6).
-   - Cause: `engine=best` spends two first-pass attempts, then the stall rule needs two more.
-   - Idea: when the first pass of `best` fails on both engines with the same class, start the repair from the
-     class strategy instead of re-seeding both.
-   - Measure with `mediaforge eval voice --voice gi-ng-t` on a data-store copy.
-2. **Corpus ≥ 80 %** (now 20/36). The remaining failures:
-   - 8 × "thoăn thoắt": owner ✓ Nghe đúng rồi; do not "fix" them in code.
-   - 3 × babble/repeat on long sentences: try phrase-first for VI sentences > 25 words, not only > 35.
-   - 4 × lone acronyms ("A.I.", "S, M, E.", "dot V.N."): lint could expand dotted acronyms with the lexicon.
-   - 1 fragment.
-3. **`engine_route` lessons** (SDD §5.1.3): now signals only (`reading_win`, `qa_fail` with class/engine). Promote to
-   a lesson when one engine repairs a class ≥ 3 times; apply it in `synth_sentence` engine order.
-4. **Sing/recite checkpoints**: an interrupted job re-runs from the start. Add stage checkpoints to
-   `sing/pipeline.py` like `run_video`'s `stages.json`.
-5. **P6-D owner A/B**: prepare 3 topics rendered old-style (`critique=false`, `cards=false`, no art direction) vs
-   new. The owner rates blind with ⭐. Do not rate on the owner's behalf.
-6. **P6-E evaluate** (licence review first, SDD §3 rules): an image–text consistency score (CLIP/SigLIP), WavLM-SV.
-   [VERIFY: licences before adding any model]
+Status 2026-10-15 (second session, branch `feature/p6-repair-budget`, not merged/pushed; numbers in
+SDD-review-upgrade §11.2–11.4):
+
+1. ✅ **Repair budget ≤ 3** — 3.0 mean attempts on failing sentences (was 4.27), passes unchanged at 21/36, eval
+   time 466 s → 296 s.
+2. ✅ **Corpus ≥ 80 %** — **32/36 (89 %)** on the original rows, 34/40 (85 %) on the copy's grown corpus, mean
+   attempts on failing sentences 3.0. The owner listened and confirmed "thoăn thoắt" is read right (✓ Nghe đúng
+   rồi → `judge_accept`, live store, 2026-10-15). Still failing: the misspelt variants "thoằn thoắt" / "thoăng
+   thoắt" (not confirmed by the owner), the broken fragment "ệu PNJ … goép …", and "Ây Ai - ét-em-i - chấm Vi En"
+   heard as "AI SMI.VM".
+3. ✅ **`engine_route` lessons** — `lessons.propose_route`/`route`; applied in engine order and in repair.
+4. ✅ **Sing/recite checkpoints** — interpret, each sung line, mix, each drawn shot.
+5. ✅ **P6-D owner A/B** — 3 topics rendered old vs new on the data-store copy (random A/B order per topic,
+   `~/.local/share/mediaforge/outputs/ab-p6d/`). The owner picked B in all 3 topics (pairwise choice, no stars);
+   the key shows B = new style every time → **new wins 3/3** (exit criterion ≥ 2/3). Recorded in `ket-qua.json`.
+6. ✅ **P6-E licence review** — SigLIP (Apache-2.0) allowed; WavLM-SV rejected (CC BY-SA 3.0); SpeechBrain ECAPA
+   a candidate [VERIFY: VoxCeleb training-data terms]. No model added.
 
 ## How to work safely (see memory: e2e-testing-safety)
 

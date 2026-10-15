@@ -145,6 +145,18 @@ def test_tts_readings_keep_subtitle_text():
         "Học ây ai, ét em i tại aisme chấm vi en nhé"
 
 
+def test_dotted_acronyms_read_like_the_lexicon_term():
+    lex = {"AI": "ây ai", "SME": "Ét Em I"}
+    assert L.tts_readings("A.I.", "vi", lex) == {"A.I": "ây ai"}
+    assert N.apply_lexicon("Học S.M.E. nhé.", L.tts_readings("Học S.M.E. nhé.", "vi", lex)) == "Học Ét Em I nhé."
+    assert L.tts_readings("dot V.N.", "vi", lex) == {}          # no lexicon entry: left as written
+    assert L.tts_readings("Mr. A. Smith", "en", lex) == {}
+
+
+def test_vietnamese_sentences_over_25_words_are_read_phrase_first():
+    assert L.is_long(" ".join(["chữ"] * 26), "vi") and not L.is_long(" ".join(["chữ"] * 25), "vi")
+
+
 def test_long_unpunctuated_sentence_is_split_before_conjunctions():
     s = " ".join(["một"] * 20 + ["nhưng"] + ["hai"] * 20)
     assert L.is_long(s, "vi") and len(L.conj_phrases(s, "vi")) == 2
@@ -207,6 +219,36 @@ def test_repair_stops_when_nothing_improves(monkeypatch):
     assert sig and sig[0]["payload"]["class"] in ("other", "terms")
 
 
+def test_engine_route_is_learned_after_three_sentences_and_tried_first(monkeypatch):
+    calls = _fake_loop(monkeypatch, lambda a: (0.0, "ok") if a.engine == "voxcpm" else (0.4, "xáp"))
+    for k in range(3):
+        _, rep = S.synth_sentence(f"Câu {k} dùng SAP.", "vi", "vr", engine="best", cache=False)
+        assert rep["passed"] and rep["engine"] == "voxcpm"
+        assert (lessons.route("vr", "vi", "terms") is None) == (k < 2)
+    assert lessons.route("vr", "vi", "terms")[0] == "voxcpm"
+    calls.clear()
+    _, rep = S.synth_sentence("Câu mới dùng SAP.", "vi", "vr", engine="best", cache=False)
+    assert [c.engine for c in calls] == ["voxcpm"] and rep["passed"]   # routed first; vieneu not needed
+    assert lessons.route("vr", "vi", "terms")[1] in rep["lessons"]
+    # Another engine repairing the class twice retires the route.
+    _fake_loop(monkeypatch, lambda a: (0.0, "ok") if a.engine == "vieneu" else (0.4, "xáp"))
+    for k in range(2):
+        S.synth_sentence(f"Câu ngược {k} dùng SAP.", "vi", "vr", engine="best", cache=False)
+    assert lessons.route("vr", "vi", "terms") is None
+
+
+def test_best_engine_first_pass_counts_towards_the_stall_rule(monkeypatch):
+    # Both engines fail alike → one class-directed repair, not two more blind tries (≤ 3 attempts).
+    calls = _fake_loop(monkeypatch, lambda a: (0.5, "sai"))
+    _, rep = S.synth_sentence("Vẫn không bao giờ đúng.", "vi", "vb", engine="best", cache=False, max_attempts=6)
+    assert not rep["passed"] and len(calls) == 3
+    assert [c.strategy for c in calls[:2]] == ["whole", "whole"] and calls[0].engine != calls[1].engine
+    # A repair that improves keeps the loop going.
+    calls = _fake_loop(monkeypatch, lambda a: (0.5 - 0.1 * len(calls), "sai"))
+    _, rep = S.synth_sentence("Lần nào cũng khá hơn một chút.", "vi", "vb", engine="best", cache=False, max_attempts=6)
+    assert len(calls) > 3
+
+
 # ---------------------------------------------------------------- ratings → preferences, plan rules; incidents
 
 def _job(jid, **params):
@@ -263,3 +305,21 @@ def test_spelled_match_does_not_forgive_english_words():
     assert asr.error_rate("The cat sat", "The cats sat", "en")["score"] > 0
     assert asr.error_rate("They form a line", "They from a line", "en")["score"] > 0
     assert asr.error_rate("Visit their site", "Visit there site", "en")["score"] > 0
+
+
+def test_whisper_outro_hallucination_is_a_judge_error():
+    heard = "Hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn"
+    assert asr.judge_error(heard, "vi", "chấm Vi En.")
+    assert not asr.judge_error("Hãy subscribe kênh nhé", "vi", "Hãy subscribe kênh nhé")   # the script says it
+    assert not asr.judge_error(heard, "vi")                                               # no script: unchanged
+
+
+def test_dotted_acronym_in_english_is_spelled_without_a_lexicon():
+    assert L.tts_readings("A.I.", "en", {}) == {"A.I": "A I"}
+    assert L.tts_readings("dot V.N.", "vi", {}) == {}
+
+
+def test_whisper_decoder_loop_is_a_judge_error_but_engine_babble_is_not():
+    s = "Vì vậy khuyến nghị có thành phần kỹ thuật: lưu lịch sử mã số."
+    assert asr.judge_error("Vì vậy, quyến nghị có thành phần kỹ thuật, lưu lưu " + "lư " * 40, "vi", s)
+    assert not asr.judge_error("Vì vậy khuyến nghị có thành phần kỹ thuật lưu lưu lưu lịch sử mã số", "vi", s)

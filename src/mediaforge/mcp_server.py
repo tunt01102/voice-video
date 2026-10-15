@@ -261,12 +261,16 @@ def list_jobs(limit: int = 10) -> list[dict[str, Any]]:
 @mcp.tool()
 def list_voices() -> list[dict[str, Any]]:
     """Available cloned voices (id, name, languages with references, default voice settings). Blend voices
-    (pha giọng, kind='blend') show their parts and share; consent shows whether a voice may be a blend partner."""
+    (pha giọng, kind='blend') show their parts and share; consent shows whether a voice may be a blend partner.
+    Stock voices (giọng mẫu, kind='stock') are ready-made presenter voices: gender, region, style and a preview URL."""
     out = []
     for v in profiles.list_voices():
         item = {"id": v["id"], "name": v["name"], "kind": v.get("kind", "voice"), "fx": v.get("fx")}
         if v.get("kind") == "blend":
             item.update(parts=v["parts"], amount=v["blend"]["amount"], languages=["en", "vi"])
+        elif v.get("kind") == "stock":
+            item.update(gender=v.get("gender"), region=v.get("region"), style=v.get("style"), languages=["vi"],
+                        preview_url=f"http://127.0.0.1:8765/api/voices/{v['id']}/preview")
         else:
             item.update(languages=sorted(v.get("refs", {})), samples=len(v.get("samples", [])),
                         consent=(v.get("consent") or {}).get("kind"))

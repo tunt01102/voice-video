@@ -396,6 +396,8 @@ def make_plan(p: dict[str, Any], kind: str, *, style: str, seconds: int) -> tupl
             sc["image"] = path if path and path not in used else None
             used.add(sc["image"] or "")
         plan_data["scenes"] = [sc for sc in plan_data["scenes"] if sc["narration"]]
+    if p.get("art_direction") is False:  # old-style render (P6-D A/B): scene prompts only, no shared look
+        plan_data["art_direction"] = {}
     if p.get("document_warnings"):
         plan_data["document_warnings"] = p["document_warnings"]
     lint_plan(plan_data, lang)
@@ -942,14 +944,24 @@ def apply_plan_edits(out: Path, edits: dict[str, Any]) -> dict[str, Any]:
 def run_eval(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
     from mediaforge import evals
 
+    if p.get("suite") == "stock":
+        from mediaforge.voice import stock_review
+
+        return stock_review.run(p, progress, job_id)
     return evals.run(p, progress, job_id)
+
+
+def run_stock_previews(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
+    from mediaforge.voice import stock
+
+    return stock.build_previews(p, progress, job_id)
 
 
 RUNNERS: dict[str, Callable[..., dict[str, Any]]] = {
     "tts": run_tts, "image": run_image, "subtitle": run_subtitle, "video": run_video, "enrol": run_enrol,
     "rerender": run_rerender, "export": run_export, "prepare": run_prepare, "resubtitle": run_resubtitle,
     "repronounce": run_repronounce, "sing": run_sing, "recite": run_recite,
-    "blend": run_blend, "eval": run_eval, "restage": run_restage,
+    "blend": run_blend, "eval": run_eval, "restage": run_restage, "stock_previews": run_stock_previews,
 }
 
 

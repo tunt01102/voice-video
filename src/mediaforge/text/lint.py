@@ -22,8 +22,9 @@ DANGLING = {
     "en": {"and", "or", "but", "the", "a", "an", "of", "to", "with", "into", "which", "because", "become", "becomes",
            "than"},
 }
-# Above these lengths a sentence is synthesised phrase by phrase (long sentences truncate/babble).
-LONG = {"vi": 35, "en": 30}
+# Above these lengths a sentence is synthesised phrase by phrase (long sentences truncate/babble; the 2026-10-15
+# corpus had Vietnamese babble from ~30 words).
+LONG = {"vi": 25, "en": 30}
 # Places to split a long sentence that has no punctuation.
 CONJ = {"vi": ["nhưng", "và", "mà", "để", "khi", "vì", "nên", "thì", "nếu", "hoặc", "rồi", "trong khi", "bởi vì"],
         "en": ["but", "and", "because", "which", "while", "when", "so", "that", "if", "or"]}
@@ -34,6 +35,8 @@ TLD_VI = {"vn": "vi en", "com": "com", "net": "nét", "org": "o rờ gờ", "io"
           "gov": "gov"}
 TLD_EN = {"vn": "V N", "com": "com", "net": "net", "org": "org", "io": "I O", "ai": "A I", "edu": "E D U", "gov": "gov"}
 ACRONYM = re.compile(r"^[A-Z]{2,6}\d?$")
+# "A.I", "S.M.E" — a closing full stop is kept when it also ends the sentence.
+DOTTED = re.compile(r"(?<![\w.])[A-Z](?:\.[A-Z]){1,5}(?![\w])")
 
 MESSAGES = {
     "L1": "Câu bị cắt giữa chừng (kết thúc bằng “{word}”)",
@@ -84,11 +87,21 @@ def conj_phrases(sentence: str, lang: str) -> list[str]:
     return out if len(out) > 1 else [sentence]
 
 
-def tts_readings(sentence: str, lang: str) -> dict[str, str]:
-    """TTS-only rewrites for this sentence: acronym runs get pauses, domains get a spoken form."""
+def tts_readings(sentence: str, lang: str, lexicon: dict[str, str] | None = None) -> dict[str, str]:
+    """TTS-only rewrites for this sentence: acronym runs get pauses, domains get a spoken form, dotted acronyms
+    ("A.I.") read like the undotted lexicon term (AI → "ây ai"); without a lexicon entry they stay as written."""
     out: dict[str, str] = {}
     for m in DOMAIN.finditer(sentence):
         out[m.group(0)] = domain_reading(m.group(0), lang)
+    for m in DOTTED.finditer(sentence):
+        letters = m.group(0).replace(".", "")
+        # English engines read spaced capitals letter by letter ("A I"); Vietnamese needs the lexicon's reading.
+        say = (lexicon or {}).get(letters) or (" ".join(letters) if lang == "en" else None)
+        span = m.group(0)
+        if sentence[m.end():m.end() + 1] == "." and sentence[m.end() + 1:].strip():
+            span += "."  # mid-sentence the closing dot is part of the acronym, not a full stop
+        if say and not any(m.group(0) in k for k in out):
+            out[span] = say
     toks = sentence.split()
     i = 0
     while i < len(toks):
