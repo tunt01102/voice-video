@@ -71,7 +71,27 @@ def judge_error(heard: str, lang: str, expected: str | None = None) -> bool:
     if FOREIGN_SCRIPT.search(heard):
         return True
     low, exp = heard.lower(), (expected or "").lower()
-    return expected is not None and any(h in low and h not in exp for h in HALLUCINATIONS)
+    if expected is None:
+        return False
+    return any(h in low and h not in exp for h in HALLUCINATIONS) or decoder_loop(heard, expected, lang)
+
+
+# Whisper's greedy decoder can lock into one token ("lưu lư lư lư …" ×100, identical on both engines and on
+# phrase-wise takes: corpus 2026-10-15). An engine babble repeats a group a few times; this long a run is the judge.
+LOOP_RUN = 8
+
+
+def decoder_loop(heard: str, expected: str, lang: str) -> bool:
+    hyp, ref = qa_tokens(heard, lang), qa_tokens(expected, lang)
+
+    def longest(seq: list[str]) -> int:
+        best = run = 0
+        for i, t in enumerate(seq):
+            run = run + 1 if i and t == seq[i - 1] else 1
+            best = max(best, run)
+        return best
+
+    return longest(hyp) >= LOOP_RUN and longest(ref) < LOOP_RUN
 
 
 def _count(seq: list[str], sub: list[str]) -> int:

@@ -317,3 +317,9 @@ def test_whisper_outro_hallucination_is_a_judge_error():
 def test_dotted_acronym_in_english_is_spelled_without_a_lexicon():
     assert L.tts_readings("A.I.", "en", {}) == {"A.I": "A I"}
     assert L.tts_readings("dot V.N.", "vi", {}) == {}
+
+
+def test_whisper_decoder_loop_is_a_judge_error_but_engine_babble_is_not():
+    s = "Vì vậy khuyến nghị có thành phần kỹ thuật: lưu lịch sử mã số."
+    assert asr.judge_error("Vì vậy, quyến nghị có thành phần kỹ thuật, lưu lưu " + "lư " * 40, "vi", s)
+    assert not asr.judge_error("Vì vậy khuyến nghị có thành phần kỹ thuật lưu lưu lưu lịch sử mã số", "vi", s)
