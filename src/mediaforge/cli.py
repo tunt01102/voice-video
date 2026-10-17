@@ -152,6 +152,24 @@ def screen(recording: Path, script: str, lang: str = "auto", voice: Optional[str
 
 
 @app.command()
+def present(recording: Path, slides: list[Path] = typer.Option([], help="PDF / pictures / folder, in order"),
+            script: Optional[str] = typer.Option(None, help="text or @file; one part per slide, split by --- lines"),
+            markdown: Optional[Path] = typer.Option(None, help="slide markdown instead of --slides"),
+            layout: str = "bubble", camera_pos: str = "bottom-right", pitch: Optional[float] = None,
+            warmth: Optional[float] = None, clarity: Optional[float] = None, denoise: bool = True,
+            music: Optional[str] = None, music_volume: float = 0.12, lang: str = "auto", aspect: str = "16:9",
+            local: bool = False) -> None:
+    """Presentation from your slides + your own recording of the talk (camera bubble, cleaned voice, music)."""
+    if script and script.startswith("@"):
+        script = Path(script[1:]).read_text("utf-8")
+    fx = {k: v for k, v in {"pitch": pitch, "warmth": warmth, "clarity": clarity}.items() if v is not None} or None
+    _run("present", {"recording": str(recording.resolve()), "slides": [str(s.resolve()) for s in slides] or None,
+                     "slides_markdown": markdown.read_text("utf-8") if markdown else None, "script": script,
+                     "layout": layout, "camera_pos": camera_pos, "fx": fx, "denoise": denoise, "music": music,
+                     "music_volume": music_volume, "lang": lang, "aspect": aspect}, local)
+
+
+@app.command()
 def resubtitle(job: str, karaoke: bool = typer.Option(True, help="highlight the spoken word"), local: bool = False) -> None:
     """Rebuild a finished video's subtitles (fit the frame, karaoke) without re-rendering voice or images."""
     _run("resubtitle", {"job": job, "karaoke": karaoke}, local)

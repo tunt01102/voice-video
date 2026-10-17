@@ -22,6 +22,7 @@ cloned voice**, in **English and Vietnamese**.
 | **Artistry upgrade + pha giọng (voice blending)** — measured ngâm/hát parameters, reference-melody singing, RVC re-voicing, storyboard hoạt cảnh, consent-gated blend of two voice profiles ([SDD-artistry-voice-blend.md](SDD-artistry-voice-blend.md), design) | |
 | **Review & upgrade (v1.6, design)** — safe learning from mistakes (lessons store, reading gate, owner "nghe đúng rồi" + ratings), script lint, staged/resumable video pipeline with storyboard, art direction and mood-driven motion/music, Studio dashboard ([SDD-review-upgrade.md](SDD-review-upgrade.md)) | |
 | Video styles: **narrated + AI visuals (16:9)**, **vertical shorts (9:16)**, **slide / screen explainer** | |
+| **Thuyết trình kèm ghi hình** (Canva-style present & record): the owner's slides + own recording → camera bubble, cleaned/re-toned real voice, subtitles, music ([SDD-present-record.md](SDD-present-record.md)) | |
 | Optional AI video clips (LTX-2 MLX), off by default | |
 | REST API + SSE, MCP server for Claude sessions, web dashboard | |
 
@@ -73,6 +74,7 @@ and step count are the effective levers (`image.QUALITY`).
 
 | Concern | Choice | Repo (≈stars) | Licence |
 |---|---|---|---|
+| PDF slide rendering (present) | pypdfium2 | pypdfium2-team/pypdfium2 | BSD-3-Clause / Apache-2.0 (PDFium: BSD-3) |
 | VI voice clone (default) | VieNeu-TTS v3 Turbo | pnnbao97/VieNeu-TTS (2.9k) | Apache-2.0 |
 | EN voice clone (default), VI alternate | VoxCPM2 via mlx-audio | OpenBMB/VoxCPM (39k), Blaizzy/mlx-audio (8k) | Apache-2.0 / MIT |
 | Fallback TTS (not installed) | OmniVoice (k2-fsa) | k2-fsa/OmniVoice (14.5k) | Apache-2.0 code, **CC-BY-NC weights** (checked 2026-10-15) → do not install; see SDD-artistry-voice-blend.md §8 |
@@ -139,6 +141,7 @@ src/mediaforge/
   llm.py             Claude CLI → Ollama fallback; JSON-mode helpers
   models.py          lazy model cache with eviction (LRU by memory class)
   text/normalize.py  language detection, VI/EN normalisation, lexicon, sentence split
+  present.py         thuyết trình kèm ghi hình: slides (pypdfium2 PDF) + the owner's recording → bubble video (SDD-present-record.md)
   text/documents.py  Word/PDF import → text with [ảnh N] markers + pictures (SDD-doc-import-preview-chibi.md; PDF fix: SDD-pdf-import-fix.md)
   tts/base.py        TTSEngine protocol + SynthResult
   tts/vieneu.py      VieNeu adapter
@@ -361,6 +364,10 @@ result exposes as `report.music_credit` and the dashboard shows under the video.
 - **Explainer**: input = markdown slides (`# title` / bullets per slide, `> note` =
   narration) or a brief the LLM turns into slides; slides rendered by Pillow; or
   input = a screen recording + script → voice-over + subtitles laid over the recording.
+- **Thuyết trình kèm ghi hình** (job `present`, 2026-10-17): the owner's slides + their own recording (camera + voice)
+  + script per slide → slides full-frame, camera in a round bubble, the real voice denoised and re-toned (pace fixed
+  for lip-sync), slide changes where each slide's script part starts, karaoke subtitles, ducked music —
+  [SDD-present-record.md](SDD-present-record.md).
 - **Animated explainer** (`slides_engine="animated"`, 2026-10-15): each slide is an HTML scene — title and bullets
   animated with GSAP SplitText (2026-10-16; effect from the scene mood: rise / blur / wave / type, or plan `text_fx`),
   bullets arriving across the narration, count-up `stat` slides, rotating three.js `3d` slides, ambient drift,
@@ -413,7 +420,7 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 `?wait=true` on `POST /api/jobs` blocks until completion (≤ 600 s) for simple clients.
 
 ### 9.2 MCP (streamable HTTP at `http://127.0.0.1:8765/mcp`)
-Tools: `speak`, `blend_voices`, `restage_video`, `revoice_video`, `rate_job`, `list_lessons`, `generate_image`, `prepare_video`, `create_video`, `resubtitle_video`, `repronounce_video`, `recite_poem`, `sing_song`, `list_poems`,
+Tools: `speak`, `present_recording`, `blend_voices`, `restage_video`, `revoice_video`, `rate_job`, `list_lessons`, `generate_image`, `prepare_video`, `create_video`, `resubtitle_video`, `repronounce_video`, `recite_poem`, `sing_song`, `list_poems`,
 `transcribe_subtitles`, `job_status`, `list_voices`, `list_jobs`, `list_music`. Long jobs return a job id
 immediately plus a `wait_seconds` option; results return absolute file paths (sessions
 run on the same machine). `create_video`/`prepare_video` take `document` (+ `document_as` brief|script) to use a
@@ -421,7 +428,7 @@ Word/PDF and its pictures; voice settings left unset come from the voice profile
 `claude mcp add -s user --transport http mediaforge http://127.0.0.1:8765/mcp`.
 
 ### 9.3 CLI
-`mediaforge serve | speak | image | video | short | explainer | subtitle | recite | sing | poems | voice … (incl. `voice consent`, `voice blend`) | music list|sync | doctor`.
+`mediaforge serve | speak | image | video | short | explainer | present | subtitle | recite | sing | poems | voice … (incl. `voice consent`, `voice blend`) | music list|sync | doctor`.
 CLI talks to the running server when available, otherwise runs in-process.
 
 ## 10. Phases
@@ -435,6 +442,7 @@ CLI talks to the running server when available, otherwise runs in-process.
 | P5 Artistry + pha giọng | **pha giọng done 2026-10-15** (VieNeu speaker-vector blend, calibrated: 25 % target → 25.5 % measured; consent-gated). Designed: measured ngâm/hát parameters, reference-melody mode, RVC re-voicing, storyboard hoạt cảnh — [SDD-artistry-voice-blend.md](SDD-artistry-voice-blend.md) §9 | P1a done, rest open |
 | P6 Review & upgrade | P6-A learning hygiene + lint, P6-B lessons store + ratings + job page, P6-C staged pipeline + storyboard, P6-D creative direction — [SDD-review-upgrade.md](SDD-review-upgrade.md) §8, §11 (review found tone-stripping `learned` lexicon entries, e.g. `độ → đô`) | A–E done 2026-10-15 (E = licence review, [SDD-review-upgrade.md](SDD-review-upgrade.md) §11.4: SigLIP allowed, WavLM-SV rejected, SpeechBrain ECAPA a candidate; no model added). Revoice (Đổi giọng) and giọng mẫu (stock voices, [SDD-stock-voices.md](SDD-stock-voices.md)) shipped the same day |
 | P7 Animated slides | explainer `slides_engine="animated"`: HTML scene per slide (anime.js 4.5 timelines, three.js r186 `3d` layout, GSAP 3.15 SplitText text effects from the scene mood) rendered frame-exact by Playwright Chromium → FFmpeg (§7.2); project skills in `.claude/skills` ([SKILLS-REVIEW.md](SKILLS-REVIEW.md)); licence decisions 2026-10-16 (Remotion + GSAP allowed, MPL-2.0 deferred) | Done + deployed 2026-10-16 (main 4061863). Owner decision 2026-10-16: `animated` is the default for MCP `create_video` and the CLI (`--static` for stills); the dashboard already defaulted to it; a REST/plan call without `slides_engine` stays `static` |
+| P8 Thuyết trình kèm ghi hình | job `present`: PDF/pictures/markdown slides + the owner's recording → camera bubble, cleaned voice, subtitles, music; editable slide times; MCP `present_recording`, CLI `present` ([SDD-present-record.md](SDD-present-record.md)); dep pypdfium2 (BSD-3/Apache-2.0) | Done + deployed 2026-10-17 |
 | P4 Later | install ltx-2-mlx and enable clips; music generation (ACE-Step, Apache-2.0 — evaluate); speaker-similarity score (VieNeu's own speaker encoder first; WavLM-SV rejected, ECAPA a candidate — §11.4 of SDD-review-upgrade) to auto-pick the best reference and check take timbre; fine-tune on `corrections/`; broader automated tests (unit tests for guided repair/export exist in `tests/`); React upgrade | Open |
 
 **Owner action required:** record real samples (dashboard → Voices → Record). Until then

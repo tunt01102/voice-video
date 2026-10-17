@@ -89,11 +89,19 @@ or **Đặt mặc định** on one of your own voices.
 | Slide explainer | 🧑‍🏫 Explainer | `mediaforge explainer --slides deck.md` |
 | Animated presentation (moving titles, count-up numbers, 3D) | 🧑‍🏫 Explainer → Kiểu slide: Động | `mediaforge explainer "brief"` (animated is the default; `--static` for stills) |
 | Voice-over on a screen recording | — | `mediaforge screen demo.mov "@script.txt"` |
+| Presentation from your slides + your own recording (camera bubble, cleaned voice, music — like Canva "present and record") | 🎥 Thuyết trình + ghi hình | `mediaforge present talk.mp4 --slides deck.pdf --script @loi-thoai.txt --music auto` |
 | Video from a Word/PDF (pictures kept) | 📄 Nhập từ Word/PDF | `mediaforge video --document report.pdf --style chibi` |
 | Images | 🖼 Ảnh | `mediaforge image "a cozy café in Hanoi" --count 4 --style chibi` |
 | Subtitles for any media | 💬 Phụ đề | `mediaforge subtitle talk.mp4 --burn --translate-to en` |
 | Chant a poem (ngâm thơ) | 🪷 Ngâm thơ | `mediaforge recite "@tho.txt" --video` or `mediaforge recite --poem hoang-hac-lau` |
 | Sing lyrics | 🎵 Hát | `mediaforge sing "@loi.txt" --mood hung-trang --video` |
+
+**Thuyết trình + ghi hình** — send the slides (PDF, or pictures in order; export PowerPoint/Keynote to PDF first), your
+recording of the talk (video with camera, or audio only) and, optionally, what you said, one part per slide separated
+by a `---` line. Each slide appears when you start its part; the job page lists every slide's start time and first
+words, and you can correct a time and press **↻ Dựng lại với các mốc này**. Your own voice is kept (lip-sync), with
+noise reduction and the pitch / warmth / clarity sliders; pace is never changed. Layouts: slides + round camera
+(default), slides only, or the recording itself full-frame. Design: [docs/SDD-present-record.md](docs/SDD-present-record.md).
 
 For videos, the dashboard has two buttons:
 
@@ -207,6 +215,7 @@ claude mcp add -s user --transport http mediaforge http://127.0.0.1:8765/mcp
 | `resubtitle_video` | Rebuilds a finished video's subtitles (fit-to-frame, karaoke) without re-rendering voice or images |
 | `repronounce_video` | Fixes how words are read in a finished video (`{"PNJ": "Pi En Di"}`): re-reads only those sentences and exports a new MP4, no re-render |
 | `voiceover_recording` | Narration and subtitles over a screen recording |
+| `present_recording` | Your slides + your own recording of the talk → slides with your camera in a round bubble, your real voice cleaned (denoise, pitch/warmth/clarity), subtitles, background music; `slides` lists each slide's start so the timing can be fixed with `slide_times` |
 | `transcribe_subtitles` | Media → SRT/VTT/ASS, with optional burn-in and translation |
 | `job_status`, `list_jobs`, `list_voices` | Track jobs and list voices |
 
@@ -220,7 +229,7 @@ curl -s localhost:8765/api/jobs -H 'content-type: application/json' \
 curl -N localhost:8765/api/jobs/<id>/events          # live progress (SSE)
 ```
 
-Job types: `tts`, `image`, `subtitle`, `narrated`, `short`, `explainer`, `screen`, `enrol`, `prepare`, `resubtitle`, `repronounce`.
+Job types: `tts`, `image`, `subtitle`, `narrated`, `short`, `explainer`, `screen`, `present`, `enrol`, `prepare`, `resubtitle`, `repronounce`.
 
 To fix the subtitles of a video rendered before 2026-10-14 (lines could run off the screen), press
 **🔤 Dựng lại phụ đề** on its card, or run `mediaforge resubtitle <job-id>`. The voice and pictures stay exactly

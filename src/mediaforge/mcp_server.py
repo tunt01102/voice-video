@@ -274,6 +274,36 @@ async def voiceover_recording(recording: str, script: str, lang: str = "auto", v
 
 
 @mcp.tool()
+async def present_recording(recording: str, slides: list[str] | None = None, script: str | None = None,
+                            slides_markdown: str | None = None, layout: str = "bubble",
+                            camera_pos: str = "bottom-right", camera_size: float = 0.3, pitch: float | None = None,
+                            warmth: float | None = None, clarity: float | None = None, denoise: bool = True,
+                            music: str | None = None, music_volume: float = 0.12,
+                            slide_times: list[float] | None = None, burn_subtitles: bool = True,
+                            lang: str = "auto", aspect: str = "16:9", title: str | None = None,
+                            wait_seconds: float = 0) -> dict[str, Any]:
+    """Thuyết trình kèm ghi hình (like Canva "present and record"): the owner's slides + their own recording of the
+    talk → one video with the slides full-frame, the camera in a round bubble, the owner's REAL voice cleaned up and
+    re-toned, subtitles and optional background music.
+
+    recording: local video (camera + voice) or audio file of the talk. slides: local PDF / picture paths or a folder
+    (PPTX/Keynote: export to PDF first); or slides_markdown (`# Title`, `- bullet`, `> narration` per slide).
+    script: what was said, one part per slide separated by `---` lines (or blank lines) — each slide appears when its
+    part starts in the recording; without it slides are spread evenly. slide_times: manual start second per slide.
+    layout: bubble | slides (no camera) | recording (the recording full-frame, e.g. a screen recording of the deck).
+    camera_pos: bottom-right | bottom-left | top-right | top-left. camera_size: 0.12..0.45 of the frame height.
+    pitch: -6..+6 semitones (negative = deeper); warmth/clarity 0..1 (pace is fixed: the camera stays lip-synced).
+    music: list_music id, "auto", or a local audio path. Result `slides` lists each slide's start/end and first
+    words so the timing can be checked and corrected with slide_times."""
+    return await _submit("present", {
+        "recording": recording, "slides": slides, "script": script, "slides_markdown": slides_markdown,
+        "layout": layout, "camera_pos": camera_pos, "camera_size": camera_size,
+        "fx": _fx(pitch=pitch, warmth=warmth, clarity=clarity), "denoise": denoise, "music": music,
+        "music_volume": music_volume, "slide_times": slide_times, "burn_subtitles": burn_subtitles, "lang": lang,
+        "aspect": aspect, "title": title}, wait_seconds)
+
+
+@mcp.tool()
 async def transcribe_subtitles(media: str, lang: str | None = None, burn: bool = False,
                                translate_to: str | None = None, wait_seconds: float = 300) -> dict[str, Any]:
     """Create SRT/VTT/ASS subtitles for a local audio/video file (Whisper large-v3-turbo, word timings).

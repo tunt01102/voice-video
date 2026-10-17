@@ -30,6 +30,7 @@
     <button data-kind="short">📱 Short 9:16</button>
     <button data-kind="narrated">🎬 Video 16:9</button>
     <button data-kind="explainer">🧑‍🏫 Explainer</button>
+    <button data-kind="present">🎥 Thuyết trình + ghi hình</button>
     <button data-kind="image">🖼 Ảnh</button>
     <button data-kind="subtitle">💬 Phụ đề</button>
   </div>
@@ -62,6 +63,34 @@
       <textarea name="prompt" rows="3" placeholder="A cozy café in Hanoi at dawn, cinematic…"></textarea>
     </label>
 
+    <div class="f-present present-files">
+      <p class="muted">Giống “Thuyết trình và ghi hình” của Canva: gửi slide, bản ghi lúc bạn thuyết trình (video có camera, hoặc chỉ tiếng)
+        và lời thoại. Video giữ <b>giọng thật</b> của bạn (lọc ồn, chỉnh độ trầm/ấm/rõ), camera trong khung tròn, phụ đề và nhạc nền.</p>
+      <div class="grid2">
+        <label>Bản ghi thuyết trình (video/audio)
+          <input type="file" name="recording_file" accept="video/*,audio/*"></label>
+        <label>Slide (PDF hoặc ảnh theo thứ tự; PowerPoint/Keynote → xuất PDF trước)
+          <input type="file" name="slides_files" accept=".pdf,image/*" multiple></label>
+      </div>
+      <div class="grid4">
+        <label>Bố cục
+          <select name="layout"><option value="bubble">Slide + camera tròn</option><option value="slides">Chỉ slide (ẩn camera)</option><option value="recording">Giữ nguyên hình bản ghi</option></select></label>
+        <label>Vị trí camera
+          <select name="camera_pos"><option value="bottom-right">Góc dưới phải</option><option value="bottom-left">Góc dưới trái</option><option value="top-right">Góc trên phải</option><option value="top-left">Góc trên trái</option></select></label>
+        <label>Cỡ camera <output id="o-csize">0.30</output>
+          <input type="range" name="camera_size" min="0.15" max="0.45" step="0.01" value="0.3" data-out="o-csize"></label>
+        <label class="check"><input type="checkbox" name="denoise" checked> Lọc tiếng ồn</label>
+        <label>Độ trầm <output id="o-ppitch">0.0</output>
+          <input type="range" name="p_pitch" min="-4" max="4" step="0.5" value="0" data-out="o-ppitch"><small>← trầm hơn · cao hơn →</small></label>
+        <label>Độ ấm <output id="o-pwarmth">0.0</output>
+          <input type="range" name="p_warmth" min="0" max="1" step="0.1" value="0" data-out="o-pwarmth"></label>
+        <label>Độ rõ <output id="o-pclarity">0.4</output>
+          <input type="range" name="p_clarity" min="0" max="1" step="0.1" value="0.4" data-out="o-pclarity"></label>
+        <label class="check"><input type="checkbox" name="present_subs" checked> Phụ đề trên video</label>
+      </div>
+      <small class="muted">Tốc độ nói được giữ nguyên để khẩu hình khớp camera. Tách lời thoại theo slide bằng dòng <code>---</code>: mỗi slide hiện đúng lúc bạn bắt đầu nói phần của nó.</small>
+    </div>
+
     <label class="f-subtitle">File audio/video
       <input type="file" name="media_file" accept="audio/*,video/*">
     </label>
@@ -88,7 +117,7 @@
       <label class="only-explainer">Kiểu slide
         <select name="slides_engine"><option value="animated">Động (chữ chạy, số đếm, 3D)</option><option value="static">Tĩnh (nhanh)</option></select>
       </label>
-      <label class="f-video">Nhạc nền (tuỳ chọn)
+      <label class="f-video f-present">Nhạc nền (tuỳ chọn)
         <select name="music"><option value="">Không dùng nhạc</option><option value="auto">🎵 Tự chọn theo không khí video</option><option value="__upload">Tải file của tôi lên…</option></select>
         <input type="file" name="music_file" accept="audio/*" hidden>
         <audio id="music-preview" controls preload="none" hidden></audio>
