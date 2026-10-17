@@ -27,6 +27,9 @@ Progress = Callable[[float, str], None]
 FORMATS: dict[str, dict[str, Any]] = {
     "mp4": {"label": "MP4 (H.264)", "video": True, "v": ["-c:v", "copy"], "a": ["-c:a", "aac", "-b:a", "192k"],
             "s": ["-c:s", "mov_text"], "extra": ["-movflags", "+faststart"]},
+    # Full HD guaranteed: a stream copy when the video already is 1920×1080 / 1080×1920, else scale + pad + re-encode.
+    "mp4_fhd": {"label": "MP4 Full HD 1080p", "video": True, "ext": "mp4", "fhd": True, "v": ["-c:v", "copy"],
+                "a": ["-c:a", "aac", "-b:a", "192k"], "s": ["-c:s", "mov_text"], "extra": ["-movflags", "+faststart"]},
     "mov": {"label": "MOV (QuickTime)", "video": True, "v": ["-c:v", "copy"], "a": ["-c:a", "aac", "-b:a", "192k"],
             "s": ["-c:s", "mov_text"], "extra": ["-movflags", "+faststart"]},
     "mkv": {"label": "MKV (Matroska)", "video": True, "v": ["-c:v", "copy"], "a": ["-c:a", "aac", "-b:a", "192k"],
@@ -38,7 +41,7 @@ FORMATS: dict[str, dict[str, Any]] = {
     "wav": {"label": "WAV (chỉ âm thanh)", "video": False, "a": ["-c:a", "pcm_s16le", "-ar", "48000"]},
     "m4a": {"label": "M4A (chỉ âm thanh)", "video": False, "a": ["-c:a", "aac", "-b:a", "192k"]},
 }
-VIDEO_JOB_FORMATS = ["mp4", "mov", "mkv", "webm", "mp3", "wav", "m4a"]  # first = default
+VIDEO_JOB_FORMATS = ["mp4", "mp4_fhd", "mov", "mkv", "webm", "mp3", "wav", "m4a"]  # first = default
 AUDIO_JOB_FORMATS = ["mp3", "wav", "m4a"]
 
 
@@ -51,6 +54,29 @@ def catalog() -> dict[str, list[dict[str, str]]]:
         return [{"id": f, "label": FORMATS[f]["label"]} for f in ids]
 
     return {"video": rows(VIDEO_JOB_FORMATS), "audio": rows(AUDIO_JOB_FORMATS)}
+
+
+def video_size(path: str | Path) -> tuple[int, int]:
+    out = subprocess.run([settings.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries",
+                          "stream=width,height", "-of", "json", str(path)], capture_output=True, text=True).stdout
+    st = (json.loads(out or "{}").get("streams") or [{}])[0]
+    return int(st.get("width") or 0), int(st.get("height") or 0)
+
+
+def fhd_size(w: int, h: int) -> tuple[int, int]:
+    """The Full HD frame for a video's orientation."""
+    return (1920, 1080) if w > h else (1080, 1920) if h > w else (1080, 1080)
+
+
+def fhd_video_args(path: str | Path) -> list[str] | None:
+    """Encoder arguments that make `path`'s picture Full HD, or None when it already is (stream copy)."""
+    w, h = video_size(path)
+    tw, th = fhd_size(w, h)
+    if (w, h) == (tw, th):
+        return None
+    return ["-vf", f"scale={tw}:{th}:force_original_aspect_ratio=decrease:flags=lanczos,"
+                   f"pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p",
+            "-c:v", "h264_videotoolbox", "-b:v", "14M", "-profile:v", "high"]
 
 
 def has_subtitle_stream(path: str | Path) -> bool:
@@ -88,7 +114,8 @@ def ffmpeg_args(fmt: str, base: str | Path, out: str | Path, *, voice: str | Pat
         args += ["-map", "0:v", *amap]
         if subs:
             args += ["-map", "0:s", *spec["s"]]
-        args += [*spec["v"], *spec["a"], *spec["extra"]]
+        vargs = (fhd_video_args(base) if spec.get("fhd") else None) or spec["v"]
+        args += [*vargs, *spec["a"], *spec["extra"]]
         if voice is not None:
             args += ["-shortest"]
     else:
@@ -103,7 +130,7 @@ def _selection_key(selection: dict[int, str], fmt: str) -> str:
 
 def _label(fmt: str, selection: dict[int, str]) -> str:
     n = len(selection)
-    return f"{fmt.upper()} · " + (f"{n} câu dùng bản AI sửa" if n else "giọng gốc")
+    return f"{FORMATS[fmt]['label'] if fmt == 'mp4_fhd' else fmt.upper()} · " + (f"{n} câu dùng bản AI sửa" if n else "giọng gốc")
 
 
 def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
@@ -138,7 +165,7 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
         return {"job": src_id, "export": prior, "file": prior["file"], "reused": True}
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    out = exp_dir / f"{stamp}-{key}.{fmt}"
+    out = exp_dir / f"{stamp}-{key}.{FORMATS[fmt].get('ext', fmt)}"
     base = Path(r["video"] if video else r["audio"])
     new_voice: Path | None = None
     path, modes = "copy", {}
@@ -162,7 +189,7 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
             render_dir = exp_dir / f"{stamp}-{key}-render"
             shutil.move(str(Path(rebuilt["video"]).parent), render_dir)
             base, path = render_dir / Path(rebuilt["video"]).name, "recompose"
-    elif fmt == "mp4" and video:
+    elif video and (fmt == "mp4" or (fmt == "mp4_fhd" and fhd_video_args(base) is None)):
         progress(0.5, "sao chép")
         shutil.copy(base, out)
     if not out.exists():

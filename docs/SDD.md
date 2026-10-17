@@ -171,7 +171,7 @@ src/mediaforge/
   api.py             FastAPI app (+ dashboard static, + MCP mount)
   mcp_server.py      MCP tools (thin wrappers over the job layer)
   cli.py             Typer CLI
-  web/               dashboard (index.html, app.js, style.css)
+  web/               dashboard (index.html, app.js, style.css; js/live.js = the live recording studio)
 ```
 
 ### 4.2 The engine boundary (the design decision that matters)
@@ -368,6 +368,10 @@ result exposes as `report.music_credit` and the dashboard shows under the video.
   + script per slide → slides full-frame, camera in a round bubble, the real voice denoised and re-toned (pace fixed
   for lip-sync), slide changes where each slide's script part starts, karaoke subtitles, ducked music —
   [SDD-present-record.md](SDD-present-record.md).
+- **Phòng quay thuyết trình** (live studio, 2026-10-18): the dashboard records the camera and mic (MediaRecorder,
+  1080p requested, 8 Mbps) while the owner clicks through the server-rendered slide PNGs. The take plus its click
+  timeline (`slide_track`, going back allowed, never re-timed) is the master. "Làm đẹp lại" re-renders the look and
+  sound from it. Export `mp4_fhd` guarantees 1920×1080 — [SDD-live-studio.md](SDD-live-studio.md).
 - **Animated explainer** (`slides_engine="animated"`, 2026-10-15): each slide is an HTML scene — title and bullets
   animated with GSAP SplitText (2026-10-16; effect from the scene mood: rise / blur / wave / type, or plan `text_fx`),
   bullets arriving across the narration, count-up `stat` slides, rotating three.js `3d` slides, ambient drift,
@@ -443,6 +447,7 @@ CLI talks to the running server when available, otherwise runs in-process.
 | P6 Review & upgrade | P6-A learning hygiene + lint, P6-B lessons store + ratings + job page, P6-C staged pipeline + storyboard, P6-D creative direction — [SDD-review-upgrade.md](SDD-review-upgrade.md) §8, §11 (review found tone-stripping `learned` lexicon entries, e.g. `độ → đô`) | A–E done 2026-10-15 (E = licence review, [SDD-review-upgrade.md](SDD-review-upgrade.md) §11.4: SigLIP allowed, WavLM-SV rejected, SpeechBrain ECAPA a candidate; no model added). Revoice (Đổi giọng) and giọng mẫu (stock voices, [SDD-stock-voices.md](SDD-stock-voices.md)) shipped the same day |
 | P7 Animated slides | explainer `slides_engine="animated"`: HTML scene per slide (anime.js 4.5 timelines, three.js r186 `3d` layout, GSAP 3.15 SplitText text effects from the scene mood) rendered frame-exact by Playwright Chromium → FFmpeg (§7.2); project skills in `.claude/skills` ([SKILLS-REVIEW.md](SKILLS-REVIEW.md)); licence decisions 2026-10-16 (Remotion + GSAP allowed, MPL-2.0 deferred) | Done + deployed 2026-10-16 (main 4061863). Owner decision 2026-10-16: `animated` is the default for MCP `create_video` and the CLI (`--static` for stills); the dashboard already defaulted to it; a REST/plan call without `slides_engine` stays `static` |
 | P8 Thuyết trình kèm ghi hình | job `present`: PDF/pictures/markdown slides + the owner's recording → camera bubble, cleaned voice, subtitles, music; editable slide times; MCP `present_recording`, CLI `present` ([SDD-present-record.md](SDD-present-record.md)); dep pypdfium2 (BSD-3/Apache-2.0) | Done + deployed 2026-10-17 |
+| P9 Phòng quay thuyết trình | live studio in the dashboard: camera + mic + click-stamped slide timeline (`slide_track`) → master; ✨ Làm đẹp lại; `POST /api/present/slides`; export MP4 Full HD 1080p ([SDD-live-studio.md](SDD-live-studio.md)) | Done + deployed 2026-10-18 |
 | P4 Later | install ltx-2-mlx and enable clips; music generation (ACE-Step, Apache-2.0 — evaluate); speaker-similarity score (VieNeu's own speaker encoder first; WavLM-SV rejected, ECAPA a candidate — §11.4 of SDD-review-upgrade) to auto-pick the best reference and check take timbre; fine-tune on `corrections/`; broader automated tests (unit tests for guided repair/export exist in `tests/`); React upgrade | Open |
 
 **Owner action required:** record real samples (dashboard → Voices → Record). Until then

@@ -103,6 +103,16 @@ words, and you can correct a time and press **↻ Dựng lại với các mốc 
 noise reduction and the pitch / warmth / clarity sliders; pace is never changed. Layouts: slides + round camera
 (default), slides only, or the recording itself full-frame. Design: [docs/SDD-present-record.md](docs/SDD-present-record.md).
 
+**🔴 Quay trực tiếp** (the default on that form) records the talk right in the dashboard: pick the slides, press
+**🎥 Mở phòng quay**, choose the camera and mic (the real camera resolution and a mic meter are shown), press
+**⏺ Bắt đầu quay** and click through the slides with ← → / PageUp / PageDown (a presentation clicker works), `P` pauses
+and `R` stops. The teleprompter shows the current slide's part of the script. Every click is stamped on the recording's
+clock, going back a slide included, so the slides change exactly when you clicked. The take, its slides and that
+timeline are the **file gốc** (⬇ Lưu file gốc / ⬇ File gốc). On the job page, **✨ Làm đẹp lại** changes only the
+look and sound: layout, camera corner and size, denoise, pitch / warmth / clarity, subtitles and music. It always
+starts from the same take. The video is 1920×1080, and Export → **MP4 Full HD 1080p** guarantees it (a stream copy
+when the video is already Full HD). Design: [docs/SDD-live-studio.md](docs/SDD-live-studio.md).
+
 For videos, the dashboard has two buttons:
 
 - **1 · Viết kịch bản & kiểm tra phát âm** (recommended) writes the script first and lists the words the AI may
@@ -215,7 +225,7 @@ claude mcp add -s user --transport http mediaforge http://127.0.0.1:8765/mcp
 | `resubtitle_video` | Rebuilds a finished video's subtitles (fit-to-frame, karaoke) without re-rendering voice or images |
 | `repronounce_video` | Fixes how words are read in a finished video (`{"PNJ": "Pi En Di"}`): re-reads only those sentences and exports a new MP4, no re-render |
 | `voiceover_recording` | Narration and subtitles over a screen recording |
-| `present_recording` | Your slides + your own recording of the talk → slides with your camera in a round bubble, your real voice cleaned (denoise, pitch/warmth/clarity), subtitles, background music; `slides` lists each slide's start so the timing can be fixed with `slide_times` |
+| `present_recording` | Your slides + your own recording of the talk → slides with your camera in a round bubble, your real voice cleaned (denoise, pitch/warmth/clarity), subtitles, background music; `slides` lists each slide's start so the timing can be fixed with `slide_times`, or a live-studio timeline `slide_track` |
 | `transcribe_subtitles` | Media → SRT/VTT/ASS, with optional burn-in and translation |
 | `job_status`, `list_jobs`, `list_voices` | Track jobs and list voices |
 
