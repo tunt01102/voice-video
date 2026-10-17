@@ -75,6 +75,8 @@ E2E (2026-10-17, data-store copy on :8766, real Whisper): a Vietnamese test reco
 
 ## 6. Not done (possible follow-ups)
 
+- ~~Recording in the dashboard~~: shipped 2026-10-18 as the live studio ([SDD-live-studio.md](SDD-live-studio.md)).
+
 - Subtitles show the script's words. An ad-libbed passage is captioned with the script text that `align_script` spread over it. A `subtitle_text="heard"` option, or captions mixing script and heard words, would fix that.
 
 - A cloned-voice mode (re-read the script in the owner's clone), shown without the camera.

@@ -115,13 +115,17 @@ async function buildParams(f) {
       if (!f.media_file.files[0]) throw new Error("Chọn file audio/video");
       params = { media: await upload(f.media_file.files[0]), lang: f.lang.value === "auto" ? null : f.lang.value, burn: f.burn.checked, translate_to: f.translate_to.value || null };
     } else if (kind === "present") {
-      if (!f.recording_file.files[0]) throw new Error("Chọn file bản ghi thuyết trình");
-      if (f.layout.value !== "recording" && !f.slides_files.files.length) throw new Error("Chọn slide (PDF hoặc ảnh)");
-      params = { recording: await upload(f.recording_file.files[0]), lang: f.lang.value, layout: f.layout.value,
+      const live = window.liveStudio?.active();
+      if (!live && !f.recording_file.files[0]) throw new Error("Chọn file bản ghi thuyết trình");
+      if (!live && f.layout.value !== "recording" && !f.slides_files.files.length) throw new Error("Chọn slide (PDF hoặc ảnh)");
+      params = { lang: f.lang.value, layout: f.layout.value,
         camera_pos: f.camera_pos.value, camera_size: +f.camera_size.value, denoise: f.denoise.checked,
         fx: { pitch: +f.p_pitch.value, warmth: +f.p_warmth.value, clarity: +f.p_clarity.value },
-        burn_subtitles: f.present_subs.checked, title: f.recording_file.files[0].name.replace(/\.[^.]+$/, "") };
-      if (f.layout.value !== "recording") {
+        burn_subtitles: f.present_subs.checked };
+      // Live studio (docs/SDD-live-studio.md): the take, the PNGs it showed and the click timeline = the master.
+      if (live) Object.assign(params, await window.liveStudio.master());
+      else Object.assign(params, { recording: await upload(f.recording_file.files[0]), title: f.recording_file.files[0].name.replace(/\.[^.]+$/, "") });
+      if (!live && f.layout.value !== "recording") {
         // several pictures: in file-name order, numbers compared as numbers (slide2 before slide10)
         const files = [...f.slides_files.files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
         params.slides = []; for (const x of files) params.slides.push(await upload(x));
@@ -413,7 +417,8 @@ function renderOutputs(job, out) {
   if (Array.isArray(r.sentences) && r.sentences.length) out.append(renderRepronounce(job));
   if (Array.isArray(r.sentences) && r.sentences.length) out.append(renderQA(job));
   if (isSong) out.append(renderSong(job));
-  if (job.type === "present" && Array.isArray(r.slides)) out.append(renderSlideTimes(job));
+  if (job.type === "present" && Array.isArray(r.slides) && r.slides.length) out.append(renderSlideTimes(job));
+  if (job.type === "present") out.append(renderBeautify(job));
   if (r.text && job.type === "subtitle") out.insertAdjacentHTML("beforeend", `<pre>${esc(r.text)}</pre>`);
 }
 function renderResubtitle(job) {
@@ -1172,23 +1177,66 @@ function syncSongForms() {
 $$(".song-tab").forEach((sec) => songForm(sec));
 
 // ------------------------------------------------------------------ Thuyết trình + ghi hình: slide change times
-// Each slide appears where its part of the script starts in the recording; the owner can correct any start
-// and re-render (a new job with slide_times; the recording is not processed differently).
+// Each slide appears where its part of the script starts in the recording (or, from the live studio, where the owner
+// clicked); the owner can correct any start and re-render (a new job; the recording is not processed differently).
+// A live timeline is a list of segments: a slide may come back (docs/SDD-live-studio.md §2).
+function keepMusic(job, params) {
+  if (params.music === "auto") params.music = job.result.report?.music_id || null;  // keep the track this video got
+  return params;
+}
 function renderSlideTimes(job) {
   const r = job.result, fs = job.files?.slides || [], box = document.createElement("div");
+  const live = r.report?.slide_timing === "live";
   box.className = "slide-times";
-  const timing = { script: "theo lời thoại", manual: "theo mốc bạn nhập", even: "chia đều", none: "" }[r.report?.slide_timing] || "";
+  const timing = { script: "theo lời thoại", manual: "theo mốc bạn nhập", even: "chia đều", live: "theo lúc bạn bấm khi quay", none: "" }[r.report?.slide_timing] || "";
   const warn = (r.report?.warnings || []).map((w) => `<p class="qa-bad">⚠ ${esc(w)}</p>`).join("");
+  const nSlides = Math.max(0, ...r.slides.map((s) => s.slide));
   box.innerHTML = `<h4>Mốc chuyển slide <small class="muted">${esc(timing)}</small></h4>${warn}
     <table class="lex"><thead><tr><th>Slide</th><th>Bắt đầu (giây)</th><th>Lời nói đầu tiên</th></tr></thead><tbody>
-    ${r.slides.map((s, i) => `<tr><td><a href="${fileUrl(fs[i]?.image)}" target="_blank"><img src="${fileUrl(fs[i]?.image)}" style="height:40px"></a> ${s.slide}</td>
-      <td><input type="number" step="0.1" min="0" value="${s.start}" data-i="${i}" ${i === 0 ? "disabled" : ""} style="width:90px"></td>
+    ${r.slides.map((s, i) => `<tr><td><a href="${fileUrl(fs[i]?.image)}" target="_blank"><img src="${fileUrl(fs[i]?.image)}" style="height:40px"></a>
+      ${live ? `<input type="number" class="seg-slide" min="1" max="${nSlides}" value="${s.slide}" style="width:60px">` : s.slide}</td>
+      <td><input type="number" class="seg-start" step="0.1" min="0" value="${s.start}" data-i="${i}" ${i === 0 ? "disabled" : ""} style="width:90px"></td>
       <td class="muted">${s.check ? `<span class="qa-bad" title="Phần đầu lời thoại không khớp lời nói — mốc là ước đoán">⚠ kiểm tra</span> ` : ""}${esc(s.first_words)}…</td></tr>`).join("")}</tbody></table>
     <button type="button" class="primary small">↻ Dựng lại với các mốc này</button>`;
   $("button", box).onclick = async () => {
-    const times = $$("input", box).map((x) => +x.value);
-    const params = { ...job.params, slide_times: times };
-    if (params.music === "auto") params.music = r.report?.music_id || null;  // keep the track this video got
+    const times = $$(".seg-start", box).map((x) => +x.value);
+    const params = keepMusic(job, { ...job.params });
+    if (live) params.slide_track = $$(".seg-slide", box).map((x, i) => ({ slide: +x.value - 1, t: times[i] }));
+    else params.slide_times = times;
+    try { await submitJob("present", params); toast("Đang dựng lại — theo dõi ở tab Jobs"); }
+    catch (err) { toast(err.message); }
+  };
+  return box;
+}
+// "Chỉnh sửa chỉ là làm đẹp lại": same master (take, slides, timeline), only the look and the sound change.
+function renderBeautify(job) {
+  const p = job.params || {}, fx = p.fx || {}, r = job.result, box = document.createElement("details");
+  box.className = "beautify";
+  const opt = (v, label, cur) => `<option value="${v}" ${v === cur ? "selected" : ""}>${label}</option>`;
+  const music = p.music === "auto" ? r.report?.music_id || "" : p.music || "";
+  const master = job.files?.master?.recording;
+  box.innerHTML = `<summary>✨ Làm đẹp lại <small class="muted">giữ nguyên bản quay và mốc slide — chỉ đổi hình thức, giọng, nhạc</small></summary>
+    ${fileUrl(master) ? `<p><a class="btn ghost small" href="${fileUrl(master)}" download>⬇ File gốc (bản quay)</a></p>` : ""}
+    <div class="grid4">
+      <label>Bố cục <select name="layout" ${!p.slides && !p.slides_markdown ? "disabled title=\"Bản quay không kèm slide\"" : ""}>${opt("bubble", "Slide + camera tròn", p.layout || "bubble")}${opt("slides", "Chỉ slide", p.layout)}${opt("recording", "Camera toàn khung", p.layout)}</select></label>
+      <label>Vị trí camera <select name="camera_pos">${[["bottom-right", "Góc dưới phải"], ["bottom-left", "Góc dưới trái"], ["top-right", "Góc trên phải"], ["top-left", "Góc trên trái"]].map(([v, l]) => opt(v, l, p.camera_pos || "bottom-right")).join("")}</select></label>
+      <label>Cỡ camera <input type="number" name="camera_size" min="0.15" max="0.45" step="0.01" value="${p.camera_size ?? 0.3}"></label>
+      <label class="check"><input type="checkbox" name="denoise" ${p.denoise !== false ? "checked" : ""}> Lọc tiếng ồn</label>
+      <label>Độ trầm (−4…4) <input type="number" name="pitch" min="-4" max="4" step="0.5" value="${fx.pitch ?? 0}"></label>
+      <label>Độ ấm (0…1) <input type="number" name="warmth" min="0" max="1" step="0.1" value="${fx.warmth ?? 0}"></label>
+      <label>Độ rõ (0…1) <input type="number" name="clarity" min="0" max="1" step="0.1" value="${fx.clarity ?? 0.35}"></label>
+      <label class="check"><input type="checkbox" name="subs" ${p.burn_subtitles !== false ? "checked" : ""}> Phụ đề trên video</label>
+      <label>Nhạc nền <select name="music">${opt("", "Không dùng nhạc", music)}${musicTracks.map((t) => opt(t.id, esc(t.title), music)).join("")}${music && !musicTracks.some((t) => t.id === music) ? opt(music, "Nhạc đang dùng", music) : ""}</select></label>
+      <label>Âm lượng nhạc <input type="number" name="music_volume" min="0" max="0.5" step="0.02" value="${p.music_volume ?? 0.12}"></label>
+    </div>
+    <button type="button" class="primary small">✨ Dựng lại bản đẹp hơn</button>`;
+  $("button", box).onclick = async () => {
+    const v = (n) => $(`[name=${n}]`, box);
+    const params = { ...p, layout: v("layout").value, camera_pos: v("camera_pos").value, camera_size: +v("camera_size").value,
+      denoise: v("denoise").checked, fx: { pitch: +v("pitch").value, warmth: +v("warmth").value, clarity: +v("clarity").value },
+      burn_subtitles: v("subs").checked, music: v("music").value || null, music_volume: +v("music_volume").value };
+    // a re-timed live job keeps its edited timeline: the result's segments are the master's timeline
+    if (r.master?.slide_track) params.slide_track = r.master.slide_track;
     try { await submitJob("present", params); toast("Đang dựng lại — theo dõi ở tab Jobs"); }
     catch (err) { toast(err.message); }
   };

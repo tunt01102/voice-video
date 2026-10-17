@@ -279,7 +279,8 @@ async def present_recording(recording: str, slides: list[str] | None = None, scr
                             camera_pos: str = "bottom-right", camera_size: float = 0.3, pitch: float | None = None,
                             warmth: float | None = None, clarity: float | None = None, denoise: bool = True,
                             music: str | None = None, music_volume: float = 0.12,
-                            slide_times: list[float] | None = None, burn_subtitles: bool = True,
+                            slide_times: list[float] | None = None,
+                            slide_track: list[dict[str, float]] | None = None, burn_subtitles: bool = True,
                             lang: str = "auto", aspect: str = "16:9", title: str | None = None,
                             wait_seconds: float = 0) -> dict[str, Any]:
     """Thuyết trình kèm ghi hình (like Canva "present and record"): the owner's slides + their own recording of the
@@ -290,6 +291,8 @@ async def present_recording(recording: str, slides: list[str] | None = None, scr
     (PPTX/Keynote: export to PDF first); or slides_markdown (`# Title`, `- bullet`, `> narration` per slide).
     script: what was said, one part per slide separated by `---` lines (or blank lines) — each slide appears when its
     part starts in the recording; without it slides are spread evenly. slide_times: manual start second per slide.
+    slide_track: a live-studio timeline [{"slide": 0-based index, "t": second}] (going back allowed; wins over
+    script and slide_times) — the dashboard studio records it while the owner clicks through the deck.
     layout: bubble | slides (no camera) | recording (the recording full-frame, e.g. a screen recording of the deck).
     camera_pos: bottom-right | bottom-left | top-right | top-left. camera_size: 0.12..0.45 of the frame height.
     pitch: -6..+6 semitones (negative = deeper); warmth/clarity 0..1 (pace is fixed: the camera stays lip-synced).
@@ -299,7 +302,8 @@ async def present_recording(recording: str, slides: list[str] | None = None, scr
         "recording": recording, "slides": slides, "script": script, "slides_markdown": slides_markdown,
         "layout": layout, "camera_pos": camera_pos, "camera_size": camera_size,
         "fx": _fx(pitch=pitch, warmth=warmth, clarity=clarity), "denoise": denoise, "music": music,
-        "music_volume": music_volume, "slide_times": slide_times, "burn_subtitles": burn_subtitles, "lang": lang,
+        "music_volume": music_volume, "slide_times": slide_times, "slide_track": slide_track,
+        "burn_subtitles": burn_subtitles, "lang": lang,
         "aspect": aspect, "title": title}, wait_seconds)
 
 

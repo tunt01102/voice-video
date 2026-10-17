@@ -40,6 +40,7 @@ LEAD = 0.3        # s: a slide appears this long before its first word
 MIN_SLIDE = 0.8   # s: shortest time a slide stays on screen
 PAUSE = 0.35      # s: a gap between heard words this long is a pause the slide can change in
 FADE = 0.3        # s: cross-fade between slides
+MIN_LIVE = 0.4    # s: a live-studio segment shorter than this (flicking through) merges into the next one
 
 
 def split_script(script: str) -> list[str]:
@@ -115,6 +116,28 @@ def clean_starts(starts: list[float], total: float) -> list[float]:
         latest = total - MIN_SLIDE * (n - i)  # leave room for the slides after this one
         out.append(min(max(float(s), out[-1] + MIN_SLIDE), max(latest, out[-1])))
     return out
+
+
+def live_segments(track: list[dict[str, Any]], n: int, total: float) -> list[tuple[int, float]]:
+    """A live-studio timeline [{slide, t}] (the slide shown from second t; going back is allowed) → the segments
+    (slide, start) to render, docs/SDD-live-studio.md §2. The times are the owner's clicks: never pushed apart,
+    only cleaned — sorted, the first at 0, out-of-range slides and events past the end dropped, a click onto the
+    slide already shown dropped, and a flick shorter than MIN_LIVE merged into the slide after it."""
+    ev = sorted(((int(e["slide"]), max(float(e["t"]), 0.0)) for e in track or []), key=lambda e: e[1])
+    ev = [e for e in ev if 0 <= e[0] < n and e[1] < total]
+    if not ev:
+        return [(0, 0.0)] if n else []
+    segs: list[tuple[int, float]] = [(ev[0][0], 0.0)]
+    for slide, t in ev[1:]:
+        if t - segs[-1][1] < MIN_LIVE:  # the previous segment was a flick: this slide takes its place
+            segs[-1] = (slide, segs[-1][1])
+        else:
+            segs.append((slide, t))
+        if len(segs) > 1 and segs[-1][0] == segs[-2][0]:  # same slide twice in a row (also after a merge)
+            segs.pop()
+    if len(segs) > 1 and total - segs[-1][1] < MIN_LIVE:  # a click just before the end
+        segs.pop()
+    return segs
 
 
 def even_starts(n: int, total: float) -> list[float]:
@@ -440,8 +463,13 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
     n = len(frames)
     timing = "none"
     guessed = [False] * n
+    shown = list(range(n))  # the slide index of each segment (a live timeline may repeat or go back)
     if n:
-        if p.get("slide_times"):
+        if p.get("slide_track"):
+            segs = live_segments(p["slide_track"], n, total)
+            shown, starts, timing = [s for s, _ in segs], [t for _, t in segs], "live"
+            guessed = [False] * len(shown)
+        elif p.get("slide_times"):
             times = [float(t) for t in p["slide_times"]][:n]
             if len(times) < n:
                 warnings.append(f"slide_times có {len(times)} mốc cho {n} slide: các slide còn lại chia đều phần cuối")
@@ -477,23 +505,27 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
         music_file = music.resolve(music_id) if music_id else None
 
     progress(0.45, "dựng video")
-    final = render(frames, starts, total, out / "final.mp4", recording=rec, voice_wav=voice_wav, layout=layout,
-                   aspect=aspect, corner=corner, size_frac=float(p.get("camera_size", 0.3)),
+    final = render([frames[i] for i in shown], starts, total, out / "final.mp4", recording=rec, voice_wav=voice_wav,
+                   layout=layout, aspect=aspect, corner=corner, size_frac=float(p.get("camera_size", 0.3)),
                    ass=subs.get("ass") if burn else None, music_file=music_file,
                    music_volume=float(p.get("music_volume", 0.12)), progress=_sub(progress, 0.45, 0.97))
     thumb = compose.thumbnail(final, out / "thumbnail.jpg", at=min(1.5, total / 2))
     ends = starts[1:] + [total]
     slide_rows = []
-    for i, f in enumerate(frames):
+    for i, k in enumerate(shown):
         said = [w["text"] for w in words if starts[i] <= w["start"] < ends[i]]
-        slide_rows.append({"slide": i + 1, "image": str(f), "start": round(starts[i], 2), "end": round(ends[i], 2),
+        slide_rows.append({"slide": k + 1, "image": str(frames[k]), "start": round(starts[i], 2), "end": round(ends[i], 2),
                            "first_words": " ".join(said[:8]), "check": bool(guessed[i]) if timing == "script" else False})
     report = {"kind": "present", "aspect": aspect, "layout": layout, "slide_timing": timing, "warnings": warnings,
               "music_id": music_id, "music_credit": music.credit(music_id), "fx": fx.as_dict(),
               "denoise": bool(p.get("denoise", True)), "elapsed": round(time.time() - t0, 1)}
     result = {"video": str(final), "thumbnail": str(thumb), "title": p.get("title") or name,
               "duration": round(A.probe_duration(final), 2), "voice": str(voice_wav), "lang": lang,
-              "subtitles": subs, "words": words, "slides": slide_rows, "report": report}
+              "subtitles": subs, "words": words, "slides": slide_rows, "report": report,
+              # the file gốc: every re-edit starts again from this take and its timeline
+              "master": {"recording": str(p["recording"]),
+                         "slide_track": [{"slide": k, "t": round(t, 3)} for k, t in zip(shown, starts)]
+                         if timing == "live" else None}}
     (out / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2))
     progress(1.0, "done")
     return result

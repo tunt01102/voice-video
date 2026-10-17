@@ -13,6 +13,10 @@ script="part 1\n---\npart 2…", music="auto")`. It keeps the owner's real voice
 pace is fixed for lip-sync), puts the camera in a round bubble (`layout`, `camera_pos`) and returns `slides` with each
 slide's start time and first words — fix a wrong one with `slide_times`. PPTX/Keynote: ask for a PDF export.
 Design: docs/SDD-present-record.md.
+The owner wants to **record the talk now** (bật camera, quay trực tiếp)? Point them to the dashboard: Tạo mới →
+🎥 Thuyết trình + ghi hình → 🔴 Quay trực tiếp. The studio stamps every slide click, and the job gets a `slide_track`
+`[{"slide": 0-based, "t": s}]`, which wins over the script and `slide_times`. The video is Full HD, and the export format
+`mp4_fhd` guarantees it. Design: docs/SDD-live-studio.md.
 
 ## Make one (any Claude session)
 

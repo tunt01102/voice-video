@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import shutil
@@ -631,6 +632,32 @@ def create_app() -> FastAPI:
         with dest.open("wb") as f:
             shutil.copyfileobj(file.file, f)
         return {"path": str(dest), "url": "/files/" + str(dest.relative_to(settings.data_dir))}
+
+    @app.post("/api/present/slides")
+    async def present_slides(body: dict[str, Any] = Body(...)):
+        """The live studio's deck: uploaded PDF/pictures → the frame-sized PNGs the studio shows and the job renders
+        (docs/SDD-live-studio.md §2). No model runs here (pypdfium2 + Pillow)."""
+        from mediaforge import present
+        from mediaforge.video import compose
+
+        src = body.get("slides") or []
+        aspect = body.get("aspect") or "16:9"
+        if aspect not in compose.RESOLUTIONS:
+            raise HTTPException(400, f"aspect must be one of {', '.join(compose.RESOLUTIONS)}")
+        uploads = settings.sub("uploads").resolve()
+        paths = [Path(s).expanduser().resolve() for s in ([src] if isinstance(src, str) else src)]
+        if not paths or any(uploads not in p.parents for p in paths):
+            raise HTTPException(400, "slides: upload the deck with /api/uploads first")
+        w, h = compose.RESOLUTIONS[aspect]
+        key = hashlib.sha1(json.dumps([str(p) for p in paths] + [aspect]).encode()).hexdigest()[:10]
+        out = settings.sub("uploads") / f"studio-{key}"
+        try:
+            frames, _ = await anyio.to_thread.run_sync(lambda: present.load_slides({"slides": paths}, out, w, h))
+        except (ValueError, FileNotFoundError) as e:
+            raise HTTPException(422, str(e)) from e
+        root = settings.data_dir.resolve()
+        return {"slides": [{"path": str(f), "url": "/files/" + str(Path(f).resolve().relative_to(root))}
+                           for f in frames], "width": w, "height": h}
 
     @app.post("/api/documents")
     async def import_document(file: UploadFile = File(...)):

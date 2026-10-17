@@ -158,15 +158,18 @@ def present(recording: Path, slides: list[Path] = typer.Option([], help="PDF / p
             layout: str = "bubble", camera_pos: str = "bottom-right", pitch: Optional[float] = None,
             warmth: Optional[float] = None, clarity: Optional[float] = None, denoise: bool = True,
             music: Optional[str] = None, music_volume: float = 0.12, lang: str = "auto", aspect: str = "16:9",
+            track: Optional[str] = typer.Option(None, help='live-studio timeline: JSON or @file, [{"slide": 0, "t": 0}, …]'),
             local: bool = False) -> None:
     """Presentation from your slides + your own recording of the talk (camera bubble, cleaned voice, music)."""
+    if track:
+        track = json.loads(Path(track[1:]).read_text("utf-8") if track.startswith("@") else track)
     if script and script.startswith("@"):
         script = Path(script[1:]).read_text("utf-8")
     fx = {k: v for k, v in {"pitch": pitch, "warmth": warmth, "clarity": clarity}.items() if v is not None} or None
     _run("present", {"recording": str(recording.resolve()), "slides": [str(s.resolve()) for s in slides] or None,
                      "slides_markdown": markdown.read_text("utf-8") if markdown else None, "script": script,
                      "layout": layout, "camera_pos": camera_pos, "fx": fx, "denoise": denoise, "music": music,
-                     "music_volume": music_volume, "lang": lang, "aspect": aspect}, local)
+                     "music_volume": music_volume, "lang": lang, "aspect": aspect, "slide_track": track}, local)
 
 
 @app.command()

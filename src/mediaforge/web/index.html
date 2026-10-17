@@ -66,11 +66,19 @@
     <div class="f-present present-files">
       <p class="muted">Giống “Thuyết trình và ghi hình” của Canva: gửi slide, bản ghi lúc bạn thuyết trình (video có camera, hoặc chỉ tiếng)
         và lời thoại. Video giữ <b>giọng thật</b> của bạn (lọc ồn, chỉnh độ trầm/ấm/rõ), camera trong khung tròn, phụ đề và nhạc nền.</p>
+      <div class="seg present-mode">
+        <button type="button" data-pm="live" class="active">🔴 Quay trực tiếp</button>
+        <button type="button" data-pm="upload">📁 Tải bản ghi có sẵn</button>
+      </div>
       <div class="grid2">
-        <label>Bản ghi thuyết trình (video/audio)
+        <label class="pm-upload" hidden>Bản ghi thuyết trình (video/audio)
           <input type="file" name="recording_file" accept="video/*,audio/*"></label>
         <label>Slide (PDF hoặc ảnh theo thứ tự; PowerPoint/Keynote → xuất PDF trước)
           <input type="file" name="slides_files" accept=".pdf,image/*" multiple></label>
+        <div class="pm-live live-take">
+          <button type="button" class="primary" id="live-open">🎥 Mở phòng quay</button>
+          <span class="muted" id="live-status">Bật camera + micro, bấm qua từng slide khi nói — mỗi lần chuyển slide được ghi đúng thời điểm.</span>
+        </div>
       </div>
       <div class="grid4">
         <label>Bố cục
@@ -322,8 +330,51 @@
   <div class="song-result"></div>
 </template>
 
+<dialog id="live-studio" class="live-studio">
+  <header class="ls-head">
+    <b>🎥 Phòng quay thuyết trình</b>
+    <label class="inline-label">Camera <select class="ls-cam"></select></label>
+    <label class="inline-label">Micro <select class="ls-mic"></select></label>
+    <span class="ls-res muted"></span>
+    <span class="ls-meter" title="Mức âm micro"><i></i></span>
+    <button type="button" class="ghost small ls-close" title="Đóng">✕</button>
+  </header>
+  <div class="ls-body">
+    <div class="ls-stage">
+      <img class="ls-slide" alt="">
+      <div class="ls-noslide muted">Không có slide — chỉ quay camera (toàn khung hình)</div>
+      <video class="ls-cambox" autoplay muted playsinline></video>
+      <video class="ls-review" controls playsinline hidden></video>
+      <div class="ls-count" hidden></div>
+      <div class="ls-rec" hidden>● REC <span class="ls-time">0:00</span></div>
+    </div>
+    <aside class="ls-side">
+      <div class="ls-pos"><b class="ls-num">1 / 1</b> <span class="muted">← → hoặc PageUp/PageDown</span></div>
+      <div class="ls-next"><small class="muted">Slide tiếp theo</small><img alt=""></div>
+      <div class="ls-prompt"><small class="muted">Lời thoại slide này</small><p></p></div>
+      <ol class="ls-track"></ol>
+    </aside>
+  </div>
+  <footer class="ls-foot">
+    <button type="button" class="ghost ls-prev">◀ Slide trước</button>
+    <button type="button" class="ghost ls-nextbtn">Slide sau ▶</button>
+    <span class="ls-spacer"></span>
+    <span class="ls-live-ctl">
+      <button type="button" class="primary ls-start">⏺ Bắt đầu quay (R)</button>
+      <button type="button" class="ghost ls-pause" hidden>⏸ Tạm dừng (P)</button>
+      <button type="button" class="ghost ls-stop" hidden>⏹ Dừng</button>
+    </span>
+    <span class="ls-review-ctl" hidden>
+      <button type="button" class="ghost ls-retake">↺ Quay lại</button>
+      <a class="btn ghost ls-save" download>⬇ Lưu file gốc</a>
+      <button type="button" class="primary ls-use">✓ Dùng bản này &amp; dựng video</button>
+    </span>
+  </footer>
+</dialog>
+
 <script src="/app.js"></script>
 <script type="module" src="/js/studio.js"></script>
+<script type="module" src="/js/live.js"></script>
 <script type="module" src="/js/lessons.js"></script>
 <script type="module" src="/js/jobpage.js"></script>
 </body>
