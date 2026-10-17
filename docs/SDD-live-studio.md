@@ -1,7 +1,7 @@
 # Phòng quay thuyết trình (live studio): camera + mic + slides → the master file — design
 
 Status: shipped 2026-10-18 (dashboard **🎥 Thuyết trình + ghi hình → 🔴 Quay trực tiếp**, job type `present` with
-`slide_track`, `src/mediaforge/present.py`, `web/studio.js`).
+`slide_track`, `src/mediaforge/present.py`, `web/js/live.js`).
 
 ## 1. What the owner asked for
 
@@ -28,7 +28,7 @@ output is a 1920×1080 video.
 | Capture quality | `video: {width: {ideal: 1920}, height: {ideal: 1080}, frameRate: {ideal: 30}}`. The real size (`track.getSettings()`) is shown, with a warning under 1080p. `videoBitsPerSecond 8 Mbps`, `audioBitsPerSecond 192 kbps`. mimeType cascade: mp4/avc1 → webm vp9/opus → webm vp8/opus → default | Browsers default to 640×480 at ~2.5 Mbps, which looks blocky at Full HD |
 | Mic | `echoCancellation`, `noiseSuppression` and `autoGainControl` off, like the voice-sample recorders. A live level meter. Recording is blocked without an audio track | The server denoises and normalises (`process_voice`). `present.run` fails on a silent file |
 | Preview | Mirrored with CSS only. The recorded stream is not mirrored | Natural for the presenter; text on a whiteboard stays readable in the video |
-| Don't lose the take | 1 s timeslices. **⬇ Lưu file gốc** downloads the take, the slide timeline (JSON) is kept beside it, and the upload uses XHR with a progress bar. A take is kept in the page until it is used or discarded | A 10-minute 1080p take is ~600 MB. A failed upload must not cost a re-take |
+| Don't lose the take | 1 s timeslices. **⬇ Lưu file gốc** downloads the take and **⬇ timeline.json** its slide timeline (`present --track @…`); a finished take keeps the deck it was recorded with (re-picking the slides doesn't re-pair it), and the upload uses XHR with a progress bar. A take is kept in the page until it is used or discarded | A 10-minute 1080p take is ~600 MB. A failed upload must not cost a re-take |
 | Teleprompter | The script's part for the current slide (same `---` rules as `split_script`) shows under the slide, for the presenter only | Optional. It also feeds the subtitles' wording |
 | Keys | → / PageDown / Space / Enter = next. ← / PageUp / Backspace = previous. Home = first. `R` = record/stop. `P` = pause | Presentation clickers send PageUp/PageDown |
 | Polishing (làm đẹp lại) | The job page of a live job has a **✨ Làm đẹp lại** panel: layout, camera corner/size, denoise, pitch/warmth/clarity, subtitles, music + volume. It submits a new job with the same master. An `auto` music pick is kept | "Chỉnh sửa chỉ là làm đẹp lại": no re-recording, no re-timing unless the owner asks |
@@ -73,6 +73,21 @@ No slides: the studio records the camera alone, and the job uses `layout=recordi
   - the result is 1920×1080;
   - Làm đẹp lại re-renders with the same timeline;
   - the Full HD export works.
+
+Results (2026-10-18, Chromium with fake camera and mic, data-store copy):
+- The camera opened at 1920×1080 and the take was H.264/AAC MP4 at 1920×1080.
+- A 2 s pause was left out of both the file and the timeline: the take was 12.3 s for 14.3 s of wall clock.
+- Every frame before and after a click showed the right slide, including going back and a flick merge.
+- Làm đẹp lại kept the take and the timeline.
+- `mp4_fhd` was a stream copy.
+- Upload mode was unchanged.
+- Re-picking the slides after a take kept the take's deck.
+- A 600 MB upload took 1.7 s.
+- Load: 80 clicks (69 segments after merging) over a 4-minute 1080p take rendered in 70 s with about 5 GB peak RSS.
+  ffmpeg buffers one looped-PNG input per segment. That is fine on this 128 GB Mac. Move to one input per unique slide
+  if talks get much longer.
+
+Not tested: Safari, and a real webcam and microphone. MediaRecorder's pause behaviour was checked in Chromium only.
 
 ## 6. Not done
 

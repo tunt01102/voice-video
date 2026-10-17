@@ -163,6 +163,8 @@ def present(recording: Path, slides: list[Path] = typer.Option([], help="PDF / p
     """Presentation from your slides + your own recording of the talk (camera bubble, cleaned voice, music)."""
     if track:
         track = json.loads(Path(track[1:]).read_text("utf-8") if track.startswith("@") else track)
+        if isinstance(track, dict):  # the studio's ⬇ timeline.json: {recording, slide_track, slides}
+            track = track["slide_track"]
     if script and script.startswith("@"):
         script = Path(script[1:]).read_text("utf-8")
     fx = {k: v for k, v in {"pitch": pitch, "warmth": warmth, "clarity": clarity}.items() if v is not None} or None
