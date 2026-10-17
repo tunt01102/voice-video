@@ -38,6 +38,7 @@ CORNERS = ("bottom-right", "bottom-left", "top-right", "top-left")
 SPLIT_RE = re.compile(r"^\s*(?:-{3,}|\[\s*(?:slide|trang)?\s*\d+\s*\]|(?:slide|trang)\s*\d+\s*[:.\-–]?)\s*$", re.I)
 LEAD = 0.3        # s: a slide appears this long before its first word
 MIN_SLIDE = 0.8   # s: shortest time a slide stays on screen
+PAUSE = 0.35      # s: a gap between heard words this long is a pause the slide can change in
 FADE = 0.3        # s: cross-fade between slides
 
 
@@ -60,14 +61,48 @@ def split_script(script: str) -> list[str]:
     return [" ".join(p.split()) for p in parts if p.strip()]
 
 
-def slide_starts(parts: list[str], words: list[dict[str, Any]], total: float) -> list[float]:
-    """Start time of each slide: LEAD before the first word of its script part. `words` must come from
-    asr.align_script over " ".join(parts), so word k of the script is words[k] (align_script splits on whitespace)."""
-    starts, k = [], 0
+def slide_starts(parts: list[str], words: list[dict[str, Any]], total: float,
+                 heard: list[dict[str, Any]] | None = None) -> tuple[list[float], list[bool]]:
+    """Start time of each slide (LEAD before its script part starts) and whether that time is a guess.
+
+    `words` come from asr.align_script over " ".join(parts) (script word k = words[k]; it splits on whitespace).
+    With `heard` (Whisper's own words), a part is anchored on its first script word Whisper heard exactly (in a run
+    of at least two matching words). When the
+    owner skipped or changed the part's opening words, align_script spreads them over whatever was said instead
+    (e.g. an ad-lib at the end of the previous slide), so the slide would come too early: the start is then the
+    last pause before the first heard word of the part, and the slide is flagged for the owner to check."""
+    import difflib
+
+    matched: dict[int, int] = {}
+    if heard:
+        a = [asr._key(t) for t in " ".join(parts).split()]
+        b = [asr._key(w["text"]) for w in heard]
+        for op, i1, i2, j1, _ in difflib.SequenceMatcher(a=a, b=b, autojunk=False).get_opcodes():
+            if op == "equal" and i2 - i1 >= 2:  # one shared word ("đầu" in "bắt đầu" ~ "đầu tiên") is no anchor
+                matched.update({i1 + d: j1 + d for d in range(i2 - i1)})
+    starts, guessed, k, prev_h = [], [], 0, -1
     for part in parts:
-        starts.append(max(float(words[k]["start"]) - LEAD, 0.0) if k < len(words) else total)
-        k += len(part.split())
-    return clean_starts(starts, total)
+        n = len(part.split())
+        anchor = next((j for j in range(k, k + n) if j in matched), None)
+        if not heard:
+            t, guess = (float(words[k]["start"]) if k < len(words) else total), False
+        elif anchor == k:
+            t, guess = float(heard[matched[k]]["start"]), False
+        elif anchor is not None:
+            h = matched[anchor]
+            t, guess = float(heard[h]["start"]), True
+            for i in range(h, prev_h + 1, -1):  # the owner resumed speaking after the last pause before it
+                if i > 0 and float(heard[i]["start"]) - float(heard[i - 1]["end"]) >= PAUSE:
+                    t = float(heard[i]["start"])
+                    break
+        else:
+            t, guess = (float(words[k]["start"]) if k < len(words) else total), True
+        if anchor is not None:
+            prev_h = max(matched[j] for j in range(k, k + n) if j in matched)
+        starts.append(max(t - LEAD, 0.0))
+        guessed.append(guess and len(starts) > 1)
+        k += n
+    return clean_starts(starts, total), guessed
 
 
 def clean_starts(starts: list[float], total: float) -> list[float]:
@@ -170,15 +205,30 @@ def load_slides(p: dict[str, Any], out_dir: Path, w: int, h: int) -> tuple[list[
 # ------------------------------------------------------------------ the recording
 
 def probe(path: str | Path) -> dict[str, Any]:
-    out = subprocess.run([settings.ffprobe, "-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration",
+    out = subprocess.run([settings.ffprobe, "-v", "error", "-show_entries",
+                          "stream=codec_type,width,height,start_time,duration:format=duration",
                           "-of", "json", str(path)], capture_output=True, text=True).stdout
     info = json.loads(out or "{}")
     v = next((s for s in info.get("streams", []) if s.get("codec_type") == "video" and s.get("width")), None)
-    has_audio = any(s.get("codec_type") == "audio" for s in info.get("streams", []))
+    a = next((s for s in info.get("streams", []) if s.get("codec_type") == "audio"), None)
+    has_audio = a is not None
     # A cover-art picture in an .m4a/.mp3 is a "video" stream too; a real camera has a duration-long stream.
     is_video = bool(v) and Path(path).suffix.lower() in VIDEO_EXT
+    # Where the sound starts relative to the picture: a phone/camera file often starts its audio 0.05–0.2 s late,
+    # and decoding the audio alone drops that gap — the voice would run ahead of the lips.
+    offset = _num((a or {}).get("start_time")) - _num((v or {}).get("start_time")) if is_video and a else 0.0
+    # A browser (MediaRecorder) webm often has no container duration: fall back to the longest stream.
+    dur = _num((info.get("format") or {}).get("duration")) or max(
+        [_num(s.get("duration")) + _num(s.get("start_time")) for s in info.get("streams", [])] or [0.0])
     return {"video": is_video, "audio": has_audio, "width": (v or {}).get("width"), "height": (v or {}).get("height"),
-            "duration": float((info.get("format") or {}).get("duration") or 0)}
+            "duration": dur, "audio_offset": offset}
+
+
+def _num(v: Any) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):  # "N/A" or missing
+        return 0.0
 
 
 def present_fx(fx: dict[str, Any] | None) -> VoiceFX:
@@ -189,11 +239,17 @@ def present_fx(fx: dict[str, Any] | None) -> VoiceFX:
     return v
 
 
-def process_voice(src: Path, out: Path, *, fx: VoiceFX, denoise: bool, seconds: float) -> Path:
+def process_voice(src: Path, out: Path, *, fx: VoiceFX, denoise: bool, seconds: float, offset: float = 0.0) -> Path:
     """The recording's voice: denoised, shaped, loudness-normalised — and exactly `seconds` long (the recording's
-    length: its video stream often runs a little past its audio, and the mix must not stop before the picture)."""
+    length: its video stream often runs a little past its audio, and the mix must not stop before the picture).
+    offset: seconds the audio starts after the picture (negative = before); applied so the voice stays on the lips."""
     raw = A.to_wav(src, out.with_name("voice_raw.wav"))
     x = A.load(raw)
+    k = int(round(abs(offset) * A.SR))
+    if offset > 0:
+        x = np.concatenate([np.zeros(k, dtype=np.float32), x])
+    elif k:
+        x = x[k:]
     n = int(round(seconds * A.SR))
     x = fit_length(x, n)
     if denoise and n:
@@ -325,10 +381,17 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
     rec = Path(str(p.get("recording") or "")).expanduser()
     if not rec.is_file():
         raise ValueError("recording: the owner's recording of the talk (video or audio file) is required")
+    name = re.sub(r"^\d+-[0-9a-f]{6}-", "", rec.stem)  # /api/uploads prefixes time-hex-
     info = probe(rec)
+    if info["duration"] <= 0:  # a browser (MediaRecorder) webm has no duration anywhere: remux once, no re-encode
+        fixed = out / f"recording{'.mkv' if info['video'] else '.mka'}"
+        A.run_ffmpeg(["-i", str(rec), "-map", "0", "-c", "copy", str(fixed)])
+        rec, info = fixed, probe(fixed)
     if not info["audio"]:
         raise ValueError(f"{rec.name} has no audio track")
-    total = info["duration"] or A.probe_duration(rec)
+    total = info["duration"]
+    if total <= 0:
+        raise ValueError(f"{rec.name}: cannot read its length")
     aspect = p.get("aspect") or "16:9"
     if aspect not in compose.RESOLUTIONS:
         raise ValueError(f"aspect must be one of {', '.join(compose.RESOLUTIONS)}")
@@ -356,7 +419,8 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
     # ---- the voice: denoise + the owner's tone sliders, same length as the recording
     progress(0.08, "xử lý giọng")
     fx = present_fx(p.get("fx"))
-    voice_wav = process_voice(rec, out / "voice.wav", fx=fx, denoise=p.get("denoise", True), seconds=total)
+    voice_wav = process_voice(rec, out / "voice.wav", fx=fx, denoise=p.get("denoise", True), seconds=total,
+                              offset=info["audio_offset"])
 
     # ---- what was said, and when: Whisper word timings, aligned to the script when there is one
     script = p.get("script") or ""
@@ -375,6 +439,7 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
     # ---- slide timing
     n = len(frames)
     timing = "none"
+    guessed = [False] * n
     if n:
         if p.get("slide_times"):
             times = [float(t) for t in p["slide_times"]][:n]
@@ -385,7 +450,12 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
                           for k in range(1, n - len(times) + 1)]
             starts, timing = clean_starts(times, total), "manual"
         elif parts and len(parts) == n:
-            starts, timing = slide_starts(parts, words, total), "script"
+            starts, guessed = slide_starts(parts, words, total, heard)
+            timing = "script"
+            if any(guessed):
+                warnings.append("slide " + ", ".join(str(i + 1) for i, g in enumerate(guessed) if g)
+                                + ": phần đầu lời thoại không khớp lời nói trong bản ghi → mốc chuyển slide là ước "
+                                "đoán (ở khoảng lặng gần nhất), hãy kiểm tra trong bảng mốc chuyển slide")
         else:
             if parts:
                 warnings.append(f"lời thoại có {len(parts)} đoạn nhưng có {n} slide → chia đều thời gian; tách lời "
@@ -403,7 +473,7 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
 
     # ---- music
     if music_id == "auto":
-        music_id = auto_music(None, kind="present", seed=str(job_id or rec.name))
+        music_id = auto_music(None, kind="present", seed=str(job_id or name))
         music_file = music.resolve(music_id) if music_id else None
 
     progress(0.45, "dựng video")
@@ -417,12 +487,11 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
     for i, f in enumerate(frames):
         said = [w["text"] for w in words if starts[i] <= w["start"] < ends[i]]
         slide_rows.append({"slide": i + 1, "image": str(f), "start": round(starts[i], 2), "end": round(ends[i], 2),
-                           "first_words": " ".join(said[:8])})
+                           "first_words": " ".join(said[:8]), "check": bool(guessed[i]) if timing == "script" else False})
     report = {"kind": "present", "aspect": aspect, "layout": layout, "slide_timing": timing, "warnings": warnings,
               "music_id": music_id, "music_credit": music.credit(music_id), "fx": fx.as_dict(),
               "denoise": bool(p.get("denoise", True)), "elapsed": round(time.time() - t0, 1)}
-    title = p.get("title") or re.sub(r"^\d+-[0-9a-f]{6}-", "", rec.stem)  # /api/uploads prefixes time-hex-
-    result = {"video": str(final), "thumbnail": str(thumb), "title": title,
+    result = {"video": str(final), "thumbnail": str(thumb), "title": p.get("title") or name,
               "duration": round(A.probe_duration(final), 2), "voice": str(voice_wav), "lang": lang,
               "subtitles": subs, "words": words, "slides": slide_rows, "report": report}
     (out / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2))

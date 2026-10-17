@@ -1183,7 +1183,7 @@ function renderSlideTimes(job) {
     <table class="lex"><thead><tr><th>Slide</th><th>Bắt đầu (giây)</th><th>Lời nói đầu tiên</th></tr></thead><tbody>
     ${r.slides.map((s, i) => `<tr><td><a href="${fileUrl(fs[i]?.image)}" target="_blank"><img src="${fileUrl(fs[i]?.image)}" style="height:40px"></a> ${s.slide}</td>
       <td><input type="number" step="0.1" min="0" value="${s.start}" data-i="${i}" ${i === 0 ? "disabled" : ""} style="width:90px"></td>
-      <td class="muted">${esc(s.first_words)}…</td></tr>`).join("")}</tbody></table>
+      <td class="muted">${s.check ? `<span class="qa-bad" title="Phần đầu lời thoại không khớp lời nói — mốc là ước đoán">⚠ kiểm tra</span> ` : ""}${esc(s.first_words)}…</td></tr>`).join("")}</tbody></table>
     <button type="button" class="primary small">↻ Dựng lại với các mốc này</button>`;
   $("button", box).onclick = async () => {
     const times = $$("input", box).map((x) => +x.value);

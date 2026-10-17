@@ -20,6 +20,9 @@ voice, cleaned and re-toned, and adds subtitles and soft background music.
 | Default fx | `clarity 0.35`, everything else neutral. The voice profile's saved fx are **not** inherited | Those sliders were tuned for TTS, not for a real microphone |
 | Voice length | Padded or trimmed to the recording's container duration, to the exact sample | A camera's video stream often runs past its audio (measured: 0.65 s). Without padding, the mix stopped before the picture |
 | Slide change | Each slide appears `LEAD = 0.3 s` before the first word of its script part. The parts come from Whisper word timings aligned to the script (`asr.align_script`, whitespace tokens) | The owner speaks to each slide, so the script says when the slide changed. Measured on the E2E: both changes fell inside the 0.9 s pauses before the new part |
+| Anchoring | A part is anchored on its first script word that Whisper heard exactly, inside a run of at least 2 matching words. If the part's opening words were skipped or changed, the slide changes at the last pause (gap ≥ 0.35 s) before the first heard word, and it is flagged `check` with a warning | `align_script` spreads unspoken script words over whatever was said instead. In the E2E with an ad-lib, that put slide 2 at the start of the ad-lib (4.42 s) and not in the pause (8.91–9.95 s). The fix lands at 9.32 s. A single shared word ("đầu" in "bắt đầu" ~ "đầu tiên") matched spuriously, hence the 2-word runs |
+| A/V offset | The voice is shifted by audio `start_time` − video `start_time` | Phone and camera files often start their audio 0.05–0.2 s late, and decoding the audio alone drops that gap. Measured on a fixture with the audio 150 ms late: the voice was 129 ms early before the fix and exact after it. Click-train cross-correlation: the processing (denoise, pitch ±3) shifts the voice ≤ 2 ms |
+| Browser webm | A recording with no duration anywhere (MediaRecorder) is remuxed once to MKV (`-c copy`) | ffprobe returns no duration at all for these files |
 | Script → parts | Lines `---`, `[slide N]`, `[N]`, `Slide N:` or `Trang N` separate the parts. With no separator line, blank-line paragraphs separate them | Plain to type in the dashboard textarea |
 | No usable script | `slide_times` (manual) > script with exactly one part per slide > even split + a warning | The owner never gets a silent wrong timing. The job page shows every slide's start and first words, can be edited, and re-renders |
 | Slides | PDF via **pypdfium2** (BSD-3 / Apache-2.0); PNG/JPG/WebP; a folder (natural sort); slide markdown (Pillow slides, `> narration` = script) | PyMuPDF is AGPL (rejected), and no poppler or LibreOffice is installed. PPTX/Keynote: the error says to export to PDF |
@@ -71,6 +74,8 @@ voice, cleaned and re-toned, and adds subtitles and soft background music.
 E2E (2026-10-17, data-store copy on :8766, real Whisper): a Vietnamese test recording (macOS `say`, 12.9 s) was rendered with a 3-page PDF in about 6 s. The slide changes landed at 4.88 s and 9.48 s, with the speech resuming at 5.48 s and 10.11 s. The mix measured −15.9 LUFS. MOV and MP3 export worked, and so did re-rendering with an edited time.
 
 ## 6. Not done (possible follow-ups)
+
+- Subtitles show the script's words. An ad-libbed passage is captioned with the script text that `align_script` spread over it. A `subtitle_text="heard"` option, or captions mixing script and heard words, would fix that.
 
 - A cloned-voice mode (re-read the script in the owner's clone), shown without the camera.
 - Cutting long pauses and filler words ("ờ", "à"). This needs the same cuts on the camera track.
