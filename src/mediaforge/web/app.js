@@ -47,6 +47,7 @@ function applyKind() {
     el.style.display = classes.some((c) => show[c]) ? "" : "none";
   });
   if (kind === "image") $$("#create-form .f-image").forEach((el) => el.style.display = "");
+  if (kind === "present") $(".doc-import").style.display = "none";  // the script is typed or pasted, not imported
   const f = $("#create-form");
   f.seconds.value = kind === "short" ? 40 : kind === "explainer" ? 90 : 75;
   const src = f.source.value;
@@ -1186,7 +1187,9 @@ function renderSlideTimes(job) {
     <button type="button" class="primary small">↻ Dựng lại với các mốc này</button>`;
   $("button", box).onclick = async () => {
     const times = $$("input", box).map((x) => +x.value);
-    try { await submitJob("present", { ...job.params, slide_times: times }); toast("Đang dựng lại — theo dõi ở tab Jobs"); }
+    const params = { ...job.params, slide_times: times };
+    if (params.music === "auto") params.music = r.report?.music_id || null;  // keep the track this video got
+    try { await submitJob("present", params); toast("Đang dựng lại — theo dõi ở tab Jobs"); }
     catch (err) { toast(err.message); }
   };
   return box;

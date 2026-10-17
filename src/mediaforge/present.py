@@ -421,7 +421,8 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
     report = {"kind": "present", "aspect": aspect, "layout": layout, "slide_timing": timing, "warnings": warnings,
               "music_id": music_id, "music_credit": music.credit(music_id), "fx": fx.as_dict(),
               "denoise": bool(p.get("denoise", True)), "elapsed": round(time.time() - t0, 1)}
-    result = {"video": str(final), "thumbnail": str(thumb), "title": p.get("title") or rec.stem,
+    title = p.get("title") or re.sub(r"^\d+-[0-9a-f]{6}-", "", rec.stem)  # /api/uploads prefixes time-hex-
+    result = {"video": str(final), "thumbnail": str(thumb), "title": title,
               "duration": round(A.probe_duration(final), 2), "voice": str(voice_wav), "lang": lang,
               "subtitles": subs, "words": words, "slides": slide_rows, "report": report}
     (out / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2))

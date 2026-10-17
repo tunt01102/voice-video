@@ -154,6 +154,7 @@ def test_run_renders_every_layout(media, monkeypatch, layout):
         assert r["report"]["slide_timing"] == "script"
         assert [s["first_words"].split()[0] for s in r["slides"]] == ["Chào", "phần", "cảm"]
         assert r["slides"][1]["start"] == pytest.approx(0.4 + 3 * 0.35 - PR.LEAD, abs=0.01)
+    assert r["title"] == "rec"
     assert "plan" not in r  # restage / revoice / resubtitle need a plan: not offered for presentations
 
 

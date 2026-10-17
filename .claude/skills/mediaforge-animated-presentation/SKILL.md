@@ -1,11 +1,18 @@
 ---
 name: mediaforge-animated-presentation
-description: Make a presentation / slide video (thuyết trình) with MediaForge — animated titles and bullets, count-up stat slides, rotating three.js 3D slides, the owner's cloned voice, karaoke subtitles, music, rendered to MP4. Use when the user asks for a presentation video, an explainer, slides with narration, a pitch or training video, or to change how MediaForge animated slides look.
+description: Make a presentation / slide video (thuyết trình) with MediaForge — or turn the owner's own recorded talk + slides into a Canva-style video with a camera bubble (present_recording); animated titles and bullets, count-up stat slides, rotating three.js 3D slides, the owner's cloned voice, karaoke subtitles, music, rendered to MP4. Use when the user asks for a presentation video, an explainer, slides with narration, a pitch or training video, or to change how MediaForge animated slides look.
 ---
 
 # Animated presentation videos (MediaForge)
 
 MediaForge already does everything from script to MP4; this skill is the map.
+
+**The owner recorded the talk themselves** (slides + their own camera/voice recording, "như Canva thuyết trình kèm
+ghi hình")? Don't make an explainer: call `present_recording(recording=<path>, slides=[<pdf or pictures>],
+script="part 1\n---\npart 2…", music="auto")`. It keeps the owner's real voice (denoise, `pitch`/`warmth`/`clarity`;
+pace is fixed for lip-sync), puts the camera in a round bubble (`layout`, `camera_pos`) and returns `slides` with each
+slide's start time and first words — fix a wrong one with `slide_times`. PPTX/Keynote: ask for a PDF export.
+Design: docs/SDD-present-record.md.
 
 ## Make one (any Claude session)
 
