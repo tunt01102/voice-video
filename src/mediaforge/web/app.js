@@ -1216,7 +1216,8 @@ function renderBeautify(job) {
   const music = p.music === "auto" ? r.report?.music_id || "" : p.music || "";
   const master = job.files?.master?.recording;
   box.innerHTML = `<summary>✨ Làm đẹp lại <small class="muted">giữ nguyên bản quay và mốc slide — chỉ đổi hình thức, giọng, nhạc</small></summary>
-    ${fileUrl(master) ? `<p><a class="btn ghost small" href="${fileUrl(master)}" download>⬇ File gốc (bản quay)</a></p>` : ""}
+    ${fileUrl(master) ? `<p><a class="btn ghost small" href="${fileUrl(master)}" download>⬇ File gốc (bản quay)</a>
+      ${r.master?.slide_track ? `<a class="btn ghost small" download="timeline.json" href="data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify({ recording: r.master.recording.split("/").pop(), slide_track: r.master.slide_track, slides: (p.slides || []).map((x) => String(x).split("/").pop()) }, null, 1))}">⬇ timeline.json</a>` : ""}</p>` : ""}
     <div class="grid4">
       <label>Bố cục <select name="layout" ${!p.slides && !p.slides_markdown ? "disabled title=\"Bản quay không kèm slide\"" : ""}>${opt("bubble", "Slide + camera tròn", p.layout || "bubble")}${opt("slides", "Chỉ slide", p.layout)}${opt("recording", "Camera toàn khung", p.layout)}</select></label>
       <label>Vị trí camera <select name="camera_pos">${[["bottom-right", "Góc dưới phải"], ["bottom-left", "Góc dưới trái"], ["top-right", "Góc trên phải"], ["top-left", "Góc trên trái"]].map(([v, l]) => opt(v, l, p.camera_pos || "bottom-right")).join("")}</select></label>

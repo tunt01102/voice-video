@@ -7,6 +7,8 @@ const S = { mode: "live", slides: [], deckKey: "", cur: 0, stream: null, rec: nu
   paused: 0, pauseAt: 0, timer: 0, meter: 0, audio: null, take: null, uploaded: null };
 const KEY_NEXT = ["ArrowRight", "ArrowDown", "PageDown", " ", "Enter"], KEY_PREV = ["ArrowLeft", "ArrowUp", "PageUp", "Backspace"];
 const recording = () => S.rec && S.rec.state !== "inactive";
+// The slides on stage: a finished take keeps the deck it was recorded with (its timeline indexes that deck).
+const deck = () => S.take?.slides || S.slides;
 const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 // ---- mode: record here | upload a recording made elsewhere
@@ -36,15 +38,17 @@ async function loadDeck() {
   const files = [...form.slides_files.files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   const key = files.map((f) => `${f.name}:${f.size}:${f.lastModified}`).join("|");
   if (key === S.deckKey) return;
+  if (S.take) toast("Bản quay hiện tại giữ bộ slide lúc quay — bấm ✕ Bỏ rồi quay lại để dùng slide mới");
   S.slides = []; S.deckKey = key; S.cur = 0;
   if (!files.length) return;
-  status("⏳ Đang tải slide lên…");
+  if (!S.take) status("⏳ Đang tải slide lên…");
   try {
     const paths = []; for (const f of files) paths.push(await upload(f));
     const r = await api("/api/present/slides", { method: "POST", body: JSON.stringify({ slides: paths, aspect: "16:9" }) });
     S.slides = r.slides;
     S.slides.forEach((x) => { new Image().src = x.url; });  // preloaded: a click shows the slide at once
-    status(`${S.slides.length} slide sẵn sàng — mở phòng quay để bắt đầu.`);
+    if (S.take) takeStatus();  // the take (and its own deck) stays usable
+    else status(`${S.slides.length} slide sẵn sàng — mở phòng quay để bắt đầu.`);
   } catch (err) { S.deckKey = ""; status("⚠ " + err.message); throw err; }
 }
 form.slides_files.addEventListener("change", () => { if (S.mode === "live") loadDeck().catch((e) => toast(e.message)); });
@@ -56,12 +60,13 @@ function takeStatus() {
   status(`<span class="take-row"><b>✓ Đã có bản quay ${fmtTime(S.take.duration)}</b> · ${n} lần chuyển slide · ${esc(S.take.size)}
     <button type="button" class="ghost small" id="live-review">Xem lại</button>
     <a class="btn ghost small" href="${S.take.url}" download="${esc(S.take.name)}">⬇ File gốc</a>
+    <a class="btn ghost small" href="${S.take.timeline}" download="${esc(S.take.name.replace(/\.\w+$/, ""))}.timeline.json">⬇ timeline.json</a>
     <button type="button" class="ghost small" id="live-drop">✕ Bỏ</button></span>`);
   $("#live-review").onclick = () => openStudio();
   $("#live-drop").onclick = () => { if (confirm("Bỏ bản quay này?")) dropTake(); };
 }
 function dropTake() {
-  if (S.take) URL.revokeObjectURL(S.take.url);
+  if (S.take) { URL.revokeObjectURL(S.take.url); URL.revokeObjectURL(S.take.timeline); }
   S.take = null; S.uploaded = null; takeStatus();
 }
 
@@ -113,12 +118,12 @@ $(".ls-cam", dlg).onchange = $(".ls-mic", dlg).onchange = () => startStream().ca
 
 // ---- slides on stage
 function show() {
-  const n = S.slides.length, stage = $(".ls-stage", dlg);
+  const n = deck().length, stage = $(".ls-stage", dlg);
   stage.classList.toggle("camonly", !n);
   $(".ls-slide", dlg).hidden = !n; $(".ls-noslide", dlg).hidden = !!n;
-  if (n) $(".ls-slide", dlg).src = S.slides[S.cur].url;
+  if (n) $(".ls-slide", dlg).src = deck()[S.cur].url;
   $(".ls-num", dlg).textContent = n ? `${S.cur + 1} / ${n}` : "—";
-  const nx = S.slides[S.cur + 1];
+  const nx = deck()[S.cur + 1];
   $(".ls-next", dlg).hidden = !nx; if (nx) $(".ls-next img", dlg).src = nx.url;
   const parts = scriptParts(), part = parts.length === n ? parts[S.cur] : n ? "" : parts.join("\n\n");
   $(".ls-prompt", dlg).hidden = !part; $(".ls-prompt p", dlg).textContent = part || "";
@@ -126,7 +131,7 @@ function show() {
   $(".ls-track", dlg).innerHTML = S.track.map((e) => `<li>slide ${e.slide + 1} · ${fmtTime(e.t)}<small>.${String(Math.round((e.t % 1) * 10))}</small></li>`).join("");
 }
 function go(i) {
-  if (i < 0 || i >= S.slides.length || i === S.cur || S.take && !recording()) return;
+  if (i < 0 || i >= deck().length || i === S.cur || S.take && !recording()) return;
   S.cur = i;
   if (recording()) S.track.push({ slide: i, t: +elapsed().toFixed(3) });
   show();
@@ -170,7 +175,7 @@ function togglePause() {
   $(".ls-pause", dlg).textContent = paused ? "⏸ Tạm dừng (P)" : "▶ Quay tiếp (P)";
   $(".ls-rec", dlg).classList.toggle("paused", !paused);
 }
-function stopRec() { if (recording()) { S.take = { duration: elapsed() }; S.rec.stop(); } }
+function stopRec() { if (recording()) { S.take = { duration: elapsed(), slides: S.slides.slice() }; S.rec.stop(); } }
 function finishTake() {
   clearInterval(S.timer);
   const mime = S.rec.mimeType || "video/webm", ext = mime.includes("mp4") ? "mp4" : "webm";
@@ -179,6 +184,9 @@ function finishTake() {
   const blob = new Blob(S.chunks, { type: mime.split(";")[0] });
   S.take = { ...S.take, blob, url: URL.createObjectURL(blob), name: `thuyet-trinh-${stamp}.${ext}`, track: S.track,
     size: `${(blob.size / 1e6).toFixed(1)} MB` };
+  // the timeline beside the take: with it a saved take can be rendered again (CLI: present --track @….timeline.json)
+  S.take.timeline = URL.createObjectURL(new Blob([JSON.stringify({ recording: S.take.name, slide_track: S.track,
+    slides: S.take.slides.map((x) => x.path.split("/").pop()) }, null, 1)], { type: "application/json" }));
   S.uploaded = null; S.chunks = [];
   stopStream();  // camera light off while reviewing; a retake turns it back on
   review();
@@ -192,6 +200,7 @@ function review() {
   $(".ls-live-ctl", dlg).hidden = true; $(".ls-review-ctl", dlg).hidden = false;
   $(".ls-prev", dlg).hidden = $(".ls-nextbtn", dlg).hidden = true;
   const save = $(".ls-save", dlg); save.href = S.take.url; save.download = S.take.name;
+  const tl = $(".ls-timeline", dlg); tl.href = S.take.timeline; tl.download = S.take.name.replace(/\.\w+$/, "") + ".timeline.json";
   S.track = S.take.track; show();
   takeStatus();
 }
@@ -256,7 +265,7 @@ window.liveStudio = {
       takeStatus();
     }
     const m = { recording: S.uploaded, slide_track: S.take.track, title: "Bản quay " + S.take.name.replace(/^thuyet-trinh-|\.\w+$/g, "").replace(/^(\d{4})(\d\d)(\d\d)-(\d\d)(\d\d)$/, "$3/$2/$1 $4:$5") };
-    if (S.slides.length) m.slides = S.slides.map((s) => s.path);
+    if (S.take.slides.length) m.slides = S.take.slides.map((s) => s.path);
     else m.layout = "recording";  // no deck: the camera full-frame
     return m;
   },
