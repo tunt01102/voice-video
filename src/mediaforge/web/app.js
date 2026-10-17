@@ -8,7 +8,7 @@ const api = async (path, opts = {}) => {
 };
 const toast = (msg) => { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 3500); };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const TYPE_LABEL = { tts: "Giọng nói", image: "Ảnh", subtitle: "Phụ đề", short: "Short", narrated: "Video", explainer: "Explainer", screen: "Screen", video: "Video", enrol: "Thu mẫu", rerender: "Đọc lại câu", export: "Xuất file", prepare: "Chuẩn bị kịch bản", resubtitle: "Dựng lại phụ đề", repronounce: "Sửa phát âm", sing: "Hát", recite: "Ngâm thơ", restage: "Dựng lại cảnh", revoice: "Đổi giọng", eval: "Kiểm thử giọng" };
+const TYPE_LABEL = { tts: "Giọng nói", image: "Ảnh", subtitle: "Phụ đề", short: "Short", narrated: "Video", explainer: "Explainer", screen: "Screen", video: "Video", enrol: "Thu mẫu", rerender: "Đọc lại câu", export: "Xuất file", prepare: "Chuẩn bị kịch bản", resubtitle: "Dựng lại phụ đề", repronounce: "Sửa phát âm", sing: "Hát", recite: "Ngâm thơ", restage: "Dựng lại cảnh", revoice: "Đổi giọng", eval: "Kiểm thử giọng", present: "Thuyết trình" };
 const HIDDEN_TYPES = ["enrol", "rerender", "export", "prepare", "resubtitle", "repronounce", "blend", "restage", "revoice"];
 
 // ------------------------------------------------------------------ tabs
@@ -38,7 +38,7 @@ const VIDEO_KINDS = ["short", "narrated", "explainer"];
 function applyKind() {
   const isVideo = VIDEO_KINDS.includes(kind);
   const show = {
-    "f-text": kind === "tts" || isVideo, "f-video": isVideo, "f-image": kind === "image", "f-subtitle": kind === "subtitle",
+    "f-text": kind === "tts" || isVideo || kind === "present", "f-video": isVideo, "f-present": kind === "present", "f-image": kind === "image", "f-subtitle": kind === "subtitle",
     "f-tts": kind === "tts", "f-voice": kind === "tts" || isVideo, "f-voicefx": kind === "tts" || isVideo,
     "f-lang": kind !== "image", "only-explainer": kind === "explainer",
   };
@@ -50,11 +50,12 @@ function applyKind() {
   const f = $("#create-form");
   f.seconds.value = kind === "short" ? 40 : kind === "explainer" ? 90 : 75;
   const src = f.source.value;
-  f.text.placeholder = kind === "tts" ? "Văn bản cần đọc (Tiếng Việt / English / trộn lẫn)…"
+  f.text.placeholder = kind === "present" ? "Lời thoại (tuỳ chọn, giúp chuyển slide đúng lúc và phụ đề đúng chữ) — mỗi slide một đoạn, ngăn bằng dòng ---\nChào mọi người, hôm nay mình trình bày…\n---\nĐầu tiên là…"
+    : kind === "tts" ? "Văn bản cần đọc (Tiếng Việt / English / trộn lẫn)…"
     : src === "brief" ? "Ý tưởng video, ví dụ: 5 mẹo bảo mật mật khẩu cho nhân viên văn phòng"
     : src === "slides" ? "# Tiêu đề slide\n- ý 1\n- ý 2\n> Lời thuyết minh cho slide này\n\n# Slide con số (slide động)\n@layout stat 87% | khách hàng quay lại\n@fx type\n> Gần chín phần mười khách hàng quay lại."
     : "Kịch bản lời đọc của bạn…";
-  $("#create-hint").textContent = isVideo ? "Video mất vài phút — theo dõi ở tab Jobs." : "";
+  $("#create-hint").textContent = isVideo || kind === "present" ? "Video mất vài phút — theo dõi ở tab Jobs." : "";
   if (!isVideo) $("#prescan").hidden = true;
   if (isVideo) $("#gates").checked = store.get("gates." + kind, kind === "short" ? "0" : "1") === "1";
   gateUI();
@@ -67,7 +68,7 @@ function gateUI() {
   sb.textContent = gated ? "1 · Viết kịch bản →" : isVideo ? "Dựng ngay (bỏ qua kiểm tra)" : "Tạo";
   sb.className = gated || !isVideo ? "primary" : "ghost";
   $("#prepare-btn").style.display = isVideo && !gated ? "" : "none";
-  $("#create-hint").textContent = gated ? "Dừng ở kịch bản và storyboard để bạn duyệt." : isVideo ? "Video mất vài phút — theo dõi ở tab Jobs." : "";
+  $("#create-hint").textContent = gated ? "Dừng ở kịch bản và storyboard để bạn duyệt." : isVideo || kind === "present" ? "Video mất vài phút — theo dõi ở tab Jobs." : "";
 }
 $("#gates").onchange = () => { store.set("gates." + kind, $("#gates").checked ? "1" : "0"); gateUI(); };
 $$("#create-kind button").forEach((b) => b.onclick = () => {
@@ -112,6 +113,21 @@ async function buildParams(f) {
     else if (kind === "subtitle") {
       if (!f.media_file.files[0]) throw new Error("Chọn file audio/video");
       params = { media: await upload(f.media_file.files[0]), lang: f.lang.value === "auto" ? null : f.lang.value, burn: f.burn.checked, translate_to: f.translate_to.value || null };
+    } else if (kind === "present") {
+      if (!f.recording_file.files[0]) throw new Error("Chọn file bản ghi thuyết trình");
+      if (f.layout.value !== "recording" && !f.slides_files.files.length) throw new Error("Chọn slide (PDF hoặc ảnh)");
+      params = { recording: await upload(f.recording_file.files[0]), lang: f.lang.value, layout: f.layout.value,
+        camera_pos: f.camera_pos.value, camera_size: +f.camera_size.value, denoise: f.denoise.checked,
+        fx: { pitch: +f.p_pitch.value, warmth: +f.p_warmth.value, clarity: +f.p_clarity.value },
+        burn_subtitles: f.present_subs.checked, title: f.recording_file.files[0].name.replace(/\.[^.]+$/, "") };
+      if (f.layout.value !== "recording") {
+        // several pictures: in file-name order, numbers compared as numbers (slide2 before slide10)
+        const files = [...f.slides_files.files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+        params.slides = []; for (const x of files) params.slides.push(await upload(x));
+      }
+      if (f.text.value.trim()) params.script = f.text.value;
+      if (f.music.value === "__upload") { if (f.music_file.files[0]) params.music = await upload(f.music_file.files[0]); }
+      else if (f.music.value) params.music = f.music.value;
     } else {
       params = { lang: f.lang.value, voice: f.voice.value || null, seconds: +f.seconds.value, style: f.style.value, fx, theme: f.theme.value };
       if (kind === "explainer") params.slides_engine = f.slides_engine.value;
@@ -123,7 +139,7 @@ async function buildParams(f) {
       else if (f.music.value) params.music = f.music.value;
       if ($("#gates").checked) params.review = ["plan", "visuals"];
     }
-    if ((params.text ?? params.prompt ?? params.brief ?? params.script ?? params.slides_markdown ?? params.media ?? "").length === 0) throw new Error("Thiếu nội dung");
+    if (kind !== "present" && (params.text ?? params.prompt ?? params.brief ?? params.script ?? params.slides_markdown ?? params.media ?? "").length === 0) throw new Error("Thiếu nội dung");
     return { type, params };
 }
 async function submitJob(type, params) {
@@ -396,6 +412,7 @@ function renderOutputs(job, out) {
   if (Array.isArray(r.sentences) && r.sentences.length) out.append(renderRepronounce(job));
   if (Array.isArray(r.sentences) && r.sentences.length) out.append(renderQA(job));
   if (isSong) out.append(renderSong(job));
+  if (job.type === "present" && Array.isArray(r.slides)) out.append(renderSlideTimes(job));
   if (r.text && job.type === "subtitle") out.insertAdjacentHTML("beforeend", `<pre>${esc(r.text)}</pre>`);
 }
 function renderResubtitle(job) {
@@ -1152,3 +1169,25 @@ function syncSongForms() {
   }
 }
 $$(".song-tab").forEach((sec) => songForm(sec));
+
+// ------------------------------------------------------------------ Thuyết trình + ghi hình: slide change times
+// Each slide appears where its part of the script starts in the recording; the owner can correct any start
+// and re-render (a new job with slide_times; the recording is not processed differently).
+function renderSlideTimes(job) {
+  const r = job.result, fs = job.files?.slides || [], box = document.createElement("div");
+  box.className = "slide-times";
+  const timing = { script: "theo lời thoại", manual: "theo mốc bạn nhập", even: "chia đều", none: "" }[r.report?.slide_timing] || "";
+  const warn = (r.report?.warnings || []).map((w) => `<p class="qa-bad">⚠ ${esc(w)}</p>`).join("");
+  box.innerHTML = `<h4>Mốc chuyển slide <small class="muted">${esc(timing)}</small></h4>${warn}
+    <table class="lex"><thead><tr><th>Slide</th><th>Bắt đầu (giây)</th><th>Lời nói đầu tiên</th></tr></thead><tbody>
+    ${r.slides.map((s, i) => `<tr><td><a href="${fileUrl(fs[i]?.image)}" target="_blank"><img src="${fileUrl(fs[i]?.image)}" style="height:40px"></a> ${s.slide}</td>
+      <td><input type="number" step="0.1" min="0" value="${s.start}" data-i="${i}" ${i === 0 ? "disabled" : ""} style="width:90px"></td>
+      <td class="muted">${esc(s.first_words)}…</td></tr>`).join("")}</tbody></table>
+    <button type="button" class="primary small">↻ Dựng lại với các mốc này</button>`;
+  $("button", box).onclick = async () => {
+    const times = $$("input", box).map((x) => +x.value);
+    try { await submitJob("present", { ...job.params, slide_times: times }); toast("Đang dựng lại — theo dõi ở tab Jobs"); }
+    catch (err) { toast(err.message); }
+  };
+  return box;
+}
