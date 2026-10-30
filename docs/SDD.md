@@ -24,6 +24,7 @@ cloned voice**, in **English and Vietnamese**.
 | Video styles: **narrated + AI visuals (16:9)**, **vertical shorts (9:16)**, **slide / screen explainer** | |
 | **Thuyết trình kèm ghi hình** (Canva-style present & record): the owner's slides + own recording → camera bubble, cleaned/re-toned real voice, subtitles, music ([SDD-present-record.md](SDD-present-record.md)) | |
 | **Motion videos, style first** (tab ✨ Motion): pick a look → describe → confirm a brief → animated words, numbers, charts, logos, pictures + music; variables re-render without the LLM; one MP4 per CSV row ([SDD-motion.md](SDD-motion.md)) | |
+| **Web capture**: paste 1–3 website addresses → facts, product pictures, screenshots and logo, checked at a capture gate, for Motion and the narrated / short / explainer videos ([SDD-web-capture.md](SDD-web-capture.md)) | |
 | Optional AI video clips (LTX-2 MLX), off by default | |
 | REST API + SSE, MCP server for Claude sessions, web dashboard | |
 
@@ -143,6 +144,7 @@ src/mediaforge/
   models.py          lazy model cache with eviction (LRU by memory class)
   text/normalize.py  language detection, VI/EN normalisation, lexicon, sentence split
   motion.py          motion videos, style first: styles, brief (LLM → normalise), variables, batch rows → video/scene_web/motion.html (SDD-motion.md)
+  webcapture.py      web capture: SSRF guard (every hop), RFC 9309 robots + own sites, guarded Chromium session, JSON-LD/OG/text facts, pictures, logo, confidence, site references, guarded agent (SDD-web-capture.md); webcapture.js = in-page helpers
   present.py         thuyết trình kèm ghi hình: slides (pypdfium2 PDF) + the owner's recording → bubble video (SDD-present-record.md)
   text/documents.py  Word/PDF import → text with [ảnh N] markers + pictures (SDD-doc-import-preview-chibi.md; PDF fix: SDD-pdf-import-fix.md)
   tts/base.py        TTSEngine protocol + SynthResult
@@ -378,6 +380,11 @@ result exposes as `report.music_credit` and the dashboard shows under the video.
   one `motion.html` scene per brief scene (hook/title/stat/list/chart/quote/image/cta) through the same Chromium
   renderer, cross-faded by `compose` with the music bed; `{{variables}}`, re-render and CSV batch without the LLM —
   [SDD-motion.md](SDD-motion.md).
+- **Web capture** (param `urls`, 2026-10-31): a first stage `capture` for `motion` and the video jobs: Playwright
+  Chromium in its own guarded context reads the pages (SSRF check on every request and redirect hop; robots.txt
+  except the owner's own sites), keeps pictures and a logo, scores confidence (checklist and LLM) and, below 90, tries
+  the saved site reference and then an 8-step agent that only picks from menus MediaForge builds. The owner approves
+  at the capture gate; facts reach the LLM fenced as quoted data — [SDD-web-capture.md](SDD-web-capture.md).
 - **Animated explainer** (`slides_engine="animated"`, 2026-10-15): each slide is an HTML scene — title and bullets
   animated with GSAP SplitText (2026-10-16; effect from the scene mood: rise / blur / wave / type, or plan `text_fx`),
   bullets arriving across the narration, count-up `stat` slides, rotating three.js `3d` slides, ambient drift,
@@ -426,6 +433,7 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 | `POST /api/documents` | multipart Word/PDF → `{text with [ảnh N] markers, images, title, warnings}`; video params take `doc_images` |
 | `GET /api/music`, `GET /api/music/{id}/audio` | background-music library / preview |
 | `GET /api/motion/styles` | motion looks (colours, fonts, mood; built-in + own) and aspects, editor `options`; the `motion` brief gate is `POST /api/jobs/{id}/approve {stage: "brief", brief}` ([SDD-motion.md](SDD-motion.md)) |
+| `GET/PUT /api/webcapture/own-sites`, `GET /api/webcapture/sites`, `DELETE /api/webcapture/sites/{domain}` | web capture: own sites (robots.txt skipped; `data/webcapture/own_sites.json`) and saved site references (`data/webcapture/sites/`); the capture gate is `POST /api/jobs/{id}/approve {stage: "capture", capture: {pictures, logo, facts}}` ([SDD-web-capture.md](SDD-web-capture.md)) |
 | `POST /api/motion/styles`, `DELETE /api/motion/styles/{id}`, `POST /api/motion/styles/from-image` | own motion looks (saved in `data/motion/styles.json`); a draft look from a reference picture ([SDD-motion.md](SDD-motion.md) §7) |
 | `GET/POST /api/blends`, `PATCH /api/blends/{id}` | pha giọng: blend profiles (`{owner, partner, amount}` → calibration job); partner needs `consent` (`PATCH /api/voices/{id}`) |
 
@@ -436,7 +444,7 @@ Tools: `speak`, `present_recording`, `motion_video`, `blend_voices`, `restage_vi
 `transcribe_subtitles`, `job_status`, `list_voices`, `list_jobs`, `list_music`. Long jobs return a job id
 immediately plus a `wait_seconds` option; results return absolute file paths (sessions
 run on the same machine). `create_video`/`prepare_video` take `document` (+ `document_as` brief|script) to use a
-Word/PDF and its pictures; voice settings left unset come from the voice profile (the owner's last setup). Registered with
+Word/PDF and its pictures; `motion_video`/`create_video`/`prepare_video` take `urls` (web capture); voice settings left unset come from the voice profile (the owner's last setup). Registered with
 `claude mcp add -s user --transport http mediaforge http://127.0.0.1:8765/mcp`.
 
 ### 9.3 CLI
@@ -457,7 +465,7 @@ CLI talks to the running server when available, otherwise runs in-process.
 | P8 Thuyết trình kèm ghi hình | job `present`: PDF/pictures/markdown slides + the owner's recording → camera bubble, cleaned voice, subtitles, music; editable slide times; MCP `present_recording`, CLI `present` ([SDD-present-record.md](SDD-present-record.md)); dep pypdfium2 (BSD-3/Apache-2.0) | Done + deployed 2026-10-17 |
 | P9 Phòng quay thuyết trình | live studio in the dashboard: camera + mic + click-stamped slide timeline (`slide_track`) → master; ✨ Làm đẹp lại; `POST /api/present/slides`; export MP4 Full HD 1080p ([SDD-live-studio.md](SDD-live-studio.md)) | Done + deployed 2026-10-18 |
 | P10 Motion videos | tab ✨ Motion, job `motion`, MCP `motion_video`: native take on the Motion Studio skill (HyperFrames not adopted: agent-built compositions, Node + Chrome toolchain, telemetry) ([SDD-motion.md](SDD-motion.md)). Phase 2: own looks + look from a picture, GIF export (all video jobs), transparent ProRes 4444 MOV (§7). Voice-over by any voice of tab Giọng nói, param `voice` (§8) | Done + deployed 2026-10-31 (phase 1 and 2) |
-| P11 Web capture | Motion: paste a website address → facts (JSON-LD, Open Graph, page text), product pictures, screenshots and logo captured by Playwright, checked by the owner at a capture gate, then the usual brief ([SDD-web-capture.md](SDD-web-capture.md)) | Design 2026-10-31; awaiting owner decisions (§10) |
+| P11 Web capture | Motion: paste a website address → facts (JSON-LD, Open Graph, page text), product pictures, screenshots and logo captured by Playwright, checked by the owner at a capture gate, then the usual brief ([SDD-web-capture.md](SDD-web-capture.md)) | Built 2026-10-31 (all of §12.6; also Tạo mới / `create_video` / `prepare_video`); E2E on aisme.vn, easyvisarun.com, tradeswomanmerch.com (SDD-web-capture §13) |
 | P4 Later | install ltx-2-mlx and enable clips; music generation (ACE-Step, Apache-2.0 — evaluate); speaker-similarity score (VieNeu's own speaker encoder first; WavLM-SV rejected, ECAPA a candidate — §11.4 of SDD-review-upgrade) to auto-pick the best reference and check take timbre; fine-tune on `corrections/`; broader automated tests (unit tests for guided repair/export exist in `tests/`); React upgrade | Open |
 
 **Owner action required:** record real samples (dashboard → Voices → Record). Until then

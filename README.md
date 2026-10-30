@@ -197,11 +197,21 @@ pictures, with music. Good for ads, KPI clips, product intros, announcements and
    a stock voice, a blend) or "Giọng mặc định". Claude then writes a spoken line per scene (editable at the brief
    gate as "Lời đọc"); a scene grows to fit its line, music drops to narration level and ducks under the voice.
    Choosing a voice when re-rendering a video made without one reads the words on screen.
-7. **Other formats**: the export bar under the video has **GIF** (≤ 720 px, 15 fps, no sound). Tick "MOV nền trong
+7. **From a website (optional)**: paste 1–3 addresses in "Lấy từ website" (a product page, plus the homepage for the
+   logo). MediaForge opens them in its own browser, reads the name, price, description and headings, takes the
+   product pictures, a screenshot of the product block and of the top of the page, and finds the logo. If that is
+   not enough (score under 90), it tries what it learnt from an earlier video on the same site, then lets an
+   assistant look a few pages further. You then tick the pictures and facts to use ("Duyệt ảnh và thông tin") before
+   Claude writes the brief; prices in the brief must come from you or from the approved facts. Only use pictures
+   and logos you have the right to use. Tab **Hệ thống → Website của tôi**: your own sites (robots.txt skipped there)
+   and the saved site references (delete one to start fresh). The same field is in **Tạo mới** for narrated, short
+   and explainer videos (pictures go on the first scenes, facts into the idea).
+8. **Other formats**: the export bar under the video has **GIF** (≤ 720 px, 15 fps, no sound). Tick "MOV nền trong
    suốt" (when describing, or under "Sửa chữ… & dựng lại") for a transparent ProRes 4444 MOV to lay over other
    footage (no background, no sound, ~40 MB per second).
 
-From other sessions: MCP `motion_video` (pass a previous `brief_data` + `variables`/`rows` to re-render). Outputs go
+From other sessions: MCP `motion_video` (pass a previous `brief_data` + `variables`/`rows` to re-render; `urls`
+for web capture, also on `create_video` / `prepare_video`). Outputs go
 to `data/outputs/motion/<job-id>/` (`final.mp4`, `final-alpha.mov`, `versions/`, `exports/`, `brief.json`); own looks
 in `data/motion/styles.json`. Design: [docs/SDD-motion.md](docs/SDD-motion.md).
 
