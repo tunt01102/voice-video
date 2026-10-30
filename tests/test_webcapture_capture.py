@@ -324,3 +324,30 @@ def test_number_check_is_off_without_a_capture():
     b = motion.normalise({"scenes": [{"kind": "stat", "value": "87%", "label": "x"}]}, seconds=5, images=0,
                          numbers=W.number_set(["45.000 VND"]))
     assert b["scenes"][0]["kind"] == "title" and b["scenes"][0]["headline"] == "x"
+
+
+# ------------------------------------------------------------------ step 5: narrated / short / explainer videos
+
+
+def test_video_capture_feeds_media_brief_and_number_lint(shop, tmp_path, monkeypatch, fake_llm):
+    from mediaforge import pipelines as P
+
+    base, _ = shop
+    fake_llm(score=95)
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    out = tmp_path / "videos" / "v1"
+    out.mkdir(parents=True)
+    p = {"brief": "Giới thiệu cold brew", "urls": [base + "/product.html"], "media": ["/owner/first.png"],
+         "review": ["capture", "plan"], "kind": "short"}
+    with pytest.raises(P.AwaitApproval) as w:
+        P.capture_for_video(p, out, lambda *a: None, {"capture", "plan"}, set())
+    assert w.value.stage == "capture" and w.value.result["out"] == str(out)
+    q, cap = P.capture_for_video(p, out, lambda *a: None, {"capture", "plan"}, {"capture"})  # approved as recommended
+    assert q["media"][0] == "/owner/first.png" and len(q["media"]) == 1 + 4
+    assert q["brief"].startswith("Giới thiệu cold brew\n\nWebsite facts (quoted from the page")
+    plan = {"scenes": [{"narration": "Chỉ 45.000 đồng một chai."}, {"narration": "Giảm 70% hôm nay!"}]}
+    found = P.number_findings(plan, q)
+    assert [(f["scene"], f["code"]) for f in found] == [(1, "L6")] and "70" in found[0]["message"]
+    # a script is read verbatim: facts are not added to it
+    q2, _ = P.capture_for_video({**p, "brief": None, "script": "Xin chào."}, out, lambda *a: None, set(), set())
+    assert "brief" not in q2 or not q2["brief"]
