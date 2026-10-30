@@ -723,9 +723,27 @@ async function refreshJob(id) {
   if (el) { el.dataset.rendered = ""; updateJob(j); }
 }
 
-function renderJob(job) {
+// folded: a list card of a job that had already ended shows only its head (title, thumbnail, buttons) until clicked;
+// its video and editors are built on first open, so a list of 100 finished jobs stays short and light.
+const ENDED = ["done", "failed", "cancelled"];
+function setFolded(el, folded) {
+  el.classList.toggle("folded", folded);
+  $(".job-fold", el).setAttribute("aria-expanded", String(!folded));
+  if (!folded && el._job && el.dataset.rendered !== el._job.status) {
+    el.dataset.rendered = el._job.status; renderOutputs(el._job, $(".job-out", el));
+  }
+}
+function renderJob(job, { folded = false } = {}) {
   const el = $("#tpl-job").content.firstElementChild.cloneNode(true);
   el.dataset.id = job.id;
+  if (folded && ENDED.includes(job.status)) {
+    el.classList.add("folded", "foldable"); $(".job-fold", el).hidden = false;
+    $(".job-fold", el).setAttribute("aria-expanded", "false");
+  }
+  $(".job-fold", el).onclick = () => setFolded(el, !el.classList.contains("folded"));
+  $(".job-head", el).addEventListener("click", (e) => {
+    if (el.classList.contains("foldable") && !e.target.closest("button, a, input, select")) setFolded(el, !el.classList.contains("folded"));
+  });
   $(".job-cancel", el).onclick = async () => { await api(`/api/jobs/${job.id}/cancel`, { method: "POST" }); };
   $(".job-del", el).onclick = () => undoable(el, "Đã xoá job (file chuyển vào thùng rác)",
     () => api(`/api/jobs/${job.id}?files=true`, { method: "DELETE" }));
@@ -759,7 +777,8 @@ function updateJob(job) {
   $(".job-clone", el).style.display = ["tts", "short", "narrated", "explainer", "image"].includes(job.type) && job.status !== "running" ? "" : "none";
   const th = $(".job-thumb", el), tu = fileUrl(job.files?.thumbnail);
   th.hidden = !tu; if (tu && th.getAttribute("src") !== tu) th.src = tu;
-  if (el.dataset.rendered !== job.status) { el.dataset.rendered = job.status; renderOutputs(job, $(".job-out", el)); }
+  el._job = job;
+  if (!el.classList.contains("folded") && el.dataset.rendered !== job.status) { el.dataset.rendered = job.status; renderOutputs(job, $(".job-out", el)); }
 }
 const followers = new Set();
 function followJob(id, { onProgress, onEnd } = {}) {
@@ -791,7 +810,7 @@ function renderJobList() {
   const q = ($("#jobs-search").value || "").trim().toLowerCase();
   const list = $("#jobs-list"); list.innerHTML = "";
   const hay = (j) => [j.result?.title, j.params?.brief, j.params?.script, j.params?.text, j.params?.prompt, j.params?.slides_markdown].join(" ").toLowerCase();
-  jobsCache.filter((j) => !HIDDEN_TYPES.includes(j.type) && !j.params?.preview && (!q || hay(j).includes(q))).forEach((j) => { list.append(renderJob(j)); if (["queued", "running"].includes(j.status)) followJob(j.id); });
+  jobsCache.filter((j) => !HIDDEN_TYPES.includes(j.type) && !j.params?.preview && (!q || hay(j).includes(q))).forEach((j) => { list.append(renderJob(j, { folded: true })); if (["queued", "running"].includes(j.status)) followJob(j.id); });
   if (!list.children.length) list.innerHTML = `<p class="muted">${q ? "Không thấy job nào khớp." : "Chưa có job nào."}</p>`;
 }
 async function loadJobs() {

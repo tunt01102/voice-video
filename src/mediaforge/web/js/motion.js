@@ -154,7 +154,7 @@ async function recent() {
     const jobs = await api("/api/jobs?limit=6&type=motion");
     if (!jobs.length) return;
     box.insertAdjacentHTML("beforeend", `<h3 class="muted">Video motion gần đây</h3>`);
-    jobs.forEach((j) => { box.append(renderJob(j)); if (["queued", "running"].includes(j.status)) followJob(j.id); });
+    jobs.forEach((j) => { box.append(renderJob(j, { folded: true })); if (["queued", "running"].includes(j.status)) followJob(j.id); });
   } catch {}
 }
 
