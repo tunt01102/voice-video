@@ -15,7 +15,7 @@ const HIDDEN_TYPES = ["enrol", "rerender", "export", "prepare", "resubtitle", "r
 $$("#tabs button").forEach((b) => b.onclick = () => {
   $$("#tabs button").forEach((x) => x.classList.toggle("active", x === b));
   $$(".tab").forEach((t) => t.classList.toggle("active", t.id === "tab-" + b.dataset.tab));
-  ({ jobs: loadJobs, voices: loadVoices, lexicon: loadLexicon, system: () => { loadHealth(); window.loadIncidents?.(); },
+  ({ jobs: loadJobs, voices: loadVoices, lexicon: loadLexicon, system: () => { loadHealth(); window.loadIncidents?.(); window.loadWebSites?.(); },
      lessons: () => window.loadLessons?.(), motion: () => window.loadMotion?.(), recite: syncSongForms, sing: syncSongForms })[b.dataset.tab]?.();
   history.replaceState(null, "", "#" + b.dataset.tab);
 });

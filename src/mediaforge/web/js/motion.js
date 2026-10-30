@@ -180,12 +180,19 @@ form.onsubmit = async (e) => {
       audience: form.audience.value.trim(), lang: form.lang.value, aspect, seconds: +form.seconds.value, music: form.music.value,
       review: form.review.checked ? ["brief"] : [], alpha: form.alpha.checked, voice: form.voice.value };
     if (!params.prompt) throw new Error("Hãy mô tả video trước");
+    const urls = form.urls.value.split(/\s+/).map((x) => x.trim()).filter(Boolean);
+    if (urls.length > 3) throw new Error("Tối đa 3 địa chỉ web");
+    if (urls.length) {
+      Object.assign(params, { urls, screenshots: form.screenshots.checked });
+      if (form.review_capture.checked) params.review.unshift("capture");
+    }
     if (form.logo.files[0]) params.logo = await upload(form.logo.files[0]);
     params.images = [];
     for (const f of [...form.images.files].slice(0, 8)) params.images.push(await upload(f));
     const job = await api("/api/jobs", { method: "POST", body: JSON.stringify({ type: "motion", params, source: "dashboard" }) });
     showJob(job);
-    $("#mo-hint").textContent = params.review.length ? "Claude đang viết brief — bạn sẽ duyệt ở bên dưới." : "Đang dựng — theo dõi bên dưới.";
+    $("#mo-hint").textContent = params.review.includes("capture") ? "Đang lấy ảnh và thông tin từ website — bạn sẽ duyệt ở bên dưới."
+      : params.review.length ? "Claude đang viết brief — bạn sẽ duyệt ở bên dưới." : "Đang dựng — theo dõi bên dưới.";
   } catch (err) { toast(err.message); $("#mo-hint").textContent = ""; }
   finally { btn.disabled = false; }
 };
@@ -307,7 +314,7 @@ window.motionResult = (job) => {
   musicOptions(mus, r.report?.music_id || "none");
   voiceOptions($(".mo-voice", box), p.voice || "");
   const base = () => ({ brief: b, style: $(".mo-style-sel", box).value, aspect: $(".mo-asp", box).value, music: mus.value,
-    seconds: (b.scenes || []).reduce((a, s) => a + s.seconds, 0), images: p.images || [], logo: p.logo || null, lang: p.lang,
+    seconds: (b.scenes || []).reduce((a, s) => a + s.seconds, 0), images: r.images || p.images || [], logo: r.logo || p.logo || null, lang: p.lang,
     prompt: p.prompt, review: [], alpha: $(".mo-alpha", box).checked, voice: $(".mo-voice", box).value });
   const go = async (extra, btn) => {
     btn.disabled = true;

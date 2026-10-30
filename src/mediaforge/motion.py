@@ -334,8 +334,14 @@ variables. The last scene's narration says the call to action."""
 
 
 def brief_prompt(p: dict[str, Any], st: dict[str, Any], images: list[str], has_logo: bool) -> str:
+    from mediaforge import webcapture
+
     lang = p.get("lang") or "vi"
     seconds = int(p.get("seconds") or 20)
+    facts = p.get("website_facts") or []
+    if p.get("offer"):  # the owner's own offer overrides the website's prices (§6)
+        facts = [f for f in facts if f["key"] != "price"]
+    caps = p.get("image_captions") or {}
     lines = [
         f"Write the brief for this video: {p.get('prompt') or ''}",
         f"The one message it must land: {p['message']}" if p.get("message") else "",
@@ -346,14 +352,18 @@ def brief_prompt(p: dict[str, Any], st: dict[str, Any], images: list[str], has_l
         (f"Visual style (already fixed): {st['name']}: {st['mood']}." if p.get("style") in all_styles() else
          'Pick the visual style that fits best and return its id as "style": ' + "; ".join(
              f"{k} ({v['mood']}; {v['when']})" for k, v in all_styles().items()) + "."),
-        (f"The owner's pictures: {len(images)} (" + ", ".join(f"{i + 1} = {Path(x).name}" for i, x in enumerate(images))
+        (f"The owner's pictures: {len(images)} (" + ", ".join(
+            f"{i + 1} = {Path(x).name}" + (f" [{caps[x]}]" if x in caps else "") for i, x in enumerate(images))
          + "). Use each at most once in an image scene.") if images else "No pictures: do not use image scenes.",
         "A logo is provided; the cta scene shows it." if has_logo else "",
         SCENE_DOC,
         NARRATION_DOC.format(units=round(UNITS_PER_SEC.get(lang, 3) * 0.8, 1), unit="syllables" if lang == "vi" else "words")
         if p.get("voice") else "",
+        webcapture.facts_block(facts),
         f"Use {max(3, min(9, round(seconds / 3.2)))} scenes or so: open with a hook, end with a cta, never two scenes "
-        "of the same kind in a row. Use only numbers the owner gave; invent none (no stat or chart without them).",
+        "of the same kind in a row. " + ("Use only numbers the owner gave or that appear in the website facts; the "
+                                         "owner's own fields win where they disagree with the website" if facts else
+                                         "Use only numbers the owner gave") + "; invent none (no stat or chart without them).",
         "Variables: every word, number or colour the owner might change (headline, product name, price, numbers, web "
         "address, button text, the accent colour) is a variable, and scene fields refer to it as {{id}}, alone or "
         "inside a sentence. Ids: lowercase snake_case. Labels: short Vietnamese (e.g. \"Tiêu đề\", \"Giá\"). Types: "
@@ -379,8 +389,12 @@ def _num_ok(v: Any) -> bool:
     return bool(re.search(r"\d", str(v)))
 
 
-def normalise(brief: dict[str, Any], *, seconds: float, images: int) -> dict[str, Any]:
-    """Clamp an LLM (or owner-edited) brief to what the renderer draws; scene times sum to `seconds`."""
+def normalise(brief: dict[str, Any], *, seconds: float, images: int, numbers: set[str] | None = None) -> dict[str, Any]:
+    """Clamp an LLM (or owner-edited) brief to what the renderer draws; scene times sum to `seconds`. numbers (web
+    capture, SDD-web-capture §6): the digits the owner's fields and the approved website facts contain; a stat or chart
+    showing any other number becomes a title scene."""
+    from mediaforge import webcapture
+
     warnings: list[str] = []
     variables, seen = [], set()
     for v in brief.get("variables") or []:
@@ -396,6 +410,10 @@ def normalise(brief: dict[str, Any], *, seconds: float, images: int) -> dict[str
             continue
         variables.append({"id": vid, "label": _nfc(v.get("label")) or vid, "type": typ, "value": val})
     ids = {v["id"] for v in variables}
+    defaults = {v["id"]: v["value"] for v in variables}
+
+    def invented(x: str) -> list[str]:
+        return [] if numbers is None else webcapture.unsourced(fill(x, defaults), numbers)
 
     def text(x: Any, limit: int = 140) -> str:
         s = _nfc(x)[:limit]
@@ -426,6 +444,15 @@ def normalise(brief: dict[str, Any], *, seconds: float, images: int) -> dict[str
                 warnings.append("biểu đồ thiếu số liệu: đổi thành cảnh tiêu đề")
         if kind == "stat" and not out.get("value"):
             out["kind"] = "title"
+        if out["kind"] == "stat" and (bad := invented(out["value"])):
+            out["kind"] = "title"
+            out.setdefault("headline", out.pop("label", ""))
+            out.pop("value")
+            warnings.append(f"số không có trong nguồn: {', '.join(bad)} — đổi thành cảnh tiêu đề")
+        if out["kind"] == "chart" and (bad := [n for b in out["bars"] for n in invented(b["value"])]):
+            out["kind"] = "title"
+            out.pop("bars")
+            warnings.append(f"số không có trong nguồn: {', '.join(bad)} — đổi thành cảnh tiêu đề")
         if kind == "image":
             try:
                 k = int(sc.get("image"))
@@ -694,22 +721,54 @@ def apply_brief_edits(out: Path, edited: dict[str, Any]) -> dict[str, Any]:
     return brief
 
 
+def capture_stage(p: dict[str, Any], out: Path, progress: Progress, review: set[str],
+                  approved: set[str]) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Stage 0 when `urls` is given (SDD-web-capture §3): capture the pages, pause at the capture gate when `review` has
+    "capture", then add the approved pictures, logo and facts to the params. The owner's own uploads, logo and fields
+    come first. Returns (params, capture)."""
+    from mediaforge import pipelines, webcapture
+
+    if not p.get("urls"):
+        return p, None
+    cf = out / "capture.json"
+    if cf.exists():
+        cap = json.loads(cf.read_text("utf-8"))
+    else:
+        cap = webcapture.capture(p["urls"], out, screenshots=p.get("screenshots", True), want=webcapture.want_of(p),
+                                 progress=pipelines._sub(progress, 0.0, 0.04))
+    if not cap.get("approved"):
+        if "capture" in review and "capture" not in approved:
+            raise pipelines.AwaitApproval("capture", {"stage": "capture", "out": str(out), "capture": str(cf),
+                                                      "capture_data": cap, "title": cap["pages"][0]["title"]
+                                                      if cap.get("pages") else cap["urls"][0]})
+        cap = webcapture.apply_approval(out, None)
+    pics, logo, facts = webcapture.approved_material(cap)
+    owner = [str(x) for x in (p.get("images") or []) if x]
+    images = list(dict.fromkeys(owner + [x["file"] for x in pics]))[:8]
+    return {**p, "images": images, "logo": p.get("logo") or logo, "website_facts": facts,
+            "image_captions": {x["file"]: webcapture.caption(x) for x in pics}}, cap
+
+
 def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
     """params: style, prompt, message, offer, audience, aspect, seconds, lang, logo, images, music ("auto" | id |
-    "none"), review (["brief"] pauses for the owner), brief (a ready brief: no LLM), variables ({id|label: value}),
-    rows ([{name, id|label: value}]: one MP4 per row), alpha (also a transparent ProRes 4444 MOV of the main video),
-    voice ("" = none, "default", or a voice id: a voice-over, §8)."""
-    from mediaforge import pipelines
+    "none"), review (["capture", "brief"] pause for the owner), brief (a ready brief: no LLM), variables ({id|label:
+    value}), rows ([{name, id|label: value}]: one MP4 per row), alpha (also a transparent ProRes 4444 MOV of the main
+    video), voice ("" = none, "default", or a voice id: a voice-over, §8), urls (≤ 3 web pages to take facts,
+    pictures and a logo from; SDD-web-capture), screenshots (with urls; default true)."""
+    from mediaforge import pipelines, webcapture
     from mediaforge.video import compose
 
     out = settings.sub("outputs", "motion", job_id or time.strftime("%Y%m%d-%H%M%S"))
     aspect = p.get("aspect") if p.get("aspect") in ASPECTS else "16:9"
     seconds = max(5, min(90, int(p.get("seconds") or 20)))
-    images, files = materials(p)
     review, approved = set(p.get("review") or []), set(p.get("approved") or [])
     voice = resolve_voice(p.get("voice"))  # before the LLM: a stale id fails in a second, not after the brief
     lang = p.get("lang") if p.get("lang") in LANGS else "vi"
     t0 = time.time()
+
+    # ---- 0. web capture (kept across the approval re-runs)
+    p, cap = capture_stage(p, out, progress, review, approved)
+    images, files = materials(p)
 
     # ---- 1. brief (kept across the approval re-run)
     bf = out / "brief.json"
@@ -718,8 +777,11 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
     else:
         progress(0.02, "đang viết brief")
         raw = p["brief"] if isinstance(p.get("brief"), dict) else make_brief(p, style_of(p.get("style")), images, "logo" in files)
+        numbers = webcapture.number_set([p.get(k) for k in ("prompt", "message", "offer", "audience")]
+                                        + [f["value"] for f in p.get("website_facts") or []]) if cap else None
         brief = normalise(raw, seconds=sum(float(s.get("seconds") or 0) for s in raw.get("scenes") or [])
-                          if isinstance(p.get("brief"), dict) else seconds, images=len(images))
+                          if isinstance(p.get("brief"), dict) else seconds, images=len(images),
+                          numbers=None if isinstance(p.get("brief"), dict) else numbers)
         brief["images"] = len(images)
         if p.get("style") in all_styles():  # the owner's pick; "auto" leaves the brief's own
             brief["style"] = p["style"]
@@ -765,11 +827,18 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
     thumb = compose.thumbnail(final, out / "thumbnail.jpg", at=min(1.2, sum(s["seconds"] for s in brief["scenes"]) / 2))
     result = {"video": str(final), "thumbnail": str(thumb), "title": fill(brief["title"], vals), "brief": str(bf),
               "brief_data": brief, "values": vals, "style": st["id"], "aspect": aspect, "versions": versions,
+              "images": images, "logo": files.get("logo"),
+              **({"capture": str(out / "capture.json")} if cap else {}),
               **({"alpha": alpha} if alpha else {}), **({"narration": info["narration"]} if info.get("narration") else {}),
               "duration": round(A.probe_duration(final), 2),
               "report": {"aspect": aspect, "style": st["id"], "scenes": len(brief["scenes"]), "music_id": music_id,
                          "music_credit": music.credit(music_id), "elapsed": round(time.time() - t0, 1),
-                         "voice": voice, "slots": info.get("slots"), "warnings": brief.get("warnings", [])}}
+                         "voice": voice, "slots": info.get("slots"), "warnings": brief.get("warnings", []),
+                         **({"capture": {"pictures": len((cap.get("kept") or {}).get("pictures") or []),
+                                         "facts": len(p.get("website_facts") or []),
+                                         "confidence": (cap.get("confidence") or {}).get("score"),
+                                         "robots": cap.get("robots"), "warnings": len(cap.get("warnings") or [])}}
+                            if cap else {})}}
     (out / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2))
     progress(1.0, "done")
     return result
