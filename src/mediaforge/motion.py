@@ -22,6 +22,7 @@ from typing import Any, Callable
 from mediaforge import audio as A
 from mediaforge import llm, music
 from mediaforge.config import settings
+from mediaforge.pipelines import UNITS_PER_SEC
 
 Progress = Callable[[float, str], None]
 
@@ -29,6 +30,9 @@ ASPECTS = {"16:9": (1920, 1080), "9:16": (1080, 1920), "1:1": (1080, 1080), "4:5
 KINDS = ("hook", "title", "stat", "list", "chart", "quote", "image", "cta")
 VAR_TYPES = ("text", "number", "color")
 TRANSITION = 0.5  # xfade between scenes (compose.py timeline contract: each clip is its slot + T long)
+# Voice-over (§8): a line starts LEAD into its scene (after the cross-fade in) and the scene lasts at least TAIL past
+# it; TAIL > 0.5 keeps the last line inside the voice track, which is 0.5 s shorter than the video.
+LEAD, TAIL = 0.5, 0.6
 MIN_SCENE, MAX_SCENE = 1.6, 8.0
 LANGS = {"vi": "Vietnamese", "en": "English"}
 
@@ -323,6 +327,11 @@ SCENE_DOC = """Scene kinds and their fields (all text in the on-screen language)
 - cta: "headline" (the ask), "button" (2-4 words), optional "sub" (web address, phone, date or offer).
 Every scene also has "seconds" (1.6-8) and "note": one sentence in Vietnamese saying what the viewer sees."""
 
+NARRATION_DOC = """Voice-over: every scene also has "narration": what a narrator says over it, in the on-screen language,
+one or two short spoken sentences of about {units} {unit} per second of the scene. It complements the words on
+screen instead of reading them out verbatim, uses only numbers the owner gave, and may use the same {{{{id}}}}
+variables. The last scene's narration says the call to action."""
+
 
 def brief_prompt(p: dict[str, Any], st: dict[str, Any], images: list[str], has_logo: bool) -> str:
     lang = p.get("lang") or "vi"
@@ -341,6 +350,8 @@ def brief_prompt(p: dict[str, Any], st: dict[str, Any], images: list[str], has_l
          + "). Use each at most once in an image scene.") if images else "No pictures: do not use image scenes.",
         "A logo is provided; the cta scene shows it." if has_logo else "",
         SCENE_DOC,
+        NARRATION_DOC.format(units=round(UNITS_PER_SEC.get(lang, 3) * 0.8, 1), unit="syllables" if lang == "vi" else "words")
+        if p.get("voice") else "",
         f"Use {max(3, min(9, round(seconds / 3.2)))} scenes or so: open with a hook, end with a cta, never two scenes "
         "of the same kind in a row. Use only numbers the owner gave; invent none (no stat or chart without them).",
         "Variables: every word, number or colour the owner might change (headline, product name, price, numbers, web "
@@ -400,9 +411,9 @@ def normalise(brief: dict[str, Any], *, seconds: float, images: int) -> dict[str
             continue
         kind = sc.get("kind") if sc.get("kind") in KINDS else "title"
         out: dict[str, Any] = {"kind": kind, "note": _nfc(sc.get("note"))[:240]}
-        for k in ("headline", "sub", "value", "label", "quote", "author", "button"):
+        for k in ("headline", "sub", "value", "label", "quote", "author", "button", "narration"):
             if sc.get(k):
-                out[k] = text(sc[k], 220 if k == "quote" else 140)
+                out[k] = text(sc[k], 300 if k == "narration" else 220 if k == "quote" else 140)
         if kind == "list":
             out["items"] = [text(i, 90) for i in (sc.get("items") or []) if _nfc(i)][:4]
             if not out["items"]:
@@ -494,7 +505,7 @@ def tokens(st: dict[str, Any], vals: dict[str, str], brief: dict[str, Any]) -> d
 
 def scene_data(sc: dict[str, Any], st: dict[str, Any], cols: dict[str, str], *, index: int, count: int,
                width: int, height: int, seconds: float, files: dict[str, str]) -> dict[str, Any]:
-    d = {k: v for k, v in sc.items() if k not in ("note", "seconds", "image")}
+    d = {k: v for k, v in sc.items() if k not in ("note", "seconds", "image", "narration")}
     if sc.get("image"):
         d["image"] = f"/file/img{sc['image']}"
     if sc["kind"] in ("cta", "hook") and "logo" in files:
@@ -505,12 +516,71 @@ def scene_data(sc: dict[str, Any], st: dict[str, Any], cols: dict[str, str], *, 
             "deco": st["deco"], "motion": st["motion"], "text_fx": TEXT_FX[st["motion"]]}
 
 
+# ------------------------------------------------------------------ voice-over (§8)
+
+def narration_of(sc: dict[str, Any]) -> str:
+    """A scene's spoken line: its narration, else (a brief written without a voice) the words it shows."""
+    if sc.get("narration"):
+        return sc["narration"]
+    parts = [sc.get("headline"), sc.get("value"), sc.get("label"), *(sc.get("items") or []), sc.get("quote"),
+             sc.get("sub") if sc["kind"] != "cta" else None, sc.get("button")]
+    return ". ".join(x.strip(" .") for x in parts if x and str(x).strip(" .")) + "."
+
+
+def resolve_voice(v: Any) -> str | None:
+    """"" / None / "none" = no voice-over; "default" = the default voice; else an id from /api/voices."""
+    from mediaforge.voice import profiles
+
+    if not v or v == "none":
+        return None
+    if v == "default":
+        vid = profiles.default_voice()
+        if not vid:
+            raise ValueError("no default voice: pick one in the voice list")
+        return vid
+    if v not in {x["id"] for x in profiles.list_voices()}:
+        raise ValueError(f"unknown voice {v!r}")
+    return str(v)
+
+
+def speaker(p: dict[str, Any], voice: str, lang: str, cache: Path) -> Callable[[list[str]], list[Path | None]]:
+    """lines → one wav per line (None for an empty line), each cached by voice, language and text, so a re-run, the
+    approval re-run and spreadsheet rows that say the same thing synthesise it once. Same path as every other video:
+    speak → per-sentence QA and repair, the owner's lexicon and English terms, one engine for the job."""
+    from mediaforge import pipelines
+    from mediaforge.voice import speak as S
+
+    terms = pipelines.request_terms(p, lang, voice)
+    one = pipelines.one_voice(p, lang)
+
+    def run(lines: list[str]) -> list[Path | None]:
+        cache.mkdir(parents=True, exist_ok=True)
+        out: list[Path | None] = []
+        for text in lines:
+            if not text.strip(" ."):
+                out.append(None)
+                continue
+            key = hashlib.sha1(json.dumps([voice, lang, text], ensure_ascii=False).encode()).hexdigest()[:16]
+            f = cache / f"{key}.wav"
+            if not f.exists():
+                r = S.speak(text, voice=voice, lang=lang, engine=p.get("engine"), out_dir=cache / "work", name=key,
+                            seed=1234, timings=False, english=terms["english"], readings=terms["readings"],
+                            one_voice=one)
+                A.save(f.with_suffix(".part.wav"), A.load(r["audio"]))
+                f.with_suffix(".part.wav").replace(f)
+            out.append(f)
+        return out
+    return run
+
+
 def render_version(brief: dict[str, Any], st: dict[str, Any], vals: dict[str, str], out_file: Path, *, aspect: str,
                    files: dict[str, str], cache: Path, music_file: str | None, progress: Progress,
-                   alpha: bool = False) -> Path:
+                   alpha: bool = False, speak: Callable[[list[str]], list[Path | None]] | None = None,
+                   info: dict[str, Any] | None = None) -> Path:
     """One MP4 from the brief filled with `vals`. Scene clips are cached by content, so a batch row (or a scene a
     variable does not touch) is drawn once. alpha=True: a transparent ProRes 4444 MOV instead (no page colour or
-    texture, no sound) to lay over other footage."""
+    texture, no sound) to lay over other footage. speak: voice-over (§8) — each scene lasts at least its line, so the
+    alpha MOV of the same values gets the same timeline. info receives slots and the narration track."""
     from mediaforge.video import animate, compose
 
     W, H = ASPECTS[aspect]
@@ -519,11 +589,19 @@ def render_version(brief: dict[str, Any], st: dict[str, Any], vals: dict[str, st
     n = len(scenes)
     T = TRANSITION if n > 1 else 0.0
     cache.mkdir(parents=True, exist_ok=True)
+    resolved = [resolve_scene(sc, vals) for sc in scenes]
+    wavs: list[Path | None] = [None] * n
+    if speak:
+        progress(0.0, "đang đọc lời thuyết minh")
+        voiced = any(r.get("narration") for r in resolved)  # a brief with lines keeps silent scenes silent
+        wavs = speak([narration_of(r) if not voiced or r.get("narration") else "" for r in resolved])
+    lines = [A.load(w) if w else None for w in wavs]
+    slots = [max(sc["seconds"], LEAD + len(a) / A.SR + TAIL) if a is not None else sc["seconds"]
+             for sc, a in zip(scenes, lines)]
     jobs: list[tuple[Path, dict[str, Any], float]] = []
-    for i, sc in enumerate(scenes):
-        length = sc["seconds"] + (T if i < n - 1 else 0)
-        data = scene_data(resolve_scene(sc, vals), st, cols, index=i, count=n, width=W, height=H, seconds=length,
-                          files=files)
+    for i, (sc, slot) in enumerate(zip(resolved, slots)):
+        length = slot + (T if i < n - 1 else 0)
+        data = scene_data(sc, st, cols, index=i, count=n, width=W, height=H, seconds=length, files=files)
         if alpha:
             data["alpha"] = True
         key = hashlib.sha1(json.dumps([data, {k: files.get(k) for k in sorted(files)}], sort_keys=True,
@@ -540,17 +618,37 @@ def render_version(brief: dict[str, Any], st: dict[str, Any], vals: dict[str, st
                 tmp.replace(clip)
     if alpha:
         progress(0.9, "đang ghép bản nền trong suốt")
-        return alpha_concat([c for c, _, _ in jobs], [sc["seconds"] for sc in scenes], T, st["transition"], out_file)
+        return alpha_concat([c for c, _, _ in jobs], slots, T, st["transition"], out_file)
     progress(0.88, "đang ghép cảnh và nhạc")
-    total = sum(sc["seconds"] for sc in scenes)
-    silent = out_file.with_name(out_file.stem + ".silence.wav")
-    A.run_ffmpeg(["-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", f"{max(total - 0.5, 0.5):.3f}", str(silent)])
+    total = sum(slots)
+    if info is not None:
+        info["slots"] = [round(x, 2) for x in slots]
+    spoken = any(a is not None for a in lines)
+    track = out_file.with_name(out_file.stem + (".narration.wav" if spoken else ".silence.wav"))
+    if spoken:
+        import numpy as np
+
+        buf = np.zeros(int(max(total - 0.5, 0.5) * A.SR), dtype=np.float32)
+        start = 0.0
+        for a, slot in zip(lines, slots):
+            if a is not None:
+                k = int((start + LEAD) * A.SR)
+                seg = a[: max(0, len(buf) - k)]
+                buf[k:k + len(seg)] += seg
+            start += slot
+        A.save(track, buf)
+        if info is not None:
+            info["narration"] = str(track)
+    else:
+        A.run_ffmpeg(["-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", f"{max(total - 0.5, 0.5):.3f}", str(track)])
     try:
-        clips = [compose.Scene(str(c), sc["seconds"], kind="video", fill="hold", transition=st["transition"])
-                 for (c, _, _), sc in zip(jobs, scenes)]
-        compose.compose(clips, silent, out_file, aspect=aspect, music=music_file, music_volume=0.5, transition=T)
+        clips = [compose.Scene(str(c), slot, kind="video", fill="hold", transition=st["transition"])
+                 for (c, _, _), slot in zip(jobs, slots)]
+        compose.compose(clips, track, out_file, aspect=aspect, music=music_file, transition=T,
+                        music_volume=0.18 if spoken else 0.5)  # 0.18 = narrated videos; compose ducks it
     finally:
-        silent.unlink(missing_ok=True)
+        if not spoken:
+            track.unlink(missing_ok=True)
     return out_file
 
 
@@ -599,7 +697,8 @@ def apply_brief_edits(out: Path, edited: dict[str, Any]) -> dict[str, Any]:
 def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
     """params: style, prompt, message, offer, audience, aspect, seconds, lang, logo, images, music ("auto" | id |
     "none"), review (["brief"] pauses for the owner), brief (a ready brief: no LLM), variables ({id|label: value}),
-    rows ([{name, id|label: value}]: one MP4 per row), alpha (also a transparent ProRes 4444 MOV of the main video)."""
+    rows ([{name, id|label: value}]: one MP4 per row), alpha (also a transparent ProRes 4444 MOV of the main video),
+    voice ("" = none, "default", or a voice id: a voice-over, §8)."""
     from mediaforge import pipelines
     from mediaforge.video import compose
 
@@ -608,6 +707,8 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
     seconds = max(5, min(90, int(p.get("seconds") or 20)))
     images, files = materials(p)
     review, approved = set(p.get("review") or []), set(p.get("approved") or [])
+    voice = resolve_voice(p.get("voice"))  # before the LLM: a stale id fails in a second, not after the brief
+    lang = p.get("lang") if p.get("lang") in LANGS else "vi"
     t0 = time.time()
 
     # ---- 1. brief (kept across the approval re-run)
@@ -641,8 +742,11 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
     vals = values_of(brief, p.get("variables"))
     rows = [r for r in (p.get("rows") or []) if isinstance(r, dict)][:50]
     steps = 1 + len(rows) + (1 if p.get("alpha") else 0)
+    speak = speaker(p, voice, lang, out / "voice") if voice else None
+    info: dict[str, Any] = {}
     final = render_version(brief, st, vals, out / "final.mp4", aspect=aspect, files=files, cache=out / "scenes",
-                           music_file=music_file, progress=pipelines._sub(progress, 0.05, 0.05 + 0.9 / steps))
+                           music_file=music_file, progress=pipelines._sub(progress, 0.05, 0.05 + 0.9 / steps),
+                           speak=speak, info=info)
     versions = []
     for i, row in enumerate(rows):
         rv = values_of(brief, {**(p.get("variables") or {}), **{k: v for k, v in row.items() if k != "name"}})
@@ -651,21 +755,21 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
         f.parent.mkdir(exist_ok=True)
         lo = 0.05 + 0.9 * (i + 1) / steps
         render_version(brief, st, rv, f, aspect=aspect, files=files, cache=out / "scenes", music_file=music_file,
-                       progress=pipelines._sub(progress, lo, lo + 0.9 / steps))
+                       progress=pipelines._sub(progress, lo, lo + 0.9 / steps), speak=speak)
         versions.append({"name": name, "video": str(f), "values": rv})
     alpha = None
     if p.get("alpha"):
         alpha = str(render_version(brief, st, vals, out / "final-alpha.mov", aspect=aspect, files=files,
-                                   cache=out / "scenes", music_file=None, alpha=True,
+                                   cache=out / "scenes", music_file=None, alpha=True, speak=speak,
                                    progress=pipelines._sub(progress, 0.05 + 0.9 * (steps - 1) / steps, 0.95)))
     thumb = compose.thumbnail(final, out / "thumbnail.jpg", at=min(1.2, sum(s["seconds"] for s in brief["scenes"]) / 2))
     result = {"video": str(final), "thumbnail": str(thumb), "title": fill(brief["title"], vals), "brief": str(bf),
               "brief_data": brief, "values": vals, "style": st["id"], "aspect": aspect, "versions": versions,
-              **({"alpha": alpha} if alpha else {}),
+              **({"alpha": alpha} if alpha else {}), **({"narration": info["narration"]} if info.get("narration") else {}),
               "duration": round(A.probe_duration(final), 2),
               "report": {"aspect": aspect, "style": st["id"], "scenes": len(brief["scenes"]), "music_id": music_id,
                          "music_credit": music.credit(music_id), "elapsed": round(time.time() - t0, 1),
-                         "warnings": brief.get("warnings", [])}}
+                         "voice": voice, "slots": info.get("slots"), "warnings": brief.get("warnings", [])}}
     (out / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2))
     progress(1.0, "done")
     return result

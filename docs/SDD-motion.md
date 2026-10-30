@@ -152,3 +152,35 @@ server idle) driven by Playwright through the dashboard: look from a picture →
 → renamed → 9:16 render with alpha (5.5 s video in 24 s) → GIF exported from the export bar → look deleted; no JS
 errors, server log clean. Frames checked by eye (alpha composited over a checkerboard; count-up ends on the given
 value).
+
+## 8. Voice-over (2026-10-31)
+
+Optional narration read by any voice from tab Giọng nói (cloned, stock or blend profile, or "default"). Off by
+default: no `voice` = the silent video of §2, so old jobs, MCP calls and CSV re-renders are unchanged.
+
+- **Param** `voice`: `""`/`"none"` = off; `"default"` → `profiles.default_voice()`; else an id from `/api/voices`.
+  Checked by `resolve_voice` before the LLM, so a stale id fails at once.
+- **Brief:** with a voice, the prompt asks for `narration` per scene (on-screen language, about 0.8 ×
+  `pipelines.UNITS_PER_SEC` per scene second, complements rather than reads the screen, only given numbers, may use
+  `{{id}}`). `normalise` keeps it (≤ 300 chars); the brief gate shows a "Lời đọc" box per scene. `scene_data` drops
+  it, so editing a line never redraws a clip.
+- **No lines in the brief** (made without a voice, or an old `brief_data`): `narration_of` reads what the scene
+  shows (headline, value + label, items, quote, button). A brief that has lines keeps scenes without a line silent.
+- **Synthesis:** `speaker()` = the same path as every narrated video: `speak` (per-sentence QA and repair), the
+  owner's lexicon and English terms (`pipelines.request_terms`), one engine per job (`one_voice`). Each line is
+  cached as `voice/<sha(voice, lang, text)>.wav`, so the approval re-run, a resumed job and CSV rows that say the
+  same thing synthesise it once; a row whose values change a line gets its own.
+- **Timeline:** slot = max(brief seconds, LEAD 0.5 + line + TAIL 0.6). A line starts LEAD into its slot (after the
+  cross-fade in). The voice track is zeros of (total − 0.5 s) with each line added at its slot start + LEAD (TAIL >
+  0.5 keeps the last line inside it), then `compose` with `music_volume` 0.18 (as narrated videos; `audio_graph`
+  ducks it) instead of 0.5. `brief.json` keeps the owner's seconds; the stretched slots are in `report.slots`.
+  The alpha MOV uses the same slots (same cached lines), so it still lines up with the MP4.
+- **Result:** `narration` (the voice track wav, `final.narration.wav`) and `report.voice`. Keys `voice`,
+  `sentences`, `words`, `plan` are deliberately not used: they switch on the dashboard's resubtitle / revoice /
+  repronounce panels, which need a narrated video's plan.
+- **Not in v1:** subtitles of the narration (the words on screen already carry the message), per-sentence takes and
+  the repronounce panel, a different voice per scene.
+- **Verification:** `tests/test_motion.py` +3 (narration kept, filled and outside the clip hash; fallback reading;
+  voice checked before the LLM and in the prompt only with a voice; a real render with a fake 1 s line: scene
+  stretched to ≥ LEAD + 1 + TAIL, the silent scene unchanged, the line synthesised once for the video and an
+  identical CSV row, music 0.18, speech energy only inside its window, track = total − 0.5 s).

@@ -313,7 +313,7 @@ async def motion_video(prompt: str | None = None, style: str = "auto", message: 
                        lang: str = "vi", logo: str | None = None, images: list[str] | None = None, music: str = "auto",
                        brief: dict[str, Any] | None = None, variables: dict[str, str] | None = None,
                        rows: list[dict[str, str]] | None = None, review: list[str] | None = None,
-                       alpha: bool = False, wait_seconds: float = 0) -> dict[str, Any]:
+                       alpha: bool = False, voice: str | None = None, wait_seconds: float = 0) -> dict[str, Any]:
     """Motion-graphics video, style first (no voice): animated words, numbers, charts, logos and pictures + music,
     for ads, KPI clips, product intros, announcements, social posts (dashboard tab ✨ Motion; docs/SDD-motion.md).
 
@@ -325,11 +325,13 @@ async def motion_video(prompt: str | None = None, style: str = "auto", message: 
     value}) to re-render without the LLM, and rows ([{name, id or label: value}], max 50) for one MP4 per row
     (result.versions). review=["brief"] waits for the owner to confirm the brief in the dashboard. alpha=True also
     writes result.alpha: a transparent ProRes 4444 MOV (no sound) to lay over other footage. Own looks saved in the
-    dashboard are valid style ids too (GET /api/motion/styles)."""
+    dashboard are valid style ids too (GET /api/motion/styles). voice: a voice-over read by a list_voices id or
+    "default" (none = text and music only); the brief then gets a spoken line per scene and scenes stretch to fit."""
     return await _submit("motion", {"prompt": prompt, "style": style, "message": message, "offer": offer,
                                     "audience": audience, "aspect": aspect, "seconds": seconds, "lang": lang,
                                     "logo": logo, "images": images, "music": music, "brief": brief,
-                                    "variables": variables, "rows": rows, "review": review or [], "alpha": alpha},
+                                    "variables": variables, "rows": rows, "review": review or [], "alpha": alpha,
+                                    "voice": voice},
                    wait_seconds)
 
 

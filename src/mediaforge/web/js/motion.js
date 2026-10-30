@@ -122,6 +122,14 @@ $("#mo-del-style").onclick = async () => {
   catch (err) { toast(err.message); }
 };
 
+async function voiceOptions(sel, current) {
+  if (typeof voices !== "undefined" && !voices.length) { try { voices = await api("/api/voices"); } catch {} }
+  const list = typeof voices !== "undefined" ? voices : [], dv = list.find((v) => v.default);
+  sel.innerHTML = `<option value="">Không đọc (chỉ chữ và nhạc)</option><option value="default">Giọng mặc định${dv ? ` · ${esc(dv.name)}` : ""}</option>` +
+    list.map((v) => `<option value="${esc(v.id)}">${v.kind === "stock" ? "Giọng mẫu: " : ""}${esc(v.name)}${v.default ? " ★" : ""}</option>`).join("");
+  sel.value = current || ""; if (sel.value !== (current || "")) sel.value = "";
+}
+
 function musicOptions(sel, current) {
   const tracks = (typeof musicTracks !== "undefined" ? musicTracks : []).filter((t) => t.available);
   sel.innerHTML = `<option value="auto">Tự chọn theo không khí video</option><option value="none">Không nhạc</option>` +
@@ -146,6 +154,7 @@ window.loadMotion = async () => {
     try { await loadStyles(); } catch (e) { toast(e.message); return; }
   }
   musicOptions($("#mo-music"), $("#mo-music").value);
+  voiceOptions($("#mo-voice"), $("#mo-voice").value);
   recent();
 };
 
@@ -169,7 +178,7 @@ form.onsubmit = async (e) => {
   try {
     const params = { style: picked, prompt: form.prompt.value.trim(), message: form.message.value.trim(), offer: form.offer.value.trim(),
       audience: form.audience.value.trim(), lang: form.lang.value, aspect, seconds: +form.seconds.value, music: form.music.value,
-      review: form.review.checked ? ["brief"] : [], alpha: form.alpha.checked };
+      review: form.review.checked ? ["brief"] : [], alpha: form.alpha.checked, voice: form.voice.value };
     if (!params.prompt) throw new Error("Hãy mô tả video trước");
     if (form.logo.files[0]) params.logo = await upload(form.logo.files[0]);
     params.images = [];
@@ -198,16 +207,17 @@ function styleSelect(cur) {
   return `<select class="mo-style-sel">${(STYLES || []).map((s) => `<option value="${esc(s.id)}" ${s.id === cur ? "selected" : ""}>${esc(s.name)} — ${esc(s.mood)}</option>`).join("")}</select>`;
 }
 
-function sceneEditor(sc, i) {
+function sceneEditor(sc, i, narrated) {
   const fields = Object.keys(FIELD_VI).filter((k) => sc[k] != null).map((k) =>
     `<label>${FIELD_VI[k]}<input data-f="${k}" value="${esc(sc[k])}"></label>`).join("");
   const items = sc.items ? `<label>Các dòng (mỗi dòng một ý)<textarea data-f="items" rows="${sc.items.length}">${esc(sc.items.join("\n"))}</textarea></label>` : "";
+  const said = narrated ? `<label>Lời đọc (giọng thuyết minh nói gì ở cảnh này${sc.narration ? "" : "; để trống = đọc chữ trên cảnh"})<textarea data-f="narration" rows="2">${esc(sc.narration || "")}</textarea></label>` : "";
   const bars = sc.bars ? `<label>Cột biểu đồ (mỗi dòng “nhãn: số”)<textarea data-f="bars" rows="${sc.bars.length}">${esc(sc.bars.map((b) => `${b.label}: ${b.value}`).join("\n"))}</textarea></label>` : "";
   return `<li data-i="${i}"><div class="mo-scene-head"><span class="chip on">${KIND_VI[sc.kind] || sc.kind}</span>
       <span class="muted">${esc(sc.note || "")}</span>
       <label class="mo-sec">giây<input type="number" data-f="seconds" min="1.6" max="8" step="0.1" value="${sc.seconds}"></label>
       <button type="button" class="ghost small mo-del" title="Bỏ cảnh này">✕</button></div>
-    <div class="grid2">${fields}</div>${items}${bars}</li>`;
+    <div class="grid2">${fields}</div>${items}${bars}${said}</li>`;
 }
 function readScenes(box, scenes) {
   return $$(".mo-scenes > li", box).filter((li) => !li.classList.contains("removed")).map((li) => {
@@ -235,7 +245,7 @@ window.motionGate = (job, out) => {
     ${(b.warnings || []).length ? `<p class="qa-bad">${b.warnings.map(esc).join(" · ")}</p>` : ""}
     <div class="grid2"><label>Tên video<input class="mo-title" value="${esc(b.title || "")}"></label><label>Phong cách${styleSelect(b.style || r.style)}</label></div>
     <h4>Ô sửa nhanh (variables)</h4>${varsTable(b.variables || [])}
-    <h4>Các cảnh</h4><ol class="mo-scenes">${(b.scenes || []).map(sceneEditor).join("")}</ol>
+    <h4>Các cảnh</h4><ol class="mo-scenes">${(b.scenes || []).map((sc, i) => sceneEditor(sc, i, !!job.params?.voice)).join("")}</ol>
     <div class="actions"><button class="primary mo-go">Duyệt brief → dựng video</button>
       <button class="ghost mo-cancel">Huỷ</button><span class="muted mo-st"></span></div>`;
   if (!STYLES) window.loadMotion().then(() => { const s = $(".mo-style-sel", box); if (s) s.outerHTML = styleSelect(b.style || r.style); });
@@ -283,7 +293,8 @@ window.motionResult = (job) => {
       ${varsTable(vars, r.values)}
       <div class="grid2"><label>Phong cách${styleSelect(b.style || r.style)}</label>
         <label>Khung hình<select class="mo-asp">${Object.keys(ASPECT_HINT).map((a) => `<option ${a === r.aspect ? "selected" : ""}>${a}</option>`).join("")}</select></label>
-        <label>Nhạc nền<select class="mo-mus"></select></label></div>
+        <label>Nhạc nền<select class="mo-mus"></select></label>
+        <label>Giọng đọc<select class="mo-voice"></select></label></div>
       <label class="check"><input type="checkbox" class="mo-alpha" ${p.alpha ? "checked" : ""}> Kèm bản MOV nền trong suốt</label>
       <div class="actions"><button class="primary small mo-redo">Dựng lại</button><span class="muted">Không gọi lại Claude: chỉ thay chữ và dựng, nhanh hơn nhiều.</span></div>
     </details>
@@ -294,9 +305,10 @@ window.motionResult = (job) => {
         <span class="muted mo-csv-st"></span></div></details>` : ""}`;
   const mus = $(".mo-mus", box);
   musicOptions(mus, r.report?.music_id || "none");
+  voiceOptions($(".mo-voice", box), p.voice || "");
   const base = () => ({ brief: b, style: $(".mo-style-sel", box).value, aspect: $(".mo-asp", box).value, music: mus.value,
     seconds: (b.scenes || []).reduce((a, s) => a + s.seconds, 0), images: p.images || [], logo: p.logo || null, lang: p.lang,
-    prompt: p.prompt, review: [], alpha: $(".mo-alpha", box).checked });
+    prompt: p.prompt, review: [], alpha: $(".mo-alpha", box).checked, voice: $(".mo-voice", box).value });
   const go = async (extra, btn) => {
     btn.disabled = true;
     try {
