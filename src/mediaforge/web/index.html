@@ -230,7 +230,7 @@
 <!-- ============================== JOBS -->
 <section id="tab-jobs" class="tab">
   <div class="toolbar">
-    <select id="jobs-filter"><option value="">Tất cả</option><option>queued</option><option>running</option><option>waiting</option><option>done</option><option>failed</option></select>
+    <select id="jobs-filter" aria-label="Lọc theo trạng thái"><option value="">Tất cả</option><option>queued</option><option>running</option><option>waiting</option><option>done</option><option>failed</option></select>
     <input id="jobs-search" type="search" placeholder="Tìm theo tiêu đề / nội dung…" aria-label="Tìm job">
     <button id="jobs-refresh" class="ghost">↻ Làm mới</button>
   </div>
@@ -244,7 +244,7 @@
       <h3>Giọng của bạn</h3>
       <div id="voices-list"></div>
       <form id="voice-create" class="inline">
-        <input name="name" placeholder="Tên giọng, ví dụ: Tú" required>
+        <input name="name" placeholder="Tên giọng, ví dụ: Tú" aria-label="Tên giọng mới" required>
         <button class="primary">Tạo giọng</button>
       </form>
       <button id="demo-voice" class="ghost small">Tạo giọng demo (macOS say)</button>
@@ -256,7 +256,7 @@
   <div class="card" id="stock-card">
     <div class="job-head"><h3 style="margin:0">Giọng mẫu</h3><span class="spacer"></span>
       <div class="seg" id="stock-gender"><button data-g="" class="on">Tất cả</button><button data-g="female">Nữ</button><button data-g="male">Nam</button></div>
-      <select id="stock-region"><option value="">Mọi miền</option><option>Bắc</option><option>Trung</option><option>Nam</option></select>
+      <select id="stock-region" aria-label="Miền"><option value="">Mọi miền</option><option>Bắc</option><option>Trung</option><option>Nam</option></select>
     </div>
     <p class="muted">Giọng dẫn chương trình có sẵn (giọng tổng hợp, không phải người thật). Bấm ▶ để nghe ngay.</p>
     <div id="stock-list" class="stock-grid"></div>
