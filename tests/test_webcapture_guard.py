@@ -1,5 +1,7 @@
 """Web capture guard (docs/SDD-web-capture.md §4, §9, §10.2): SSRF checks, robots.txt per RFC 9309, own sites."""
 
+import json
+
 import httpx
 import pytest
 
@@ -171,3 +173,68 @@ def test_price_pattern_needs_the_currency_word_to_end():
         assert W.PRICE.search(ok), ok
     for no in ("9 đánh giá thật", "3 đêm", "100% đúng", "2026"):
         assert not W.PRICE.search(no), no
+
+
+# Facts from the easyvisarun.com and tradeswomanmerch.com captures (E2E 2026-10-31).
+SITE_FACTS = ["1900000 VND", "1.900.000 VND", "7,6 triệu đồng/xe cho 2–5 khách", "Khoảng 1,31 triệu đồng (50 USD)",
+              "Một lần 25 USD (≈ 650.000đ)", "1 USD ≈ 26.170 ₫", "$34.00", "Visa run Đà Nẵng 2026"]
+
+
+@pytest.mark.parametrize("said", [
+    "một triệu chín trăm nghìn đồng", "chỉ một triệu chín", "1.900.000đ", "xe riêng bảy phẩy sáu triệu",
+    "7.600.000 đồng", "một phẩy ba mốt triệu", "khoảng một phẩy ba mươi mốt triệu", "sáu trăm năm mươi nghìn",
+    "hai mươi lăm đô", "năm hai nghìn không trăm hai mươi sáu", "thirty-four dollars", "34 dollars",
+    "one million nine hundred thousand dong", "fifty dollars", "ba bước, năm câu hỏi, một chuyến đi",
+    "one of the best, two steps"])
+def test_spoken_numbers_match_the_site(said):
+    assert W.unsourced(said, W.number_set(SITE_FACTS)) == [], said
+
+
+@pytest.mark.parametrize(("said", "flagged"), [
+    ("chỉ chín trăm nghìn đồng", ["chín trăm nghìn"]), ("hai triệu rưỡi", ["hai triệu rưỡi"]),
+    ("hơn mười năm kinh nghiệm", ["mười"]), ("hai mươi năm", ["hai mươi"]), ("một trăm phần trăm", ["một trăm"]),
+    ("một trăm linh năm khách", ["một trăm linh năm"]), ("twenty-six dollars", ["twenty-six"]),
+    ("two point five million", ["two point five million"]), ("only 1.800.000đ", ["1.800.000"]),
+    ("năm 2025", ["2025"])])
+def test_spoken_numbers_not_on_the_site_are_flagged(said, flagged):
+    assert W.unsourced(said, W.number_set(SITE_FACTS)) == flagged
+
+
+def test_number_readings():
+    assert W.number_set(["45.000đ"]) == W.number_set(["45000 VND"]) == {"45000"}
+    assert W.number_set(["$34.00"]) == {"34", "3400"} and W.number_set(["26.170 ₫"]) == {"26170"}
+    assert W.number_set(["7,6 triệu"]) == {"7600000", "76000000"} and W.number_set(["45k"]) == {"45000"}
+    assert W.number_set(["năm 2026, trăm năm, Năm câu hỏi"]) == {"2026"}  # never 52026, never 105
+    assert W.number_set(["hai nghìn không trăm hai mươi sáu", "ba mốt", "mười tư", "a hundred and five"]) == {
+        "2026", "31", "14", "105"}
+
+
+def test_gate_ticks_twenty_facts_without_repeats(tmp_path):
+    page = "https://shop.vn/"
+    facts = [{"key": "price", "value": "1900000 VND", "source": "jsonld:Offer", "url": page},
+             {"key": "name", "value": "Visa run", "source": "og:title", "url": page},
+             {"key": "name", "value": "Visa run | EasyVisa", "source": "meta:title", "url": page},
+             {"key": "heading", "value": "Visa run", "source": "text:h2", "url": page},
+             {"key": "price", "value": "650.000 VND", "source": "text:price", "url": page},
+             {"key": "price", "value": "+ E-visa 650.000 VND", "source": "text:price", "url": page},
+             {"key": "price", "value": "1.900.000 VND", "source": "text:price", "url": page},
+             {"key": "description", "value": "Dịch vụ trong ngày", "source": "og:description", "url": page}]
+    facts += [{"key": "heading", "value": f"Mục {i}", "source": "text:h2", "url": page} for i in range(30)]
+    facts.append({"key": "heading", "value": "Trang hai", "source": "text:h1", "url": page + "b"})
+    W.recommend_facts(facts)
+    ticked = [f["value"] for f in facts if f["recommended"]]
+    assert len(ticked) == W.FACTS_SHOWN
+    # one name per page, one line per price (the longer), the h1 of every page before the description and the h2s
+    # an approval without edits keeps the ticked facts; an old capture (no marks) keeps all; more than 40 is refused
+    def approve(facts):
+        (tmp_path / "capture.json").write_text(json.dumps({"urls": [page], "pictures": [], "logo": None, "facts": facts}))
+        return [f["value"] for f in W.apply_approval(tmp_path, None)["kept"]["facts"]]
+
+    assert approve(facts) == ticked
+    old = [{k: v for k, v in f.items() if k != "recommended"} for f in facts]
+    assert len(approve(old)) == len(old) == 39
+    with pytest.raises(ValueError, match="tối đa 40"):
+        approve(old + old[-2:])
+    # (kept in page order)
+    assert ticked == ["Visa run", "+ E-visa 650.000 VND", "1.900.000 VND", "Dịch vụ trong ngày",
+                      *[f"Mục {i}" for i in range(15)], "Trang hai"]

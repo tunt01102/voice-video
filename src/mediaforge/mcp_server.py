@@ -339,7 +339,8 @@ async def motion_video(prompt: str | None = None, style: str = "auto", message: 
     "default" (none = text and music only); the brief then gets a spoken line per scene and scenes stretch to fit.
     urls: up to 3 web pages (the owner's own, or ones they may use) to take facts, product pictures, screenshots
     (screenshots=False: none) and a logo from, before the brief (docs/SDD-web-capture.md). Without review=["capture"]
-    the recommended pictures and every fact are used; with it the owner checks them in the dashboard first."""
+    the recommended pictures and up to 20 facts (names, prices, headlines first) are used; with it the owner checks
+    them in the dashboard first."""
     return await _submit("motion", {"prompt": prompt, "style": style, "message": message, "offer": offer,
                                     "audience": audience, "aspect": aspect, "seconds": seconds, "lang": lang,
                                     "logo": logo, "images": images, "music": music, "brief": brief,
