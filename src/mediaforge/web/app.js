@@ -401,7 +401,7 @@ function renderOutputs(job, out) {
   const bust = at ? `?v=${Math.round(at)}` : "";
   if (fileUrl(f.video)) out.insertAdjacentHTML("beforeend", `<video controls preload="metadata" src="${fileUrl(f.video)}${bust}" poster="${fileUrl(f.thumbnail) || ""}${bust}"></video>`);
   const credit = job.result?.report?.music_credit;
-  if (credit) out.insertAdjacentHTML("beforeend", `<p class="muted">♪ Ghi công nhạc nền (bắt buộc khi đăng): ${esc(credit)}</p>`);
+  if (credit) out.insertAdjacentHTML("beforeend", `<p class="muted credit">♪ Ghi công nhạc nền (bắt buộc khi đăng): ${esc(credit)}</p>`);
   if (Array.isArray(f.images)) f.images.forEach((i) => out.insertAdjacentHTML("beforeend", `<a href="${fileUrl(i)}" target="_blank"><img src="${fileUrl(i)}"></a>`));
   if (fileUrl(f.audio)) out.insertAdjacentHTML("beforeend", `<audio controls src="${fileUrl(f.audio)}"></audio>`);
   const links = [];
@@ -737,7 +737,8 @@ function updateJob(job) {
   const b = $(".badge", el); b.className = "badge " + job.status; b.textContent = job.status;
   $(".job-type", el).textContent = TYPE_LABEL[job.type] || job.type;
   const p = job.params || {};
-  $(".job-title", el).textContent = (job.result?.title || p.text || p.prompt || p.brief || p.script || p.media || "").slice(0, 90);
+  const title = String(job.result?.title || p.text || p.prompt || p.brief || p.script || p.media || "");
+  $(".job-title", el).textContent = title.slice(0, 90); $(".job-title", el).title = title.slice(0, 400);
   $(".job-time", el).textContent = new Date(job.created_at * 1000).toLocaleString();
   $(".progress div", el).style.width = (job.progress * 100).toFixed(1) + "%";
   $(".job-msg", el).textContent = job.status === "running" ? job.message : "";
@@ -1072,8 +1073,8 @@ async function loadLexicon() {
 }
 function renderLex() {
   const lang = $("#lex-lang").value; const rows = Object.entries(lex[lang] || {});
-  $("#lex-body").innerHTML = rows.map(([k, v]) => `<tr><td><input value="${esc(k)}" data-k></td><td><input value="${esc(v.say)}" data-s></td>
-    <td><span class="badge ${v.source === "learned" ? "running" : ""}">${v.source}</span></td><td><button class="ghost small" data-rm>✕</button></td></tr>`).join("");
+  $("#lex-body").innerHTML = rows.map(([k, v]) => `<tr><td><input value="${esc(k)}" data-k aria-label="Từ"></td><td><input value="${esc(v.say)}" data-s aria-label="Cách đọc"></td>
+    <td><span class="badge ${v.source === "learned" ? "running" : ""}">${v.source}</span></td><td><button class="ghost small" data-rm title="Xoá dòng">✕</button></td></tr>`).join("");
   $$("[data-rm]").forEach((b) => b.onclick = () => b.closest("tr").remove());
 }
 function collectLex() {
@@ -1086,7 +1087,7 @@ function collectLex() {
 }
 $("#lex-scope").onchange = loadLexicon;
 $("#lex-lang").onchange = () => renderLex();
-$("#lex-add").onclick = () => { $("#lex-body").insertAdjacentHTML("afterbegin", `<tr><td><input data-k placeholder="VD: Kubernetes"></td><td><input data-s placeholder="cu-bơ-nét-tít"></td><td><span class="badge">manual</span></td><td><button class="ghost small" data-rm>✕</button></td></tr>`); $$("[data-rm]").forEach((b) => b.onclick = () => b.closest("tr").remove()); };
+$("#lex-add").onclick = () => { $("#lex-body").insertAdjacentHTML("afterbegin", `<tr><td><input data-k placeholder="VD: Kubernetes"></td><td><input data-s placeholder="cu-bơ-nét-tít"></td><td><span class="badge">manual</span></td><td><button class="ghost small" data-rm title="Xoá dòng">✕</button></td></tr>`); $$("[data-rm]").forEach((b) => b.onclick = () => b.closest("tr").remove()); };
 $("#lex-save").onclick = async () => {
   collectLex(); const v = $("#lex-scope").value;
   lex = await api("/api/lexicon" + (v ? "?voice=" + v : ""), { method: "PUT", body: JSON.stringify(lex) });
@@ -1244,3 +1245,25 @@ function renderBeautify(job) {
   };
   return box;
 }
+
+// Accessible names (UI scan 2026-10-31): a slider whose <label> also holds an <output> is labelled by the output, and
+// icon-only buttons or bare inputs have no name. Name them from their label text, placeholder or title, also for
+// controls added later (job cards, editors).
+function nameControls(root) {
+  $$("input, select, textarea, button", root).forEach((el) => {
+    if (el.getAttribute("aria-label") || el.type === "hidden") return;
+    const lab = el.closest("label");
+    if (el.tagName === "BUTTON") {
+      if (!el.textContent.trim() || /^[^\p{L}\p{N}]+$/u.test(el.textContent.trim())) {
+        const t = el.title || el.dataset.label; if (t) el.setAttribute("aria-label", t);
+      }
+      return;
+    }
+    if (lab && (el.type === "range" || !el.labels?.length)) {
+      const t = [...lab.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join(" ").replace(/[:\s]+$/, "").trim();
+      if (t) el.setAttribute("aria-label", t);
+    } else if (!el.labels?.length && (el.placeholder || el.title)) el.setAttribute("aria-label", el.placeholder || el.title);
+  });
+}
+nameControls(document);
+new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => n.nodeType === 1 && nameControls(n)))).observe(document.body, { childList: true, subtree: true });
