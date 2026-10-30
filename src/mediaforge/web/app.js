@@ -570,7 +570,7 @@ function renderExport(job) {
   });
   const sum = () => {
     const n = Object.values(selectionFor(job)).filter((v) => v && v !== "original").length;
-    $(".export-sum", box).textContent = n ? `Giọng: ${n} câu dùng bản AI đã sửa, còn lại giữ bản gốc` : "Giọng: bản gốc";
+    $(".export-sum", box).textContent = n ? `Giọng: ${n} câu dùng bản AI đã sửa, còn lại giữ bản gốc` : job.result?.sentences?.length ? "Giọng: bản gốc" : "";
   };
   sum(); box.refreshSummary = sum;
   const exports = job.files?.exports || [];

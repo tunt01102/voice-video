@@ -134,9 +134,12 @@ def _selection_key(selection: dict[int, str], fmt: str) -> str:
     return hashlib.sha1(raw.encode()).hexdigest()[:8]
 
 
-def _label(fmt: str, selection: dict[int, str]) -> str:
+def _label(fmt: str, selection: dict[int, str], voiced: bool = True) -> str:
     n = len(selection)
-    return f"{FORMATS[fmt]['label'] if fmt == 'mp4_fhd' else fmt.upper()} · " + (f"{n} câu dùng bản AI sửa" if n else "giọng gốc")
+    name = FORMATS[fmt]["label"] if fmt == "mp4_fhd" else fmt.upper()
+    if not voiced:  # no narration to choose (motion videos)
+        return name
+    return f"{name} · " + (f"{n} câu dùng bản AI sửa" if n else "giọng gốc")
 
 
 def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
@@ -211,7 +214,7 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
         new_voice.unlink(missing_ok=True)
 
     entry = {"id": key, "file": str(out), "format": fmt, "selection": {str(k): v for k, v in selection.items()},
-             "path": path, "modes": {str(k): v for k, v in modes.items()}, "label": _label(fmt, selection),
+             "path": path, "modes": {str(k): v for k, v in modes.items()}, "label": _label(fmt, selection, voiced=bool(sents)),
              "created_at": time.time(), "duration": round(A.probe_duration(out), 2), "export_job": job_id}
     fresh = T.load_done_job(src_id)["result"]
     fresh["exports"] = [e for e in fresh.get("exports") or [] if e["id"] != key] + [entry]

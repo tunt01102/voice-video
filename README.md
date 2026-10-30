@@ -181,7 +181,10 @@ Dashboard tab **✨ Motion** makes short videos without a voice: animated words,
 pictures, with music. Good for ads, KPI clips, product intros, announcements and social posts.
 
 1. **Pick a style** from the 8 cards (Đêm neon, Giấy & mực, Khối màu, Kẹo ngọt, Doanh nghiệp, Đen & vàng, Rừng xanh,
-   Lập trình), or "Tự chọn giúp mình" and Claude picks.
+   Lập trình), or "Tự chọn giúp mình" and Claude picks. **＋ Tạo phong cách của tôi** makes your own look: start
+   from a built-in one or from a reference picture (website screenshot, poster, brand sheet: its colours are read
+   automatically), adjust colours, fonts, corners, texture, decoration and motion, then save. Saved looks appear as
+   cards (✏️ edit, 🗑 delete) and Claude may pick them too.
 2. **Describe it**: what it is, the one message, prices/numbers (shown exactly as typed; nothing is invented),
    audience, on-screen language, frame (16:9, 9:16, 1:1, 4:5), length, logo and pictures, music.
 3. **Confirm the brief**: Claude writes the scenes; every word you may change is a field ("ô sửa nhanh"). Edit
@@ -190,9 +193,13 @@ pictures, with music. Good for ads, KPI clips, product intros, announcements and
    isn't asked again.
 5. **Many versions from a spreadsheet**: "⬇ CSV mẫu", fill one row per version (columns = field names, `name` for
    the file name, empty = keep), upload, then "Dựng mỗi dòng một video".
+6. **Other formats**: the export bar under the video has **GIF** (≤ 720 px, 15 fps, no sound). Tick "MOV nền trong
+   suốt" (when describing, or under "Sửa chữ… & dựng lại") for a transparent ProRes 4444 MOV to lay over other
+   footage (no background, no sound, ~40 MB per second).
 
 From other sessions: MCP `motion_video` (pass a previous `brief_data` + `variables`/`rows` to re-render). Outputs go
-to `data/outputs/motion/<job-id>/` (`final.mp4`, `versions/`, `brief.json`). Design: [docs/SDD-motion.md](docs/SDD-motion.md).
+to `data/outputs/motion/<job-id>/` (`final.mp4`, `final-alpha.mov`, `versions/`, `exports/`, `brief.json`); own looks
+in `data/motion/styles.json`. Design: [docs/SDD-motion.md](docs/SDD-motion.md).
 
 ### Hát & Ngâm thơ
 

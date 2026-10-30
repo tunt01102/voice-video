@@ -231,3 +231,29 @@ def test_gif_export_is_small_silent_and_looping(tmp_path):
     assert [s["codec_type"] for s in st] == ["video"] and st[0]["codec_name"] == "gif"
     assert (st[0]["width"], st[0]["height"]) == (576, 720)  # portrait: the long side capped at 720
     assert "gif" in export.formats_for({"video": str(src)})
+
+
+@pytest.mark.skipif(not animate.available(), reason="Playwright/Chromium not installed")
+def test_alpha_mov_keeps_transparency():
+    import subprocess
+
+    import numpy as np
+
+    from mediaforge.config import settings
+    brief = {"title": "T", "variables": [],
+             "scenes": [{"kind": "title", "seconds": 1.6, "headline": "Trong suốt"},
+                        {"kind": "cta", "seconds": 1.6, "headline": "Đặt ngay", "button": "Mua"}]}
+    r = motion.run({"brief": brief, "aspect": "1:1", "music": "none", "style": "khoi-mau", "alpha": True},
+                   lambda *_: None, job_id="alpha-test")
+    mov = Path(r["alpha"])
+    st = json.loads(subprocess.run([settings.ffprobe, "-v", "error", "-show_entries", "stream=codec_name,pix_fmt,width",
+                                    "-of", "json", str(mov)], capture_output=True, text=True).stdout)["streams"]
+    assert len(st) == 1 and st[0]["codec_name"] == "prores" and st[0]["pix_fmt"].startswith("yuva")  # no sound
+    # one frame mid-scene: the corners are see-through, the words are not
+    raw = subprocess.run([settings.ffmpeg, "-v", "error", "-ss", "1.0", "-i", str(mov), "-frames:v", "1", "-f", "rawvideo",
+                          "-pix_fmt", "rgba", "-"], capture_output=True).stdout
+    a = np.frombuffer(raw, np.uint8).reshape(1080, 1080, 4)[:, :, 3]
+    assert a[5, 5] == 0 and a.max() == 255 and 0.002 < (a > 0).mean() < 0.6
+    assert Path(r["video"]).exists() and abs(motion.A.probe_duration(mov) - 3.2) < 0.4
+    assert not list(mov.parent.glob("scenes/*.mov"))  # the big ProRes intermediates are gone once joined
+    assert mov.stat().st_size < 60e6 * 3.2  # qscale 9, not the encoder's ~90 MB/s default

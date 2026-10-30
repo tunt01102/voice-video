@@ -168,7 +168,7 @@ form.onsubmit = async (e) => {
   try {
     const params = { style: picked, prompt: form.prompt.value.trim(), message: form.message.value.trim(), offer: form.offer.value.trim(),
       audience: form.audience.value.trim(), lang: form.lang.value, aspect, seconds: +form.seconds.value, music: form.music.value,
-      review: form.review.checked ? ["brief"] : [] };
+      review: form.review.checked ? ["brief"] : [], alpha: form.alpha.checked };
     if (!params.prompt) throw new Error("Hãy mô tả video trước");
     if (form.logo.files[0]) params.logo = await upload(form.logo.files[0]);
     params.images = [];
@@ -276,12 +276,14 @@ window.motionResult = (job) => {
   const box = document.createElement("div");
   box.className = "mo-after";
   const versions = (job.files?.versions || []).filter((v) => fileUrl(v.video));
-  box.innerHTML = `${versions.length ? `<div class="links mo-versions">${versions.map((v) => `<a href="${fileUrl(v.video)}" download>⬇ ${esc(v.name)}.mp4</a>`).join("")}</div>` : ""}
+  const alpha = fileUrl(job.files?.alpha) ? `<a href="${fileUrl(job.files.alpha)}" download>⬇ MOV nền trong suốt</a>` : "";
+  box.innerHTML = `${versions.length || alpha ? `<div class="links mo-versions">${alpha}${versions.map((v) => `<a href="${fileUrl(v.video)}" download>⬇ ${esc(v.name)}.mp4</a>`).join("")}</div>` : ""}
     <details class="mo-edit"><summary>✏️ Sửa chữ, đổi phong cách hoặc khung hình &amp; dựng lại</summary>
       ${varsTable(vars, r.values)}
       <div class="grid2"><label>Phong cách${styleSelect(b.style || r.style)}</label>
         <label>Khung hình<select class="mo-asp">${Object.keys(ASPECT_HINT).map((a) => `<option ${a === r.aspect ? "selected" : ""}>${a}</option>`).join("")}</select></label>
         <label>Nhạc nền<select class="mo-mus"></select></label></div>
+      <label class="check"><input type="checkbox" class="mo-alpha" ${p.alpha ? "checked" : ""}> Kèm bản MOV nền trong suốt</label>
       <div class="actions"><button class="primary small mo-redo">Dựng lại</button><span class="muted">Không gọi lại Claude: chỉ thay chữ và dựng, nhanh hơn nhiều.</span></div>
     </details>
     ${vars.length ? `<details class="mo-batch"><summary>📊 Nhiều phiên bản từ bảng tính (CSV)</summary>
@@ -293,7 +295,7 @@ window.motionResult = (job) => {
   musicOptions(mus, r.report?.music_id || "none");
   const base = () => ({ brief: b, style: $(".mo-style-sel", box).value, aspect: $(".mo-asp", box).value, music: mus.value,
     seconds: (b.scenes || []).reduce((a, s) => a + s.seconds, 0), images: p.images || [], logo: p.logo || null, lang: p.lang,
-    prompt: p.prompt, review: [] });
+    prompt: p.prompt, review: [], alpha: $(".mo-alpha", box).checked });
   const go = async (extra, btn) => {
     btn.disabled = true;
     try {

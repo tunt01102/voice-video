@@ -506,9 +506,11 @@ def scene_data(sc: dict[str, Any], st: dict[str, Any], cols: dict[str, str], *, 
 
 
 def render_version(brief: dict[str, Any], st: dict[str, Any], vals: dict[str, str], out_file: Path, *, aspect: str,
-                   files: dict[str, str], cache: Path, music_file: str | None, progress: Progress) -> Path:
+                   files: dict[str, str], cache: Path, music_file: str | None, progress: Progress,
+                   alpha: bool = False) -> Path:
     """One MP4 from the brief filled with `vals`. Scene clips are cached by content, so a batch row (or a scene a
-    variable does not touch) is drawn once."""
+    variable does not touch) is drawn once. alpha=True: a transparent ProRes 4444 MOV instead (no page colour or
+    texture, no sound) to lay over other footage."""
     from mediaforge.video import animate, compose
 
     W, H = ASPECTS[aspect]
@@ -522,18 +524,23 @@ def render_version(brief: dict[str, Any], st: dict[str, Any], vals: dict[str, st
         length = sc["seconds"] + (T if i < n - 1 else 0)
         data = scene_data(resolve_scene(sc, vals), st, cols, index=i, count=n, width=W, height=H, seconds=length,
                           files=files)
+        if alpha:
+            data["alpha"] = True
         key = hashlib.sha1(json.dumps([data, {k: files.get(k) for k in sorted(files)}], sort_keys=True,
                                       ensure_ascii=False).encode()).hexdigest()[:16]
-        jobs.append((cache / f"{key}.mp4", data, length))
+        jobs.append((cache / f"{key}.{'mov' if alpha else 'mp4'}", data, length))
     todo = [j for j in jobs if not j[0].exists()]
     if todo:
         with animate.renderer(W, H) as r:
             r.files = dict(files)
             for k, (clip, data, length) in enumerate(todo):
                 progress(0.85 * k / len(todo), f"đang dựng cảnh {k + 1}/{len(todo)}")
-                tmp = clip.with_suffix(".part.mp4")
-                r.render("motion.html", data, tmp, seconds=length)
+                tmp = clip.with_suffix(".part" + clip.suffix)
+                r.render("motion.html", data, tmp, seconds=length, alpha=alpha)
                 tmp.replace(clip)
+    if alpha:
+        progress(0.9, "đang ghép bản nền trong suốt")
+        return alpha_concat([c for c, _, _ in jobs], [sc["seconds"] for sc in scenes], T, st["transition"], out_file)
     progress(0.88, "đang ghép cảnh và nhạc")
     total = sum(sc["seconds"] for sc in scenes)
     silent = out_file.with_name(out_file.stem + ".silence.wav")
@@ -544,6 +551,28 @@ def render_version(brief: dict[str, Any], st: dict[str, Any], vals: dict[str, st
         compose.compose(clips, silent, out_file, aspect=aspect, music=music_file, music_volume=0.5, transition=T)
     finally:
         silent.unlink(missing_ok=True)
+    return out_file
+
+
+def alpha_concat(clips: list[Path], slots: list[float], T: float, transition: str, out_file: Path, fps: int = 30) -> Path:
+    """Cross-fade transparent clips (each its slot + T long, as compose's timeline) into one ProRes 4444 MOV, keeping
+    the alpha plane. A fade through black would darken the overlay, so it becomes a plain fade."""
+    style = "fade" if transition == "fadeblack" else transition
+    args: list[str] = []
+    for c in clips:
+        args += ["-i", str(c)]
+    fc = [f"[{i}:v]format=yuva444p10le,setpts=PTS-STARTPTS[s{i}]" for i in range(len(clips))]
+    last, offset = "[s0]", 0.0
+    for i in range(1, len(clips)):
+        offset += slots[i - 1]
+        fc.append(f"{last}[s{i}]xfade=transition={style}:duration={T}:offset={offset:.3f}[x{i}]")
+        last = f"[x{i}]"
+    from mediaforge.video import animate
+
+    A.run_ffmpeg([*args, "-filter_complex", ";".join(fc), "-map", last, "-an", "-r", str(fps), *animate.PRORES_ALPHA,
+                  str(out_file)])
+    for c in clips:  # ~40 MB per second each: not worth caching once joined
+        c.unlink(missing_ok=True)
     return out_file
 
 
@@ -570,7 +599,7 @@ def apply_brief_edits(out: Path, edited: dict[str, Any]) -> dict[str, Any]:
 def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
     """params: style, prompt, message, offer, audience, aspect, seconds, lang, logo, images, music ("auto" | id |
     "none"), review (["brief"] pauses for the owner), brief (a ready brief: no LLM), variables ({id|label: value}),
-    rows ([{name, id|label: value}]: one MP4 per row)."""
+    rows ([{name, id|label: value}]: one MP4 per row), alpha (also a transparent ProRes 4444 MOV of the main video)."""
     from mediaforge import pipelines
     from mediaforge.video import compose
 
@@ -611,7 +640,7 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
     # ---- 3. render: the main version, then one per spreadsheet row
     vals = values_of(brief, p.get("variables"))
     rows = [r for r in (p.get("rows") or []) if isinstance(r, dict)][:50]
-    steps = 1 + len(rows)
+    steps = 1 + len(rows) + (1 if p.get("alpha") else 0)
     final = render_version(brief, st, vals, out / "final.mp4", aspect=aspect, files=files, cache=out / "scenes",
                            music_file=music_file, progress=pipelines._sub(progress, 0.05, 0.05 + 0.9 / steps))
     versions = []
@@ -624,9 +653,15 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
         render_version(brief, st, rv, f, aspect=aspect, files=files, cache=out / "scenes", music_file=music_file,
                        progress=pipelines._sub(progress, lo, lo + 0.9 / steps))
         versions.append({"name": name, "video": str(f), "values": rv})
+    alpha = None
+    if p.get("alpha"):
+        alpha = str(render_version(brief, st, vals, out / "final-alpha.mov", aspect=aspect, files=files,
+                                   cache=out / "scenes", music_file=None, alpha=True,
+                                   progress=pipelines._sub(progress, 0.05 + 0.9 * (steps - 1) / steps, 0.95)))
     thumb = compose.thumbnail(final, out / "thumbnail.jpg", at=min(1.2, sum(s["seconds"] for s in brief["scenes"]) / 2))
     result = {"video": str(final), "thumbnail": str(thumb), "title": fill(brief["title"], vals), "brief": str(bf),
               "brief_data": brief, "values": vals, "style": st["id"], "aspect": aspect, "versions": versions,
+              **({"alpha": alpha} if alpha else {}),
               "duration": round(A.probe_duration(final), 2),
               "report": {"aspect": aspect, "style": st["id"], "scenes": len(brief["scenes"]), "music_id": music_id,
                          "music_credit": music.credit(music_id), "elapsed": round(time.time() - t0, 1),

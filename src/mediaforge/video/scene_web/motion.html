@@ -6,7 +6,7 @@
      __seek(t) per frame and screenshots; nothing here reads the clock, so every frame is reproducible.
      data: {scene: {kind, headline, sub, value, label, items, bars, quote, author, button, image, logo}, index, count,
             seconds, width, height, colors, fonts: {head, body, label}, head_weight, case, radius, border, shadow,
-            texture, deco, motion, text_fx} -->
+            texture, deco, motion, text_fx, alpha?} — alpha: no background colour or texture (transparent MOV) -->
 <style>
   :root { --bg: #0b1020; --surface: #141b33; --ink: #fff; --muted: #9aa; --accent: #3cf0c5; --accent2: #7b5cff;
     --fh: "Avenir Next"; --fb: "Avenir Next"; --fl: Monaco; --hw: 800; --case: none; --r: 0px; --bw: 0px; --u: 1px; }
@@ -22,6 +22,8 @@
   .t-stripes #tex { opacity: .10; background-image: repeating-linear-gradient(135deg, var(--ink) 0 calc(14 * var(--u)), transparent calc(14 * var(--u)) calc(44 * var(--u))); }
   .t-rules #tex { opacity: .14; background-image: linear-gradient(var(--ink) 1px, transparent 1px); background-size: 100% calc(96 * var(--u)); }
   .t-grain #tex { opacity: .07; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='4'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  html.alpha, html.alpha body, html.alpha #stage { background: transparent; }
+  html.alpha #tex { display: none; }
   .deco { position: absolute; pointer-events: none; }
   .d-blob { border-radius: 50%; filter: blur(calc(110 * var(--u))); opacity: .42; }
   .d-block { background: var(--accent); }
@@ -208,6 +210,7 @@ window.__setup = async (data) => {
   root.setProperty("--sh", { none: "none", soft: `0 ${18 * U}px ${50 * U}px rgba(15,26,46,.12)`, hard: `${10 * U}px ${10 * U}px 0 var(--ink)`,
     glow: `0 0 ${40 * U}px color-mix(in srgb, var(--accent) 35%, transparent)` }[data.shadow] || "none");
   body.className = `t-${data.texture} k-${s.kind}` + (tall ? " tall" : "") + (["hook", "cta", "stat", "quote"].includes(s.kind) || tall && s.kind === "title" ? " center" : "");
+  document.documentElement.classList.toggle("alpha", !!data.alpha);  // transparent MOV: no page colour, no texture
   addDecos(data);
 
   const c = $("#c");
