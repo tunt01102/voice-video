@@ -1,6 +1,6 @@
 # SDD — Lấy thông tin và ảnh sản phẩm từ website cho video Motion (web capture)
 
-Status: **design only** (2026-10-31). Nothing built. Owner decisions needed: §10.
+Status: **design only** (2026-10-31). Nothing built. Owner decisions received 2026-10-31: §10 (they change §2, §4, §11).
 
 ## 1. Goal
 
@@ -148,16 +148,15 @@ the job folder, and deleting the job deletes the capture.
 - E2E: on a copy of the data store (port 8766), against 3–5 public pages the owner picks (§10). Check by eye: picture
   choice, logo, facts, and the finished video.
 
-## 10. Questions for the owner
+## 10. Owner decisions (2026-10-31)
 
-1. **Option A first, B later?** (recommended). Or should agentic browsing be in v1?
-2. **robots.txt:** obey it strictly (recommended; it matches RFC 9309 and is the polite default)? Or show a warning and
-   let the owner override it for their own sites?
-3. **Microdata/RDFa** (older shop platforms) in v1? It needs either a hand-written reader or `extruct`, whose licence
-   must be checked against the SDD §3 rule before adoption. Recommendation: JSON-LD + OG in v1, then measure how often
-   real target sites miss.
-4. **Which real websites** should the E2E run against (your own or clients' pages)?
-5. **Scope beyond Motion:** should the same capture also feed the explainer/short videos (`create_video`)?
+1. **Both A and B.** A (deterministic) always runs first. B (agentic) runs only when A's data is not good enough:
+   **confidence below 90 %**, and no **reference from an earlier video** on the same site. Design: §12.
+2. **robots.txt** is obeyed, except on the owner's own sites, where it may be skipped: `aisme.vn`, `easyvisarun.com`,
+   `tradeswomanmerch.com` (subdomains included). The list is editable in the dashboard (§12.4).
+3. **Microdata/RDFa: no.** JSON-LD + Open Graph + visible text only; `extruct` not adopted.
+4. **E2E sites:** https://aisme.vn/, https://easyvisarun.com/, https://tradeswomanmerch.com/.
+5. **Scope:** also feeds the narrated, short and explainer videos (`create_video` / tab Tạo mới), not only Motion.
 
 ## 11. Plan and effort (estimate, not measured)
 
@@ -166,3 +165,70 @@ the job folder, and deleting the job deletes the capture.
 3. Motion stage 0 + capture gate (API, dashboard) + website facts in the brief + the number check.
 4. E2E on owner-picked sites, SDD update, merge, deploy.
 Roughly the size of Motion phase 1. No new dependency, no new licence.
+
+## 12. Design changes from the owner's decisions
+
+### 12.1 Confidence, and when the agent runs
+
+"90 % confident" cannot be the LLM's self-report alone: models' stated confidence is not calibrated, so a bare
+number would be a guess. Confidence = **min(checklist score, LLM score)**:
+- **Checklist (deterministic, 0–100):** product or page name (20), at least one fact sentence (15), a price or a
+  number when the owner asked for an offer (15; 0 if not asked and counted as met), ≥ 2 recommended pictures with a
+  short side ≥ 500 px (25), a logo ≥ 128 px (15), no blocking warning such as robots, consent overlay left or HTTP error
+  (10).
+- **LLM score:** `llm.complete_json` is shown the approved-format facts plus picture captions (`alt`, source, size) and
+  the owner's request. It answers `{"confidence": 0-100, "missing": ["price", "product photo", …]}`. Page text is passed
+  as data (§6).
+- **≥ 90 → done** (no agent). **< 90 →** if `data/webcapture/sites/<domain>.json` holds a reference, apply it (§12.3)
+  and score again. Still < 90 → run the agent (§12.2) with the `missing` list as its goal. The agent's result is scored
+  the same way. The capture gate shows the score and what is still missing; the owner decides either way.
+
+### 12.2 The agent (B), inside MediaForge's own browser
+
+Not Playwright MCP (its README: "not a security boundary"; it would also bypass the SSRF guard of §4). Instead a small
+loop of at most 8 steps in the **same guarded browser context**. At each step the LLM sees the current URL, page title,
+the `missing` list, and **numbered menus built by MediaForge**: same-site links (text + path, max 40), visible buttons
+or tabs (max 20), and image candidates (max 20). It may answer only with one of:
+`open_link(n)`, `click(n)`, `scroll(down|up)`, `capture_image(n)`, `capture_block(n)`, `note_fact(key, text quoted from
+the page)`, `done`. MediaForge executes the action. It does not run free-form JavaScript, type into forms, go
+off-site, or follow a URL the model writes itself. Facts the agent notes must appear verbatim in the page text, or they
+are dropped. Every step is logged in `capture.json` (`agent_steps`) and shown in the gate. Budget: 8 steps, 120 s,
+then stop and keep what was found.
+
+### 12.3 Site reference (learning from earlier videos)
+
+When the owner approves a capture gate, MediaForge saves `data/webcapture/sites/<domain>.json`:
+- the URL patterns used;
+- for each kept picture and fact, a stable CSS selector (built from id/class/structure, with a text check);
+- which agent steps led to them;
+- the date.
+The next capture on that domain tries those selectors first. If they still match (the selector exists and the text
+check passes), it counts as reference data and the checklist scores those items as found. A reference older than 90
+days, or one whose selectors fail, is ignored and marked stale. The owner can view or delete references in the
+dashboard (§12.4).
+
+### 12.4 Dashboard: own sites and references
+
+The tab Hệ thống gains a "Website của tôi" card:
+- the own-sites list (one domain per line, seeded with the three domains in §10.2), saved to
+  `data/webcapture/own_sites.json` through `GET/PUT /api/webcapture/own-sites`;
+- the saved site references with date, last use and a delete button (`GET /api/webcapture/sites`,
+  `DELETE /api/webcapture/sites/{domain}`).
+A domain matches itself and its subdomains. The SSRF guard still applies to own sites; only robots.txt is skipped.
+
+### 12.5 Other videos (decision 5)
+
+`webcapture.capture(urls, want=…)` is a stage usable by every video job. In tab Tạo mới, a "Lấy từ website" field adds
+a capture stage before `plan`, with the same gate (`review: ["capture", …]`). Approved pictures become `media` (as
+uploaded pictures are today), and approved facts are added to the brief as quoted website facts. MCP `create_video`
+and `prepare_video` take `urls`. The number check of §6 also applies to narration there: a number in the script that
+is not in the owner's brief or the approved facts is flagged in the plan lint.
+
+### 12.6 Plan update (replaces §11)
+
+1. Guard + robots (with own-sites override) + unit tests.
+2. Deterministic capture (A) + checklist score + fixture tests.
+3. Site references + LLM score + the guarded agent (B) + fixture tests (including a page that tries prompt injection).
+4. Motion capture stage + gate; dashboard own-sites/reference card.
+5. Tạo mới / `create_video` capture stage.
+6. E2E on the three own sites, docs, merge, deploy.
