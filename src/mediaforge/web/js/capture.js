@@ -1,9 +1,10 @@
 // Web capture (docs/SDD-web-capture.md): the capture gate shown when a Motion or Tạo mới job waits at stage
 // "capture", and the "Website của tôi" card in tab Hệ thống (own sites, saved site references). Uses app.js globals.
 
+const FACTS_MAX = 40;  // webcapture.FACTS_MAX
 const KIND_VI = { product: "Ảnh sản phẩm", image: "Ảnh trên trang", block: "Chụp khối sản phẩm", hero: "Chụp màn hình",
   upload: "Ảnh bạn tải lên" };
-const KEY_VI = { name: "Tên", description: "Mô tả", price: "Giá", brand: "Thương hiệu", heading: "Tiêu đề trên trang", line: "Dòng chữ" };
+const KEY_VI = { name: "Tên", description: "Mô tả", price: "Giá", brand: "Thương hiệu", heading: "Tiêu đề", line: "Dòng chữ" };
 const MISSING_VI = { name: "tên sản phẩm hoặc trang", sentence: "câu mô tả", price: "giá hoặc con số",
   pictures: "ảnh sản phẩm (ít nhất 2 ảnh lớn)", logo: "logo", clean: "trang mở không lỗi" };
 const ACTION_VI = { open_link: "mở link", click: "bấm", scroll: "cuộn", capture_image: "lấy ảnh", capture_block: "chụp khối",
@@ -18,6 +19,12 @@ function keySelect(cur) {
   return `<select data-k>${Object.entries(KEY_VI).map(([k, v]) => `<option value="${k}" ${k === cur ? "selected" : ""}>${v}</option>`).join("")}</select>`;
 }
 
+function factRow(x, i, checked) {
+  return `<div class="cap-fact" data-i="${i}"><input type="checkbox" ${checked ? "checked" : ""} aria-label="Dùng dòng này">
+    ${keySelect(x.key)}<input data-v value="${esc(x.value)}" aria-label="${esc(KEY_VI[x.key] || x.key)}">
+    <small class="muted">${esc(sourceVi(x.source))}</small></div>`;
+}
+
 function picCard(p, url, checked) {
   return `<label class="cap-pic"><input type="checkbox" data-file="${esc(p.file)}" ${checked ? "checked" : ""}>
     <img src="${esc(url)}" alt="${esc(p.alt || KIND_VI[p.kind] || "")}" loading="lazy">
@@ -28,6 +35,10 @@ function picCard(p, url, checked) {
 window.captureGate = (job, out) => {
   const r = job.result || {}, c = r.capture_data || {}, f = (job.files || {}).capture_data || {};
   const conf = c.confidence || {}, pics = c.pictures || [], facts = c.facts || [];
+  // ticked by default: the recommended facts (webcapture.recommend_facts); a capture from before the marks: all
+  const marked = facts.some((x) => "recommended" in x);
+  const shown = facts.map((x, i) => [x, i]).filter(([x]) => !marked || x.recommended);
+  const more = facts.map((x, i) => [x, i]).filter(([x]) => marked && !x.recommended);
   const missing = (conf.missing || []).map((m) => { const [k, ...rest] = m.split(":");
     return MISSING_VI[m] || (rest.length && MISSING_VI[k.trim()] ? `${MISSING_VI[k.trim()]} (${rest.join(":").trim()})` : m); });
   const box = document.createElement("div");
@@ -51,11 +62,11 @@ window.captureGate = (job, out) => {
         <img src="${esc(f.logo?.file?.url || "")}" alt="logo"><span><b>Logo</b> · ${c.logo.w}×${c.logo.h}</span>
         <small class="muted">${esc(sourceVi(c.logo.source))}</small></label>` : `<p class="muted">Không tìm thấy logo đủ lớn.</p>`}
       <label>Logo khác<input type="file" class="cap-logo-up" accept="image/*"></label></div>
-    <h4>Thông tin (Claude chỉ dùng những dòng còn đánh dấu; sửa được)</h4>
-    <div class="cap-facts">${facts.map((x, i) => `<div class="cap-fact" data-i="${i}"><input type="checkbox" checked aria-label="Dùng dòng này">
-        ${keySelect(x.key)}<input data-v value="${esc(x.value)}" aria-label="${esc(KEY_VI[x.key] || x.key)}">
-        <small class="muted">${esc(sourceVi(x.source))}</small></div>`).join("") || `<p class="muted">Không lấy được thông tin nào.</p>`}</div>
+    <h4>Thông tin (Claude chỉ dùng những dòng còn đánh dấu, tối đa ${FACTS_MAX}; sửa được)</h4>
+    <div class="cap-facts">${shown.map(([x, i]) => factRow(x, i, true)).join("") || `<p class="muted">Không lấy được thông tin nào.</p>`}</div>
     <button type="button" class="ghost small cap-add">＋ Thêm một dòng</button>
+    ${more.length ? `<details class="cap-more"><summary>Thêm ${more.length} dòng lấy được (chưa đánh dấu: trùng ý, hoặc tiêu đề phụ trên trang)</summary>
+      <div class="cap-facts-more">${more.map(([x, i]) => factRow(x, i, false)).join("")}</div></details>` : ""}
     ${c.preview ? `<details><summary>Xem cả trang đã chụp</summary><img class="cap-preview" src="${esc(f.preview?.url || "")}" alt="Ảnh chụp cả trang"></details>` : ""}
     <div class="actions"><button class="primary cap-go">Duyệt → viết brief</button>
       <button class="ghost cap-cancel">Huỷ</button><span class="muted cap-st"></span></div>`;
@@ -69,6 +80,8 @@ window.captureGate = (job, out) => {
       const pictures = $$(".cap-pics input[data-file]", box).filter((i) => i.checked).map((i) => i.dataset.file);
       for (const file of [...$(".cap-up", box).files]) pictures.push(await upload(file));
       if (pictures.length > 8) throw new Error(`Đang chọn ${pictures.length} ảnh — tối đa 8`);
+      const ticked = $$(".cap-fact", box).filter((d) => $("input[type=checkbox]", d).checked).length;
+      if (ticked > FACTS_MAX) throw new Error(`Đang chọn ${ticked} dòng thông tin — tối đa ${FACTS_MAX}`);
       let logo = c.logo && $(".cap-logo-on", box)?.checked ? c.logo.file : "";
       if ($(".cap-logo-up", box).files[0]) logo = await upload($(".cap-logo-up", box).files[0]);
       const factsOut = $$(".cap-fact", box).filter((d) => $("input[type=checkbox]", d).checked).map((d) => ({

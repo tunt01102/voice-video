@@ -411,7 +411,9 @@ function renderOutputs(job, out) {
   if (fileUrl(f.video)) out.insertAdjacentHTML("beforeend", `<video controls preload="metadata" src="${fileUrl(f.video)}${bust}" poster="${fileUrl(f.thumbnail) || ""}${bust}"></video>`);
   const credit = job.result?.report?.music_credit;
   if (credit) out.insertAdjacentHTML("beforeend", `<p class="muted credit">♪ Ghi công nhạc nền (bắt buộc khi đăng): ${esc(credit)}</p>`);
-  if (Array.isArray(f.images)) f.images.forEach((i) => out.insertAdjacentHTML("beforeend", `<a href="${fileUrl(i)}" target="_blank"><img src="${fileUrl(i)}"></a>`));
+  // beside a video the pictures are its material: a row of thumbnails, not full-size pictures
+  const pics = (Array.isArray(f.images) ? f.images : []).map((i) => `<a href="${fileUrl(i)}" target="_blank"><img src="${fileUrl(i)}" alt="" loading="lazy"></a>`).join("");
+  if (pics) out.insertAdjacentHTML("beforeend", fileUrl(f.video) ? `<div class="thumbs">${pics}</div>` : pics);
   if (fileUrl(f.audio)) out.insertAdjacentHTML("beforeend", `<audio controls src="${fileUrl(f.audio)}"></audio>`);
   const links = [];
   const add = (label, v) => fileUrl(v) && links.push(`<a href="${fileUrl(v)}" download>${label}</a>`);

@@ -182,17 +182,17 @@
 <!-- ============================== MOTION (js/motion.js, docs/SDD-motion.md) -->
 <section id="tab-motion" class="tab">
   <form id="motion-form" autocomplete="off">
-    <div class="card">
-      <h3 class="mo-step"><span>1</span> Chọn phong cách</h3>
+    <details class="card mo-card" id="mo-card-style" open>
+      <summary><h3 class="mo-step"><span>1</span> Chọn phong cách</h3><span class="mo-sum muted" id="mo-sum-style"></span></summary>
       <p class="muted">Video nào cũng bắt đầu từ một phong cách: màu sắc, font chữ, và cách chuyển động. Bấm một thẻ để chọn, hoặc chọn “Tự chọn giúp mình”.</p>
       <div id="mo-styles" class="mo-styles" role="radiogroup" aria-label="Phong cách"></div>
       <div class="actions mo-own-bar"><button type="button" class="ghost small" id="mo-new-style">＋ Tạo phong cách của tôi</button>
         <span id="mo-own-act" hidden><button type="button" class="ghost small" id="mo-edit-style">✏️ Sửa phong cách này</button>
           <button type="button" class="ghost small" id="mo-del-style">🗑 Xoá</button></span></div>
       <div id="mo-editor" class="mo-editor" hidden></div>
-    </div>
-    <div class="card">
-      <h3 class="mo-step"><span>2</span> Mô tả video</h3>
+    </details>
+    <details class="card mo-card" id="mo-card-brief" open>
+      <summary><h3 class="mo-step"><span>2</span> Mô tả video</h3><span class="mo-sum muted" id="mo-sum-brief"></span></summary>
       <label>Video về điều gì?
         <textarea name="prompt" rows="3" required placeholder="VD: video quảng cáo 20 giây cho món cold brew mới của quán cà phê, ra mắt tháng 11"></textarea></label>
       <div class="grid2">
@@ -210,7 +210,7 @@
             <button type="button" data-v="1:1" title="Bài đăng vuông">1:1</button>
             <button type="button" data-v="4:5" title="Bài đăng feed dọc">4:5</button></div>
           <small class="muted" id="mo-aspect-hint">YouTube, website, màn hình họp</small></div>
-        <label>Độ dài: <output id="mo-sec-out">20 giây</output>
+        <label><span>Độ dài: <output id="mo-sec-out">20 giây</output></span>
           <input type="range" name="seconds" min="8" max="60" step="1" value="20"></label>
       </div>
       <label>Lấy từ website (tuỳ chọn, 1–3 địa chỉ, mỗi dòng một)
@@ -221,14 +221,14 @@
         <label>Logo (tuỳ chọn)<input type="file" name="logo" accept="image/*"></label>
         <label>Ảnh sản phẩm, ảnh chụp màn hình (tuỳ chọn, tối đa 8)<input type="file" name="images" accept="image/*" multiple></label>
         <label>Nhạc nền<select name="music" id="mo-music"><option value="auto">Tự chọn theo không khí video</option><option value="none">Không nhạc</option></select></label>
-        <label>Giọng đọc thuyết minh<select name="voice" id="mo-voice"><option value="">Không đọc (chỉ chữ và nhạc)</option></select>
-          <small class="muted">Giọng lấy từ tab Giọng nói. Có giọng đọc thì Claude viết thêm lời đọc cho từng cảnh; cảnh tự dài ra cho vừa lời.</small></label>
+        <label>Giọng đọc thuyết minh<select name="voice" id="mo-voice"><option value="">Không đọc (chỉ chữ và nhạc)</option></select></label>
       </div>
+      <p class="muted mo-note">Giọng đọc lấy từ tab Giọng nói. Có giọng đọc thì Claude viết thêm lời đọc cho từng cảnh; cảnh tự dài ra cho vừa lời.</p>
       <label class="check"><input type="checkbox" name="review_capture" checked> Khi lấy từ website: cho tôi duyệt ảnh và thông tin trước</label>
       <label class="check"><input type="checkbox" name="review" checked> Cho tôi duyệt brief (thông điệp, các cảnh, chữ) trước khi dựng</label>
       <label class="check"><input type="checkbox" name="alpha"> Xuất thêm bản MOV nền trong suốt (ProRes 4444, không tiếng) để chồng lên video khác — dựng lâu hơn, file nặng ~40 MB mỗi giây</label>
       <div class="actions"><button class="primary" id="mo-submit">✨ Viết brief</button><span class="muted" id="mo-hint"></span></div>
-    </div>
+    </details>
   </form>
   <div id="motion-result"></div>
 </section>

@@ -325,11 +325,31 @@ form.inline button { white-space: nowrap; }
 .cap-pic img { width: 100%; height: 120px; object-fit: contain; background: color-mix(in srgb, var(--text) 6%, transparent); border-radius: 6px; }
 .cap-pic:has(input:checked) { border-color: var(--accent); }
 .cap-logo { display: grid; grid-template-columns: minmax(170px, 220px) 1fr; gap: 10px; align-items: start; }
-.cap-fact { display: grid; grid-template-columns: auto 150px 1fr; gap: 6px 8px; align-items: center; margin-bottom: 6px; }
-.cap-fact small { grid-column: 2 / -1; }
+.cap-fact { display: grid; grid-template-columns: auto 130px minmax(0, 1fr) 160px; gap: 6px 8px; align-items: center; margin-bottom: 6px; }
+.cap-fact small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cap-fact > *, .cap-pic, .cap-pic img { min-width: 0; }
 .cap-legal { font-size: 13px; border-left: 3px solid var(--accent); padding-left: 8px; }
 .cap-preview { max-width: 100%; max-height: 520px; overflow: auto; display: block; border: 1px solid var(--line); }
 .cap-steps { font-size: 13px; }
 .cap-refs { width: 100%; font-size: 13px; }
 #own-sites { width: 100%; }
-@media (max-width: 640px) { .cap-fact { grid-template-columns: auto 1fr; } .cap-fact input[data-v] { grid-column: 1 / -1; } .cap-logo { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .cap-fact { grid-template-columns: auto 1fr; } .cap-fact input[data-v], .cap-fact small { grid-column: 1 / -1; } .cap-logo { grid-template-columns: 1fr; } }
+
+/* UI pass 2026-10-31 (owner's test): grid controls line up, Motion steps fold, result thumbnails, shorter fact list */
+.grid2 > label > :is(input:not([type=checkbox]), select, textarea):first-of-type { margin-top: auto; }
+.mo-card > summary { list-style: none; display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; margin: 0; color: var(--text); }
+.mo-card > summary::-webkit-details-marker { display: none; }
+.mo-card > summary::after { content: "▾"; margin-left: auto; color: var(--muted); font-size: 20px; line-height: 1; transition: transform .15s; }
+.mo-card:not([open]) > summary::after { transform: rotate(-90deg); }
+.mo-card > summary .mo-step { margin: 0; }
+.mo-card[open] > summary { margin-bottom: 6px; }
+.mo-card[open] .mo-sum { display: none; }
+.mo-sum { font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.mo-note { font-size: 12.5px; margin: -4px 0 12px; }
+.job-out .thumbs { flex: 1 0 100%; display: flex; gap: 8px; flex-wrap: wrap; }
+.job-out .thumbs img { height: 96px; width: auto; max-width: 180px; object-fit: cover; border-radius: 8px; }
+.job-out .links { flex: 1 0 100%; }
+.cap-more { margin-top: 6px; }
+.cap-more > summary { margin-bottom: 6px; }
+.cap-gate label:has(> input[type=file]) { max-width: 460px; }
+@media (max-width: 640px) { .cap-pics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cap-pic img { height: 96px; } }

@@ -14,8 +14,14 @@ const VAL_VI = { none: "không", grid: "lưới", dots: "chấm", stripes: "sọ
   blocks: "mảng khối", rings: "vòng tròn", bubbles: "bong bóng", lines: "đường kẻ", frame: "khung viền", soft: "mềm", hard: "cứng",
   glow: "phát sáng", snappy: "bật lên", smooth: "mượt", bouncy: "nảy", typing: "gõ chữ", uppercase: "VIẾT HOA", fade: "mờ dần",
   smoothleft: "trượt trái", fadeblack: "qua nền đen", circleopen: "mở tròn", slideup: "trượt lên", dissolve: "hoà tan" };
-let STYLES = null, OPTIONS = null, ROLES = [], picked = "auto", aspect = "16:9";
+let STYLES = null, OPTIONS = null, ROLES = [], picked = "auto", aspect = "16:9", submitted = null;
 const form = $("#motion-form");
+
+// Steps 1 and 2 fold once done (a style picked, the brief approved) so the page stays short; a click reopens them.
+function fold(card, summary) {
+  $(`#mo-sum-${card}`).textContent = summary;
+  $(`#mo-card-${card}`).open = false;
+}
 
 function styleCard(s) {
   const c = s.colors, f = s.fonts;
@@ -35,7 +41,10 @@ function paintStyles() {
     <div class="mo-pv"><b>✨</b><span>Chưa biết chọn gì?</span></div>
     <div class="mo-meta"><strong>Tự chọn giúp mình</strong><small>Claude chọn phong cách hợp với nội dung; bạn đổi được ở bước duyệt brief.</small></div></button>`;
   $("#mo-styles").innerHTML = auto + STYLES.map(styleCard).join("");
-  $$(".mo-style", $("#mo-styles")).forEach((b) => b.onclick = () => pick(b.dataset.id));
+  $$(".mo-style", $("#mo-styles")).forEach((b) => b.onclick = () => {
+    pick(b.dataset.id);
+    if ($("#mo-editor").hidden) fold("style", STYLES.find((s) => s.id === picked)?.name || "Tự chọn giúp mình");
+  });
   pick(STYLES.some((s) => s.id === picked) ? picked : "auto");
 }
 function pick(id) {
@@ -191,6 +200,8 @@ form.onsubmit = async (e) => {
     for (const f of [...form.images.files].slice(0, 8)) params.images.push(await upload(f));
     const job = await api("/api/jobs", { method: "POST", body: JSON.stringify({ type: "motion", params, source: "dashboard" }) });
     showJob(job);
+    submitted = job.id;
+    if (!params.review.includes("brief")) fold("brief", `${params.prompt} · đang dựng`);
     $("#mo-hint").textContent = params.review.includes("capture") ? "Đang lấy ảnh và thông tin từ website — bạn sẽ duyệt ở bên dưới."
       : params.review.length ? "Claude đang viết brief — bạn sẽ duyệt ở bên dưới." : "Đang dựng — theo dõi bên dưới.";
   } catch (err) { toast(err.message); $("#mo-hint").textContent = ""; }
@@ -264,7 +275,11 @@ window.motionGate = (job, out) => {
       variables: (b.variables || []).map((v) => ({ ...v, value: vals[v.id] ?? v.value })), scenes: readScenes(box, b.scenes || []) };
     if (!brief.scenes.length) return toast("Brief không còn cảnh nào");
     btn.disabled = true; $(".mo-st", box).textContent = "Đang gửi…";
-    try { const j = await api(`/api/jobs/${job.id}/approve`, { method: "POST", body: JSON.stringify({ stage: "brief", brief }) }); updateJob(j); followJob(j.id); }
+    try {
+      const j = await api(`/api/jobs/${job.id}/approve`, { method: "POST", body: JSON.stringify({ stage: "brief", brief }) });
+      updateJob(j); followJob(j.id);
+      if (job.id === submitted) fold("brief", `${job.params?.prompt || brief.title} · đã duyệt brief`);
+    }
     catch (err) { btn.disabled = false; $(".mo-st", box).textContent = ""; toast(err.message); }
   };
   out.append(box);
