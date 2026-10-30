@@ -158,3 +158,102 @@ def test_picture_scene_keeps_its_type_size_in_portrait(tmp_path):
             u = r.page.evaluate("() => document.querySelector('#c').style.getPropertyValue('--u')")
             assert u == "", f"{sc['kind']}: content shrunk to --u={u}"  # fits at full size: the fit loop never ran
             assert r.page.evaluate("() => [...document.images].every(i => i.complete && i.naturalWidth > 0)")
+
+
+# ------------------------------------------------------------------ phase 2: own looks, palette from a picture
+
+def test_own_look_is_clamped_saved_and_usable(monkeypatch, tmp_path):
+    monkeypatch.setattr(motion, "_own_file", lambda: tmp_path / "styles.json")
+    s = motion.save_style({"name": "Quán Mộc", "base": "giay-muc", "texture": "lasers", "radius": 999,
+                           "fonts": {"head": "Comic Sans MS", "body": "Georgia"},
+                           "colors": {"bg": "#101010", "ink": "#151515", "accent": "#ff8800", "surface": "nope"}})
+    assert s["id"] == "rieng-quan-moc" and s["own"]
+    assert s["texture"] == motion.STYLES["giay-muc"]["texture"] and s["radius"] == 40  # unknown value → base, clamped
+    assert s["fonts"] == {"head": "Baskerville", "body": "Georgia", "label": "Courier New"}  # unchecked font refused
+    assert s["colors"]["surface"] == motion.STYLES["giay-muc"]["colors"]["surface"]
+    assert motion.contrast(s["colors"]["ink"], s["colors"]["bg"]) >= 4.5  # near-black ink on black bg made readable
+    assert motion.style_of("rieng-quan-moc")["name"] == "Quán Mộc"
+    assert any(x["id"] == "rieng-quan-moc" and x["own"] for x in motion.styles())
+    # a second save with the same name gets its own id; saving with the id updates in place
+    assert motion.save_style({"name": "Quán Mộc"})["id"] == "rieng-quan-moc-2"
+    assert motion.save_style({"id": "rieng-quan-moc", "name": "Mộc 2"})["id"] == "rieng-quan-moc"
+    assert motion.style_of("rieng-quan-moc")["name"] == "Mộc 2"
+    # the LLM may pick it, and a brief naming it keeps it
+    assert "rieng-quan-moc (" in motion.brief_prompt({"prompt": "x", "style": "auto"}, motion.style_of(None), [], False)
+    assert motion.normalise({**BRIEF, "style": "rieng-quan-moc"}, seconds=10, images=0)["style"] == "rieng-quan-moc"
+    # built-ins can't be deleted or overwritten; a deleted look falls back to the default
+    assert not motion.delete_style("neon-dem")
+    assert motion.save_style({"id": "neon-dem", "name": "x"})["id"].startswith(motion.OWN_PREFIX)
+    assert motion.delete_style("rieng-quan-moc") and motion.style_of("rieng-quan-moc")["id"] == motion.DEFAULT_STYLE
+
+
+def test_palette_from_a_picture_assigns_readable_roles(tmp_path):
+    from PIL import Image, ImageDraw
+    pic = tmp_path / "brand.png"
+    im = Image.new("RGB", (400, 300), (250, 246, 238))  # cream page, mostly
+    d = ImageDraw.Draw(im)
+    d.rectangle((0, 0, 400, 40), fill=(20, 40, 90))      # navy header
+    d.rectangle((20, 200, 160, 260), fill=(230, 60, 40))  # red-orange button
+    d.rectangle((200, 200, 300, 260), fill=(30, 170, 120))  # green badge
+    im.save(pic)
+    s = motion.palette_from_image(pic)
+    c = s["colors"]
+    assert motion.contrast(c["bg"], "#faf6ee") < 1.1  # bg = the dominant cream
+    assert motion.contrast(c["ink"], c["bg"]) >= 4.5
+    assert motion.contrast(c["bg"], c["accent"]) >= 3  # button text (bg colour) readable on the accent
+    r, g, b = motion._rgb(c["accent"])
+    assert r > g and r > b  # the most saturated swatch: the red-orange
+    r2, g2, b2 = motion._rgb(c["accent2"])
+    assert g2 > r2  # then the green
+    assert s["base"] == "doanh-nghiep" and len(s["palette"]) >= 4 and "id" not in s  # a draft, not saved
+
+
+def test_dark_picture_drafts_a_dark_look(tmp_path):
+    from PIL import Image
+    pic = tmp_path / "dark.png"
+    Image.new("RGB", (100, 100), (12, 14, 30)).save(pic)
+    s = motion.palette_from_image(pic, "Tối")
+    assert s["name"] == "Tối" and s["base"] == "neon-dem" and motion.contrast(s["colors"]["ink"], s["colors"]["bg"]) >= 4.5
+
+
+def test_gif_export_is_small_silent_and_looping(tmp_path):
+    import subprocess
+    from mediaforge import audio as A
+    from mediaforge import export
+    from mediaforge.config import settings
+    src = tmp_path / "v.mp4"
+    A.run_ffmpeg(["-f", "lavfi", "-i", "testsrc2=size=1080x1350:rate=30:duration=1.5", "-f", "lavfi", "-i",
+                  "anullsrc=r=48000:cl=mono", "-shortest", "-c:v", "h264_videotoolbox", "-pix_fmt", "yuv420p", str(src)])
+    out = tmp_path / "v.gif"
+    A.run_ffmpeg(export.ffmpeg_args("gif", src, out))
+    st = json.loads(subprocess.run([settings.ffprobe, "-v", "error", "-show_entries", "stream=codec_name,width,height,codec_type",
+                                    "-of", "json", str(out)], capture_output=True, text=True).stdout)["streams"]
+    assert [s["codec_type"] for s in st] == ["video"] and st[0]["codec_name"] == "gif"
+    assert (st[0]["width"], st[0]["height"]) == (576, 720)  # portrait: the long side capped at 720
+    assert "gif" in export.formats_for({"video": str(src)})
+
+
+@pytest.mark.skipif(not animate.available(), reason="Playwright/Chromium not installed")
+def test_alpha_mov_keeps_transparency():
+    import subprocess
+
+    import numpy as np
+
+    from mediaforge.config import settings
+    brief = {"title": "T", "variables": [],
+             "scenes": [{"kind": "title", "seconds": 1.6, "headline": "Trong suốt"},
+                        {"kind": "cta", "seconds": 1.6, "headline": "Đặt ngay", "button": "Mua"}]}
+    r = motion.run({"brief": brief, "aspect": "1:1", "music": "none", "style": "khoi-mau", "alpha": True},
+                   lambda *_: None, job_id="alpha-test")
+    mov = Path(r["alpha"])
+    st = json.loads(subprocess.run([settings.ffprobe, "-v", "error", "-show_entries", "stream=codec_name,pix_fmt,width",
+                                    "-of", "json", str(mov)], capture_output=True, text=True).stdout)["streams"]
+    assert len(st) == 1 and st[0]["codec_name"] == "prores" and st[0]["pix_fmt"].startswith("yuva")  # no sound
+    # one frame mid-scene: the corners are see-through, the words are not
+    raw = subprocess.run([settings.ffmpeg, "-v", "error", "-ss", "1.0", "-i", str(mov), "-frames:v", "1", "-f", "rawvideo",
+                          "-pix_fmt", "rgba", "-"], capture_output=True).stdout
+    a = np.frombuffer(raw, np.uint8).reshape(1080, 1080, 4)[:, :, 3]
+    assert a[5, 5] == 0 and a.max() == 255 and 0.002 < (a > 0).mean() < 0.6
+    assert Path(r["video"]).exists() and abs(motion.A.probe_duration(mov) - 3.2) < 0.4
+    assert not list(mov.parent.glob("scenes/*.mov"))  # the big ProRes intermediates are gone once joined
+    assert mov.stat().st_size < 60e6 * 3.2  # qscale 9, not the encoder's ~90 MB/s default

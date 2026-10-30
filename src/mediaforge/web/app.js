@@ -413,7 +413,7 @@ function renderOutputs(job, out) {
   const r = job.result || {};
   if (fileUrl(f.video) && Array.isArray(r.words) && r.plan) out.append(renderResubtitle(job));
   const isSong = ["sing", "recite"].includes(job.type);
-  if (job.type === "motion") { window.motionResult && out.append(window.motionResult(job)); return; }
+  if (job.type === "motion") { window.motionResult && out.append(window.motionResult(job)); out.append(renderExport(job)); return; }
   if (!isSong && (fileUrl(f.video) || (fileUrl(f.audio) && Array.isArray(r.sentences)))) out.append(renderExport(job));
   if (Array.isArray(r.sentences) && r.sentences.length) out.append(renderRepronounce(job));
   if (Array.isArray(r.sentences) && r.sentences.length) out.append(renderQA(job));
@@ -570,7 +570,7 @@ function renderExport(job) {
   });
   const sum = () => {
     const n = Object.values(selectionFor(job)).filter((v) => v && v !== "original").length;
-    $(".export-sum", box).textContent = n ? `Giọng: ${n} câu dùng bản AI đã sửa, còn lại giữ bản gốc` : "Giọng: bản gốc";
+    $(".export-sum", box).textContent = n ? `Giọng: ${n} câu dùng bản AI đã sửa, còn lại giữ bản gốc` : job.result?.sentences?.length ? "Giọng: bản gốc" : "";
   };
   sum(); box.refreshSummary = sum;
   const exports = job.files?.exports || [];

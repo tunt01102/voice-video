@@ -67,6 +67,10 @@ def _nfc(text: str) -> str:
     return unicodedata.normalize("NFC", text)
 
 
+# ProRes 4444 with alpha. qscale 9 ≈ Apple's nominal 4444 rate (~300 Mbit/s at 1080p30); the encoder's default is ~2× that.
+PRORES_ALPHA = ("-c:v", "prores_ks", "-profile:v", "4444", "-qscale:v", "9", "-pix_fmt", "yuva444p10le", "-vendor", "apl0")
+
+
 class Renderer:
     """One Chromium for a whole video; `scene()` renders one slide to an MP4, `render()` any scene_web page."""
 
@@ -85,22 +89,27 @@ class Renderer:
                 "counter": counter, "footer": footer, "progress0": progress[0], "progress1": progress[1]}
         return self.render("scene.html", data, out, seconds=seconds, fps=fps)
 
-    def render(self, page: str, data: dict[str, Any], out: Path, *, seconds: float, fps: int = 30) -> Path:
-        """Any page under scene_web with the same contract (`__setup(data)` once, `__seek(t)` per frame) → MP4."""
+    def render(self, page: str, data: dict[str, Any], out: Path, *, seconds: float, fps: int = 30,
+               alpha: bool = False) -> Path:
+        """Any page under scene_web with the same contract (`__setup(data)` once, `__seek(t)` per frame) → MP4.
+        alpha=True: transparent PNG shots (the page must clear its own background) → ProRes 4444 MOV with alpha."""
         self.page.goto(f"{ORIGIN}/{page}")
         self.page.wait_for_function("window.__ready === true")
         self.page.evaluate("d => window.__setup(d)", data)
         frames = max(int(round(seconds * fps)), 2)
         out.parent.mkdir(parents=True, exist_ok=True)
+        codec = ([*PRORES_ALPHA] if alpha else
+                 ["-c:v", "h264_videotoolbox", "-b:v", "16M", "-pix_fmt", "yuv420p"])
         enc = subprocess.Popen(
-            [settings.ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-f", "image2pipe", "-c:v", "mjpeg",
-             "-framerate", str(fps), "-i", "-", "-frames:v", str(frames), "-an", "-c:v", "h264_videotoolbox",
-             "-b:v", "16M", "-pix_fmt", "yuv420p", str(out)],
+            [settings.ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-f", "image2pipe", "-c:v",
+             "png" if alpha else "mjpeg", "-framerate", str(fps), "-i", "-", "-frames:v", str(frames), "-an", *codec,
+             str(out)],
             stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+        shot = {"type": "png", "omit_background": True} if alpha else {"type": "jpeg", "quality": 92}
         try:
             for k in range(frames):
                 self.page.evaluate("t => window.__seek(t)", k / fps)
-                enc.stdin.write(self.page.screenshot(type="jpeg", quality=92))
+                enc.stdin.write(self.page.screenshot(**shot))
         finally:
             enc.stdin.close()
             err = enc.stderr.read().decode(errors="replace")

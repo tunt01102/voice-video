@@ -51,8 +51,8 @@ retype variables → export, plus batch — on MediaForge's own renderer. No new
 6. **Nhiều phiên bản từ CSV** — "⬇ CSV mẫu" (header = `name` + variable labels, one row of current values); each
    row → `versions/NN-<name>.mp4`. Columns match a variable's id or label; empty cells keep the default; ≤ 50 rows.
 
-Not ported (phase 2, if wanted): a look made from a reference (screenshots / website / video), saving a tweaked look
-to a personal library, a synthesised music bed (we use the CC library), transparent MOV/GIF export, direct canvas
+Phase 2 (2026-10-31, §7): own looks, a look drafted from a reference picture, GIF export, transparent MOV.
+Still not ported: a look from a website or a video, a synthesised music bed (we use the CC library), direct canvas
 editing (Studio's Design panel).
 
 ## 3. Data model
@@ -96,6 +96,11 @@ editing (Studio's Design panel).
 - `GET /api/motion/styles`; `POST /api/jobs/{id}/approve` `{stage: "brief", brief}`.
 - MCP `motion_video` (same params; `brief` + `variables` re-render without the LLM).
 - Dashboard: tab ✨ Motion (`web/js/motion.js`), gate via `window.renderGate` → `motionGate`.
+- Phase 2: `GET /api/motion/styles` also returns `options` (allowed fonts/texture/deco/shadow/motion/case/transition/
+  head_weight) and `roles`; each style has `own`. `POST /api/motion/styles` (save; an own `id` updates),
+  `DELETE /api/motion/styles/{id}` (own only), `POST /api/motion/styles/from-image {image, name?}` → draft + `palette`.
+  Job param `alpha` → result `alpha` (MOV path). Export format `gif` (`POST /api/jobs/{id}/export`). MCP
+  `motion_video(alpha=…)`.
 
 ## 6. Verification (2026-10-30)
 
@@ -108,3 +113,42 @@ editing (Studio's Design panel).
   13 variables, only the given numbers), edited at the gate (style → khoi-mau, discount changed) → 19.5 s MP4,
   −16.0 LUFS, CC-BY credit shown; re-render 1:1 in `den-vang` with 2 CSV rows → 3 MP4s in 41 s. Frames checked by
   eye for all 8 styles × 4 aspects; dashboard checked by headless-Chrome screenshot.
+
+## 7. Phase 2 (2026-10-31)
+
+Order: own looks → look from a picture → GIF → transparent MOV (the only part touching the encoder and compose, so last).
+
+**Own looks.** Saved in `data/motion/styles.json` (id `rieng-<slug>`, never a built-in id). `motion.all_styles()` merges
+them with `STYLES`, so the dashboard cards, the LLM's auto-pick list, `normalise` and `run` all see them.
+`clean_style` clamps every field to what `motion.html` draws (`OPTIONS`); fonts only from `FONTS` (the faces checked
+for Vietnamese in §4); colours `#rrggbb`, else the base look's. Readability is enforced on save: ink ≥ 4.5:1 on bg,
+muted ≥ 3:1, and when ink is unreadable on the surface colour a `surface_ink` is added (list rows). Unknown fields fall
+back to the base look. Editing a look changes later renders only (clips are cached by their render data, which
+includes the colours and fonts). Deleting a look an old brief names falls back to the default look.
+
+**Look from a picture.** `palette_from_image`: Pillow median-cut to 8 colours on a ≤ 200 px copy (deterministic, no
+model, cheap enough for a request handler). bg = commonest colour; ink = the swatch (or near-black/white) with the best
+contrast on bg; accents = the most saturated swatches at least 60 RGB units from bg and ink (weighted by share);
+the accent is pushed until bg-coloured button text reads at 3:1. Fonts and the rest come from Đêm neon (dark bg) or
+Doanh nghiệp (light bg) in the API draft; the dashboard editor takes only its colours (fonts, shapes and motion
+the owner already set are kept). Nothing is saved until the owner presses save. Not done: a look from a website or video, an
+LLM naming the mood.
+
+**GIF.** An `export.FORMATS` entry (all video jobs): fps 15, long side ≤ 720 px, `palettegen stats_mode=diff` +
+`paletteuse` bayer, `-loop 0`, no sound. Export labels drop "giọng gốc" for jobs without narration.
+
+**Transparent MOV.** A second render, not an export (`final.mp4` has no alpha). `motion.html` gets `alpha: true` →
+no page colour and no texture (an ink-coloured texture over someone else's footage looks like dirt); decorations,
+cards and text stay. `Renderer.render(alpha=True)` takes PNG shots with `omit_background` → ProRes 4444
+`yuva444p10le` (`animate.PRORES_ALPHA`, qscale 9: ~36 MB/s at 1080×1920, about half the encoder default; HEVC with
+alpha was tried and rejected — ffprobe reports yuv420p, so the alpha cannot be checked). `alpha_concat` cross-fades the
+clips on `yuva444p10le` with the look's transition (`fadeblack` → `fade`), no sound; the per-scene ProRes clips are
+deleted once joined. Only the main video gets one, not CSV rows.
+
+**Verification.** `tests/test_motion.py` +5 (own look clamp/save/update/delete/LLM list; palette roles and contrast
+on a drawn picture, light and dark; GIF size and streams; alpha MOV: ProRes, yuva, transparent corner, opaque text,
+no intermediates, size cap). Full suite 234 passed. E2E on a throw-away data dir (port 8766, music symlinked, live
+server idle) driven by Playwright through the dashboard: look from a picture → texture/font changed → saved → selected
+→ renamed → 9:16 render with alpha (5.5 s video in 24 s) → GIF exported from the export bar → look deleted; no JS
+errors, server log clean. Frames checked by eye (alpha composited over a checkerboard; count-up ends on the given
+value).

@@ -1,6 +1,6 @@
 """Motion videos, style first (docs/SDD-motion.md): pick a look, describe the video, confirm a brief, render.
 
-A native take on the Motion Studio skill (scripts/motion-studio, built on HyperFrames): the same process — style →
+A native take on the Motion Studio skill (built on HyperFrames; reviewed in SDD-motion §1): the same process — style →
 description → brief the owner confirms → build → retype words in variables → export, in 16:9, 9:16, 1:1 or 4:5 —
 on MediaForge's own renderer (video/scene_web/motion.html, anime.js + GSAP, stepped frame by frame in Chromium by
 video/animate.py) and composer, with no voice: text, numbers, charts, logos and pictures that move, plus music.
@@ -105,6 +105,16 @@ STYLES: dict[str, dict[str, Any]] = {
 }
 DEFAULT_STYLE = "neon-dem"
 TEXT_FX = {"snappy": "rise", "smooth": "blur", "bouncy": "wave", "typing": "type"}
+# What an owner-made look may use: only values motion.html draws and fonts checked for every Vietnamese letter (§4).
+FONTS = ("Avenir Next", "Helvetica Neue", "Baskerville", "Big Caslon", "DIN Condensed", "Georgia", "Chalkboard SE",
+         "Courier New", "Monaco")
+COLOR_ROLES = ("bg", "surface", "ink", "muted", "accent", "accent2")
+OPTIONS = {"fonts": FONTS, "texture": ("none", "grid", "dots", "stripes", "rules", "grain"),
+           "deco": ("none", "blobs", "blocks", "rings", "bubbles", "lines", "frame"),
+           "shadow": ("none", "soft", "hard", "glow"), "motion": tuple(TEXT_FX), "case": ("none", "uppercase"),
+           "transition": ("fade", "smoothleft", "fadeblack", "circleopen", "slideup", "dissolve"),  # compose.TRANSITIONS
+           "head_weight": (400, 500, 700, 800)}
+OWN_PREFIX = "rieng-"
 # library moods (music_catalog.json) a brief may ask for
 MUSIC_MOODS = ("acoustic", "ambient", "classical", "lofi", "piano")
 
@@ -113,12 +123,177 @@ class BriefError(ValueError):
     pass
 
 
+def _own_file() -> Path:
+    return settings.sub("motion") / "styles.json"
+
+
+def own_styles() -> dict[str, dict[str, Any]]:
+    """The owner's saved looks (data/motion/styles.json), keyed by id."""
+    f = _own_file()
+    try:
+        data = json.loads(f.read_text("utf-8")) if f.exists() else {}
+    except (OSError, ValueError):
+        return {}
+    return {k: v for k, v in data.items() if isinstance(v, dict) and k.startswith(OWN_PREFIX)}
+
+
+def all_styles() -> dict[str, dict[str, Any]]:
+    return {**STYLES, **own_styles()}
+
+
 def styles() -> list[dict[str, Any]]:
-    return [{"id": k, **v} for k, v in STYLES.items()]
+    return [{"id": k, **v, "own": k.startswith(OWN_PREFIX)} for k, v in all_styles().items()]
 
 
 def style_of(style_id: str | None) -> dict[str, Any]:
-    return {"id": style_id if style_id in STYLES else DEFAULT_STYLE, **STYLES.get(style_id or "", STYLES[DEFAULT_STYLE])}
+    """A look by id; an unknown id (or a deleted own look an old brief still names) falls back to the default."""
+    every = all_styles()
+    return {"id": style_id if style_id in every else DEFAULT_STYLE, **every.get(style_id or "", STYLES[DEFAULT_STYLE])}
+
+
+# ------------------------------------------------------------------ colour helpers (own looks, palette from a picture)
+
+def _rgb(hex_: str) -> tuple[int, int, int]:
+    return int(hex_[1:3], 16), int(hex_[3:5], 16), int(hex_[5:7], 16)
+
+
+def _hex(rgb: Any) -> str:
+    return "#" + "".join(f"{max(0, min(255, round(float(c)))):02x}" for c in rgb)
+
+
+def _lum(hex_: str) -> float:
+    def ch(c: int) -> float:
+        c = c / 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = _rgb(hex_)
+    return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b)
+
+
+def contrast(a: str, b: str) -> float:
+    """WCAG contrast ratio of two #rrggbb colours (1–21)."""
+    la, lb = sorted((_lum(a), _lum(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def _mix(a: str, b: str, k: float) -> str:
+    """a moved toward b by k (0 = a, 1 = b)."""
+    return _hex([x + (y - x) * k for x, y in zip(_rgb(a), _rgb(b))])
+
+
+def _readable(fg: str, bg: str, ratio: float) -> str:
+    """fg nudged toward black or white (whichever contrasts more with bg) until it reaches `ratio` against bg."""
+    if contrast(fg, bg) >= ratio:
+        return fg
+    pole = "#000000" if contrast("#000000", bg) > contrast("#ffffff", bg) else "#ffffff"
+    for k in range(1, 11):
+        c = _mix(fg, pole, k / 10)
+        if contrast(c, bg) >= ratio:
+            return c
+    return pole
+
+
+_HEX = re.compile(r"#[0-9a-fA-F]{6}")
+
+
+def clean_style(s: dict[str, Any]) -> dict[str, Any]:
+    """An owner-made look clamped to what the renderer draws; text kept readable on its backgrounds."""
+    base = style_of(s.get("base") if s.get("base") in all_styles() else None)
+    cols = {r: (str(s.get("colors", {}).get(r) or "").lower() if _HEX.fullmatch(str(s.get("colors", {}).get(r) or ""))
+                else base["colors"][r]) for r in COLOR_ROLES}
+    cols["ink"] = _readable(cols["ink"], cols["bg"], 4.5)
+    cols["muted"] = _readable(cols["muted"], cols["bg"], 3.0)
+    if contrast(cols["ink"], cols["surface"]) < 4.5:  # list rows draw text on the surface colour (khoi-mau style)
+        cols["surface_ink"] = _readable(cols["bg"], cols["surface"], 4.5)
+    fonts_in = s.get("fonts") or {}
+    fonts = {k: fonts_in.get(k) if fonts_in.get(k) in FONTS else base["fonts"][k] for k in ("head", "body", "label")}
+
+    def pick(key: str) -> Any:
+        return s.get(key) if s.get(key) in OPTIONS[key] else base[key]
+
+    def num(key: str, lo: int, hi: int) -> int:
+        try:
+            return max(lo, min(hi, int(s.get(key, base[key]))))
+        except (TypeError, ValueError):
+            return base[key]
+
+    name = _nfc(s.get("name"))[:40] or "Phong cách của tôi"
+    return {"name": name, "mood": _nfc(s.get("mood"))[:80] or base["mood"],
+            "when": _nfc(s.get("when"))[:160] or f"Phong cách riêng của bạn (dựa trên {base['name']}).",
+            "look": _nfc(s.get("look"))[:200] or f"Màu riêng; chữ {fonts['head']}; nền {cols['bg']}, điểm nhấn {cols['accent']}.",
+            "colors": cols, "fonts": fonts, "head_weight": pick("head_weight"), "case": pick("case"),
+            "radius": num("radius", 0, 40), "border": num("border", 0, 6), "shadow": pick("shadow"),
+            "texture": pick("texture"), "deco": pick("deco"), "motion": pick("motion"), "transition": pick("transition"),
+            "base": base["id"]}
+
+
+def save_style(s: dict[str, Any]) -> dict[str, Any]:
+    """Create (no id, or a built-in id) or update (an own id) a saved look; returns it with its id."""
+    clean = clean_style(s)
+    own = own_styles()
+    sid = s.get("id") if str(s.get("id") or "") in own else None
+    if not sid:
+        stem = OWN_PREFIX + (_slug(clean["name"]).replace("_", "-") or "kieu")
+        sid, n = stem, 2
+        while sid in own:
+            sid, n = f"{stem}-{n}", n + 1
+    own[sid] = clean
+    f = _own_file()
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(own, ensure_ascii=False, indent=2))
+    tmp.replace(f)
+    return {"id": sid, **clean, "own": True}
+
+
+def delete_style(style_id: str) -> bool:
+    own = own_styles()
+    if style_id not in own:
+        return False
+    del own[style_id]
+    _own_file().write_text(json.dumps(own, ensure_ascii=False, indent=2))
+    return True
+
+
+def palette_from_image(path: str | Path, name: str | None = None) -> dict[str, Any]:
+    """A look drafted from a reference picture (screenshot, poster, brand sheet): median-cut palette → colour roles.
+    Not saved: the owner tweaks it in the editor first. bg = the dominant colour, ink = best contrast, accents = the most
+    saturated colours that differ from both; fonts and the rest come from a light or dark built-in look."""
+    import colorsys
+
+    from PIL import Image
+
+    with Image.open(path) as im:
+        im = im.convert("RGB")
+        im.thumbnail((200, 200))
+        q = im.quantize(colors=8, method=Image.Quantize.MEDIANCUT)
+        pal = q.getpalette() or []
+        counts = sorted(q.getcolors() or [], reverse=True)
+    total = sum(c for c, _ in counts) or 1
+    sw = [(c / total, _hex(pal[i * 3:i * 3 + 3])) for c, i in counts]  # (share, colour), commonest first
+
+    def dist(a: str, b: str) -> float:
+        return sum((x - y) ** 2 for x, y in zip(_rgb(a), _rgb(b))) ** 0.5
+
+    def sat(c: str) -> float:
+        h, l, s = colorsys.rgb_to_hls(*(x / 255 for x in _rgb(c)))
+        return s * (1 - abs(2 * l - 1))  # chroma: greys and near-black/white score low
+
+    bg = sw[0][1]
+    ink = max([c for _, c in sw] + ["#111111", "#ffffff"], key=lambda c: contrast(c, bg))
+    share = {c: s for s, c in sw}
+    vivid = sorted((c for _, c in sw if dist(c, bg) > 60 and dist(c, ink) > 60 and sat(c) > 0.15),
+                   key=lambda c: -sat(c) * (0.3 + share[c]) ** 0.5)
+    dark = _lum(bg) < 0.18
+    base = style_of("neon-dem" if dark else "doanh-nghiep")
+    accent = vivid[0] if vivid else base["colors"]["accent"]
+    accent2 = next((c for c in vivid[1:] if dist(c, accent) > 60), None) or base["colors"]["accent2"]
+    # the button draws bg-coloured text on the accent
+    if contrast(bg, accent) < 3:
+        accent = _readable(accent, bg, 3.0)
+    stem = Path(str(path)).stem
+    draft = clean_style({"name": name or f"Từ ảnh {stem}"[:40], "base": base["id"], "colors": {
+        "bg": bg, "surface": _mix(bg, ink, 0.07), "ink": ink, "muted": _mix(ink, bg, 0.4), "accent": accent,
+        "accent2": accent2}, "look": "Bảng màu lấy từ ảnh mẫu: " + ", ".join(c for _, c in sw[:6]) + "."})
+    return {**draft, "palette": [{"color": c, "share": round(s, 3)} for s, c in sw]}
 
 
 def _nfc(text: Any) -> str:
@@ -159,9 +334,9 @@ def brief_prompt(p: dict[str, Any], st: dict[str, Any], images: list[str], has_l
         f"Who watches and where: {p['audience']}" if p.get("audience") else "",
         f"Frame: {p.get('aspect') or '16:9'}. Length: about {seconds} seconds in total.",
         f"Words on screen in: {LANGS.get(lang, lang)}.",
-        (f"Visual style (already fixed): {st['name']}: {st['mood']}." if p.get("style") in STYLES else
+        (f"Visual style (already fixed): {st['name']}: {st['mood']}." if p.get("style") in all_styles() else
          'Pick the visual style that fits best and return its id as "style": ' + "; ".join(
-             f"{k} ({v['mood']}; {v['when']})" for k, v in STYLES.items()) + "."),
+             f"{k} ({v['mood']}; {v['when']})" for k, v in all_styles().items()) + "."),
         (f"The owner's pictures: {len(images)} (" + ", ".join(f"{i + 1} = {Path(x).name}" for i, x in enumerate(images))
          + "). Use each at most once in an image scene.") if images else "No pictures: do not use image scenes.",
         "A logo is provided; the cta scene shows it." if has_logo else "",
@@ -267,7 +442,7 @@ def normalise(brief: dict[str, Any], *, seconds: float, images: int) -> dict[str
     for s in scenes:
         s["seconds"] = round(min(MAX_SCENE, max(MIN_SCENE, s["seconds"] * k)), 2)
     mood = brief.get("music_mood") if brief.get("music_mood") in MUSIC_MOODS else None
-    return {**({"style": brief["style"]} if brief.get("style") in STYLES else {}),
+    return {**({"style": brief["style"]} if brief.get("style") in all_styles() else {}),
             "title": _nfc(brief.get("title"))[:120] or "Motion video", "summary": _nfc(brief.get("summary"))[:600],
             "music_mood": mood, "variables": variables, "scenes": scenes,
             "warnings": list(dict.fromkeys(warnings)), **({"llm": brief["llm"]} if brief.get("llm") else {})}
@@ -331,9 +506,11 @@ def scene_data(sc: dict[str, Any], st: dict[str, Any], cols: dict[str, str], *, 
 
 
 def render_version(brief: dict[str, Any], st: dict[str, Any], vals: dict[str, str], out_file: Path, *, aspect: str,
-                   files: dict[str, str], cache: Path, music_file: str | None, progress: Progress) -> Path:
+                   files: dict[str, str], cache: Path, music_file: str | None, progress: Progress,
+                   alpha: bool = False) -> Path:
     """One MP4 from the brief filled with `vals`. Scene clips are cached by content, so a batch row (or a scene a
-    variable does not touch) is drawn once."""
+    variable does not touch) is drawn once. alpha=True: a transparent ProRes 4444 MOV instead (no page colour or
+    texture, no sound) to lay over other footage."""
     from mediaforge.video import animate, compose
 
     W, H = ASPECTS[aspect]
@@ -347,18 +524,23 @@ def render_version(brief: dict[str, Any], st: dict[str, Any], vals: dict[str, st
         length = sc["seconds"] + (T if i < n - 1 else 0)
         data = scene_data(resolve_scene(sc, vals), st, cols, index=i, count=n, width=W, height=H, seconds=length,
                           files=files)
+        if alpha:
+            data["alpha"] = True
         key = hashlib.sha1(json.dumps([data, {k: files.get(k) for k in sorted(files)}], sort_keys=True,
                                       ensure_ascii=False).encode()).hexdigest()[:16]
-        jobs.append((cache / f"{key}.mp4", data, length))
+        jobs.append((cache / f"{key}.{'mov' if alpha else 'mp4'}", data, length))
     todo = [j for j in jobs if not j[0].exists()]
     if todo:
         with animate.renderer(W, H) as r:
             r.files = dict(files)
             for k, (clip, data, length) in enumerate(todo):
                 progress(0.85 * k / len(todo), f"đang dựng cảnh {k + 1}/{len(todo)}")
-                tmp = clip.with_suffix(".part.mp4")
-                r.render("motion.html", data, tmp, seconds=length)
+                tmp = clip.with_suffix(".part" + clip.suffix)
+                r.render("motion.html", data, tmp, seconds=length, alpha=alpha)
                 tmp.replace(clip)
+    if alpha:
+        progress(0.9, "đang ghép bản nền trong suốt")
+        return alpha_concat([c for c, _, _ in jobs], [sc["seconds"] for sc in scenes], T, st["transition"], out_file)
     progress(0.88, "đang ghép cảnh và nhạc")
     total = sum(sc["seconds"] for sc in scenes)
     silent = out_file.with_name(out_file.stem + ".silence.wav")
@@ -369,6 +551,28 @@ def render_version(brief: dict[str, Any], st: dict[str, Any], vals: dict[str, st
         compose.compose(clips, silent, out_file, aspect=aspect, music=music_file, music_volume=0.5, transition=T)
     finally:
         silent.unlink(missing_ok=True)
+    return out_file
+
+
+def alpha_concat(clips: list[Path], slots: list[float], T: float, transition: str, out_file: Path, fps: int = 30) -> Path:
+    """Cross-fade transparent clips (each its slot + T long, as compose's timeline) into one ProRes 4444 MOV, keeping
+    the alpha plane. A fade through black would darken the overlay, so it becomes a plain fade."""
+    style = "fade" if transition == "fadeblack" else transition
+    args: list[str] = []
+    for c in clips:
+        args += ["-i", str(c)]
+    fc = [f"[{i}:v]format=yuva444p10le,setpts=PTS-STARTPTS[s{i}]" for i in range(len(clips))]
+    last, offset = "[s0]", 0.0
+    for i in range(1, len(clips)):
+        offset += slots[i - 1]
+        fc.append(f"{last}[s{i}]xfade=transition={style}:duration={T}:offset={offset:.3f}[x{i}]")
+        last = f"[x{i}]"
+    from mediaforge.video import animate
+
+    A.run_ffmpeg([*args, "-filter_complex", ";".join(fc), "-map", last, "-an", "-r", str(fps), *animate.PRORES_ALPHA,
+                  str(out_file)])
+    for c in clips:  # ~40 MB per second each: not worth caching once joined
+        c.unlink(missing_ok=True)
     return out_file
 
 
@@ -395,7 +599,7 @@ def apply_brief_edits(out: Path, edited: dict[str, Any]) -> dict[str, Any]:
 def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
     """params: style, prompt, message, offer, audience, aspect, seconds, lang, logo, images, music ("auto" | id |
     "none"), review (["brief"] pauses for the owner), brief (a ready brief: no LLM), variables ({id|label: value}),
-    rows ([{name, id|label: value}]: one MP4 per row)."""
+    rows ([{name, id|label: value}]: one MP4 per row), alpha (also a transparent ProRes 4444 MOV of the main video)."""
     from mediaforge import pipelines
     from mediaforge.video import compose
 
@@ -416,7 +620,7 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
         brief = normalise(raw, seconds=sum(float(s.get("seconds") or 0) for s in raw.get("scenes") or [])
                           if isinstance(p.get("brief"), dict) else seconds, images=len(images))
         brief["images"] = len(images)
-        if p.get("style") in STYLES:  # the owner's pick; "auto" leaves the brief's own
+        if p.get("style") in all_styles():  # the owner's pick; "auto" leaves the brief's own
             brief["style"] = p["style"]
         brief["style"] = style_of(brief.get("style"))["id"]
         bf.write_text(json.dumps(brief, ensure_ascii=False, indent=2))
@@ -436,7 +640,7 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
     # ---- 3. render: the main version, then one per spreadsheet row
     vals = values_of(brief, p.get("variables"))
     rows = [r for r in (p.get("rows") or []) if isinstance(r, dict)][:50]
-    steps = 1 + len(rows)
+    steps = 1 + len(rows) + (1 if p.get("alpha") else 0)
     final = render_version(brief, st, vals, out / "final.mp4", aspect=aspect, files=files, cache=out / "scenes",
                            music_file=music_file, progress=pipelines._sub(progress, 0.05, 0.05 + 0.9 / steps))
     versions = []
@@ -449,9 +653,15 @@ def run(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dic
         render_version(brief, st, rv, f, aspect=aspect, files=files, cache=out / "scenes", music_file=music_file,
                        progress=pipelines._sub(progress, lo, lo + 0.9 / steps))
         versions.append({"name": name, "video": str(f), "values": rv})
+    alpha = None
+    if p.get("alpha"):
+        alpha = str(render_version(brief, st, vals, out / "final-alpha.mov", aspect=aspect, files=files,
+                                   cache=out / "scenes", music_file=None, alpha=True,
+                                   progress=pipelines._sub(progress, 0.05 + 0.9 * (steps - 1) / steps, 0.95)))
     thumb = compose.thumbnail(final, out / "thumbnail.jpg", at=min(1.2, sum(s["seconds"] for s in brief["scenes"]) / 2))
     result = {"video": str(final), "thumbnail": str(thumb), "title": fill(brief["title"], vals), "brief": str(bf),
               "brief_data": brief, "values": vals, "style": st["id"], "aspect": aspect, "versions": versions,
+              **({"alpha": alpha} if alpha else {}),
               "duration": round(A.probe_duration(final), 2),
               "report": {"aspect": aspect, "style": st["id"], "scenes": len(brief["scenes"]), "music_id": music_id,
                          "music_credit": music.credit(music_id), "elapsed": round(time.time() - t0, 1),

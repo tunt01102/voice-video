@@ -624,7 +624,38 @@ def create_app() -> FastAPI:
     def motion_styles():
         from mediaforge import motion
 
-        return {"styles": motion.styles(), "aspects": list(motion.ASPECTS), "default": motion.DEFAULT_STYLE}
+        return {"styles": motion.styles(), "aspects": list(motion.ASPECTS), "default": motion.DEFAULT_STYLE,
+                "options": motion.OPTIONS, "roles": motion.COLOR_ROLES}
+
+    @app.post("/api/motion/styles")
+    def save_motion_style(body: dict[str, Any] = Body(...)):
+        """Save an own look ({id?, name, base, colors, fonts, …}); an own id updates it, anything else creates one."""
+        from mediaforge import motion
+
+        return motion.save_style(body)
+
+    @app.delete("/api/motion/styles/{sid}")
+    def delete_motion_style(sid: str):
+        from mediaforge import motion
+
+        if not motion.delete_style(sid):
+            raise HTTPException(404, "not an own look (built-in looks cannot be deleted)")
+        return {"ok": True}
+
+    @app.post("/api/motion/styles/from-image")
+    def motion_style_from_image(body: dict[str, Any] = Body(...)):
+        """{image: local path (e.g. from /api/uploads), name?} → a draft look (not saved) + the picture's palette."""
+        from PIL import UnidentifiedImageError
+
+        from mediaforge import motion
+
+        img = Path(str(body.get("image") or ""))
+        if not img.is_file():
+            raise HTTPException(400, "image not found")
+        try:
+            return motion.palette_from_image(img, body.get("name"))
+        except (UnidentifiedImageError, OSError) as e:
+            raise HTTPException(400, f"not a picture: {e}") from e
 
     @app.get("/api/music")
     def list_music():
