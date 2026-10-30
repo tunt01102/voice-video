@@ -7,7 +7,14 @@ const FIELD_VI = { headline: "Tiêu đề", sub: "Dòng phụ", value: "Con số
   author: "Tác giả", button: "Nút" };
 const ASPECT_HINT = { "16:9": "YouTube, website, màn hình họp", "9:16": "Reels, TikTok, Shorts", "1:1": "Bài đăng vuông",
   "4:5": "Bài đăng feed dọc" };
-let STYLES = null, picked = "auto", aspect = "16:9";
+const ROLE_VI = { bg: "Nền", surface: "Thẻ / khối", ink: "Chữ", muted: "Chữ phụ", accent: "Điểm nhấn", accent2: "Nhấn phụ" };
+const OPT_VI = { texture: "Hoạ tiết nền", deco: "Trang trí", shadow: "Đổ bóng", motion: "Chuyển động chữ", case: "Kiểu chữ tiêu đề",
+  transition: "Chuyển cảnh", head_weight: "Độ đậm tiêu đề" };
+const VAL_VI = { none: "không", grid: "lưới", dots: "chấm", stripes: "sọc chéo", rules: "kẻ ngang", grain: "hạt giấy", blobs: "quầng sáng",
+  blocks: "mảng khối", rings: "vòng tròn", bubbles: "bong bóng", lines: "đường kẻ", frame: "khung viền", soft: "mềm", hard: "cứng",
+  glow: "phát sáng", snappy: "bật lên", smooth: "mượt", bouncy: "nảy", typing: "gõ chữ", uppercase: "VIẾT HOA", fade: "mờ dần",
+  smoothleft: "trượt trái", fadeblack: "qua nền đen", circleopen: "mở tròn", slideup: "trượt lên", dissolve: "hoà tan" };
+let STYLES = null, OPTIONS = null, ROLES = [], picked = "auto", aspect = "16:9";
 const form = $("#motion-form");
 
 function styleCard(s) {
@@ -28,11 +35,91 @@ function paintStyles() {
     <div class="mo-pv"><b>✨</b><span>Chưa biết chọn gì?</span></div>
     <div class="mo-meta"><strong>Tự chọn giúp mình</strong><small>Claude chọn phong cách hợp với nội dung; bạn đổi được ở bước duyệt brief.</small></div></button>`;
   $("#mo-styles").innerHTML = auto + STYLES.map(styleCard).join("");
-  $$(".mo-style", $("#mo-styles")).forEach((b) => b.onclick = () => {
-    picked = b.dataset.id;
-    $$(".mo-style").forEach((x) => x.setAttribute("aria-checked", x.dataset.id === picked));
-  });
+  $$(".mo-style", $("#mo-styles")).forEach((b) => b.onclick = () => pick(b.dataset.id));
+  pick(STYLES.some((s) => s.id === picked) ? picked : "auto");
 }
+function pick(id) {
+  picked = id;
+  $$(".mo-style", $("#mo-styles")).forEach((x) => x.setAttribute("aria-checked", x.dataset.id === picked));
+  $("#mo-own-act").hidden = !STYLES.find((s) => s.id === picked)?.own;
+}
+async function loadStyles() {
+  const r = await api("/api/motion/styles");
+  STYLES = r.styles; OPTIONS = r.options; ROLES = r.roles;
+  paintStyles();
+}
+
+// ------------------------------------------------------------------ own looks: editor, palette from a picture
+function editor(s) {
+  const box = $("#mo-editor");
+  const sel = (key, vals, cur) => `<label>${OPT_VI[key]}<select data-o="${key}">${vals.map((v) =>
+    `<option value="${esc(v)}" ${String(v) === String(cur) ? "selected" : ""}>${esc(VAL_VI[v] || v)}</option>`).join("")}</select></label>`;
+  const font = (k, lab) => `<label>${lab}<select data-font="${k}">${OPTIONS.fonts.map((f) =>
+    `<option ${f === s.fonts[k] ? "selected" : ""} style="font-family:'${esc(f)}'">${esc(f)}</option>`).join("")}</select></label>`;
+  box.innerHTML = `<h4>${s.id ? "Sửa phong cách" : "Phong cách mới"}</h4>
+    <div class="mo-ed-grid"><div>
+      <div class="grid2"><label>Tên<input class="mo-ed-name" value="${esc(s.name || "")}" maxlength="40"></label>
+        <label>Dựa trên<select class="mo-ed-base">${STYLES.filter((x) => !x.own).map((x) =>
+          `<option value="${esc(x.id)}" ${x.id === s.base ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label></div>
+      <label>Lấy màu từ ảnh mẫu (ảnh chụp website, poster, bảng màu thương hiệu)<input type="file" accept="image/*" class="mo-ed-img"></label>
+      <div class="mo-ed-pal"></div>
+      <div class="mo-ed-cols">${ROLES.map((r) => `<label>${ROLE_VI[r]}<input type="color" data-role="${r}" value="${esc(s.colors[r])}"></label>`).join("")}</div>
+      <div class="grid2">${font("head", "Font tiêu đề")}${font("body", "Font nội dung")}${font("label", "Font nhãn")}
+        ${sel("head_weight", OPTIONS.head_weight, s.head_weight)}${sel("case", OPTIONS.case, s.case)}
+        <label>Bo góc: <output class="mo-ed-rv">${s.radius}</output><input type="range" data-n="radius" min="0" max="40" value="${s.radius}"></label>
+        <label>Viền: <output class="mo-ed-bv">${s.border}</output><input type="range" data-n="border" min="0" max="6" value="${s.border}"></label>
+        ${["shadow", "texture", "deco", "motion", "transition"].map((k) => sel(k, OPTIONS[k], s[k])).join("")}</div>
+      <small class="muted">Chỉ có các font đã kiểm đủ dấu tiếng Việt. Màu chữ quá giống màu nền sẽ được tự chỉnh cho dễ đọc khi lưu.</small>
+    </div><div class="mo-ed-pv"></div></div>
+    <div class="actions"><button type="button" class="primary small mo-ed-save">Lưu phong cách</button>
+      <button type="button" class="ghost small mo-ed-cancel">Đóng</button><span class="muted mo-ed-st"></span></div>`;
+  const read = () => ({ id: s.id, name: $(".mo-ed-name", box).value.trim(), base: $(".mo-ed-base", box).value,
+    colors: Object.fromEntries($$("[data-role]", box).map((i) => [i.dataset.role, i.value])),
+    fonts: Object.fromEntries($$("[data-font]", box).map((i) => [i.dataset.font, i.value])),
+    ...Object.fromEntries($$("[data-o]", box).map((i) => [i.dataset.o, i.dataset.o === "head_weight" ? +i.value : i.value])),
+    ...Object.fromEntries($$("[data-n]", box).map((i) => [i.dataset.n, +i.value])), mood: s.mood, when: s.when, look: s.look });
+  const preview = () => {
+    const v = read();
+    $(".mo-ed-rv", box).textContent = v.radius; $(".mo-ed-bv", box).textContent = v.border;
+    $(".mo-ed-pv", box).innerHTML = styleCard({ ...s, ...v, id: "_pv", name: v.name || "Phong cách của tôi" });
+  };
+  box.oninput = preview; box.onchange = preview;
+  $(".mo-ed-base", box).onchange = () => {  // a new base fills everything except the name
+    const b = STYLES.find((x) => x.id === $(".mo-ed-base", box).value);
+    editor({ ...b, id: s.id, name: $(".mo-ed-name", box).value, base: b.id, mood: "", when: "", look: "" });
+  };
+  $(".mo-ed-img", box).onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    $(".mo-ed-st", box).textContent = "Đang đọc màu…";
+    try {
+      const d = await api("/api/motion/styles/from-image", { method: "POST", body: JSON.stringify({ image: await upload(f), name: $(".mo-ed-name", box).value.trim() || null }) });
+      editor({ ...d, id: s.id });
+      $(".mo-ed-pal", $("#mo-editor")).innerHTML = `<span class="muted">Màu trong ảnh:</span> ` + d.palette.map((p) =>
+        `<i title="${esc(p.color)} · ${Math.round(p.share * 100)}%" style="background:${esc(p.color)}"></i>`).join("");
+    } catch (err) { toast(err.message); $(".mo-ed-st", box).textContent = ""; }
+  };
+  $(".mo-ed-cancel", box).onclick = () => { box.hidden = true; };
+  $(".mo-ed-save", box).onclick = async (e) => {
+    const btn = e.currentTarget; btn.disabled = true;
+    try {
+      const saved = await api("/api/motion/styles", { method: "POST", body: JSON.stringify(read()) });
+      await loadStyles(); pick(saved.id); box.hidden = true; toast(`Đã lưu “${saved.name}”`);
+    } catch (err) { toast(err.message); } finally { btn.disabled = false; }
+  };
+  box.hidden = false; preview();
+  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+$("#mo-new-style").onclick = () => {
+  const b = STYLES.find((x) => x.id === picked && !x.own) || STYLES.find((x) => x.id === picked) || STYLES[0];
+  editor({ ...b, id: null, base: b.base || b.id, name: "", mood: "", when: "", look: "" });
+};
+$("#mo-edit-style").onclick = () => editor(STYLES.find((x) => x.id === picked));
+$("#mo-del-style").onclick = async () => {
+  const s = STYLES.find((x) => x.id === picked);
+  if (!s?.own || !confirm(`Xoá phong cách “${s.name}”? Video đã dựng không bị ảnh hưởng.`)) return;
+  try { await api(`/api/motion/styles/${encodeURIComponent(s.id)}`, { method: "DELETE" }); picked = "auto"; $("#mo-editor").hidden = true; await loadStyles(); }
+  catch (err) { toast(err.message); }
+};
 
 function musicOptions(sel, current) {
   const tracks = (typeof musicTracks !== "undefined" ? musicTracks : []).filter((t) => t.available);
@@ -55,8 +142,7 @@ async function recent() {
 
 window.loadMotion = async () => {
   if (!STYLES) {
-    try { STYLES = (await api("/api/motion/styles")).styles; } catch (e) { toast(e.message); return; }
-    paintStyles();
+    try { await loadStyles(); } catch (e) { toast(e.message); return; }
   }
   musicOptions($("#mo-music"), $("#mo-music").value);
   recent();
