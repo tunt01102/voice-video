@@ -214,3 +214,20 @@ def test_dark_picture_drafts_a_dark_look(tmp_path):
     Image.new("RGB", (100, 100), (12, 14, 30)).save(pic)
     s = motion.palette_from_image(pic, "Tối")
     assert s["name"] == "Tối" and s["base"] == "neon-dem" and motion.contrast(s["colors"]["ink"], s["colors"]["bg"]) >= 4.5
+
+
+def test_gif_export_is_small_silent_and_looping(tmp_path):
+    import subprocess
+    from mediaforge import audio as A
+    from mediaforge import export
+    from mediaforge.config import settings
+    src = tmp_path / "v.mp4"
+    A.run_ffmpeg(["-f", "lavfi", "-i", "testsrc2=size=1080x1350:rate=30:duration=1.5", "-f", "lavfi", "-i",
+                  "anullsrc=r=48000:cl=mono", "-shortest", "-c:v", "h264_videotoolbox", "-pix_fmt", "yuv420p", str(src)])
+    out = tmp_path / "v.gif"
+    A.run_ffmpeg(export.ffmpeg_args("gif", src, out))
+    st = json.loads(subprocess.run([settings.ffprobe, "-v", "error", "-show_entries", "stream=codec_name,width,height,codec_type",
+                                    "-of", "json", str(out)], capture_output=True, text=True).stdout)["streams"]
+    assert [s["codec_type"] for s in st] == ["video"] and st[0]["codec_name"] == "gif"
+    assert (st[0]["width"], st[0]["height"]) == (576, 720)  # portrait: the long side capped at 720
+    assert "gif" in export.formats_for({"video": str(src)})

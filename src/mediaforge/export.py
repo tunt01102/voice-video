@@ -37,11 +37,15 @@ FORMATS: dict[str, dict[str, Any]] = {
     "webm": {"label": "WebM (VP9, chậm hơn)", "video": True,
              "v": ["-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "32", "-row-mt", "1", "-deadline", "good", "-cpu-used", "4"],
              "a": ["-c:a", "libopus", "-b:a", "160k"], "s": ["-c:s", "webvtt"], "extra": []},
+    # Animated GIF (no sound): longest side ≤ 720 px at 15 fps, one palette per clip so motion graphics stay crisp.
+    "gif": {"label": "GIF (ảnh động, không tiếng)", "video": True, "gif": True},
     "mp3": {"label": "MP3 (chỉ âm thanh)", "video": False, "a": ["-c:a", "libmp3lame", "-b:a", "192k"]},
     "wav": {"label": "WAV (chỉ âm thanh)", "video": False, "a": ["-c:a", "pcm_s16le", "-ar", "48000"]},
     "m4a": {"label": "M4A (chỉ âm thanh)", "video": False, "a": ["-c:a", "aac", "-b:a", "192k"]},
 }
-VIDEO_JOB_FORMATS = ["mp4", "mp4_fhd", "mov", "mkv", "webm", "mp3", "wav", "m4a"]  # first = default
+VIDEO_JOB_FORMATS = ["mp4", "mp4_fhd", "mov", "mkv", "webm", "gif", "mp3", "wav", "m4a"]  # first = default
+GIF_FILTER = ("fps=15,scale='if(gte(iw,ih),min(720,iw),-2)':'if(gte(iw,ih),-2,min(720,ih))':flags=lanczos,split[a][b];"
+              "[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle")
 AUDIO_JOB_FORMATS = ["mp3", "wav", "m4a"]
 
 
@@ -94,6 +98,8 @@ def ffmpeg_args(fmt: str, base: str | Path, out: str | Path, *, voice: str | Pat
     voice: a new voice-only track to mix in place of base's audio (None = keep base's audio).
     """
     spec = FORMATS[fmt]
+    if spec.get("gif"):
+        return ["-i", str(base), "-filter_complex", f"[0:v]{GIF_FILTER}", "-an", "-loop", "0", str(out)]
     args = ["-i", str(base)]
     if voice is not None and base_is_video:
         args += ["-i", str(voice)]
