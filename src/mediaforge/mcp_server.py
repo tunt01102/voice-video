@@ -308,6 +308,29 @@ async def present_recording(recording: str, slides: list[str] | None = None, scr
 
 
 @mcp.tool()
+async def motion_video(prompt: str | None = None, style: str = "auto", message: str | None = None,
+                       offer: str | None = None, audience: str | None = None, aspect: str = "16:9", seconds: int = 20,
+                       lang: str = "vi", logo: str | None = None, images: list[str] | None = None, music: str = "auto",
+                       brief: dict[str, Any] | None = None, variables: dict[str, str] | None = None,
+                       rows: list[dict[str, str]] | None = None, review: list[str] | None = None,
+                       wait_seconds: float = 0) -> dict[str, Any]:
+    """Motion-graphics video, style first (no voice): animated words, numbers, charts, logos and pictures + music,
+    for ads, KPI clips, product intros, announcements, social posts (dashboard tab ✨ Motion; docs/SDD-motion.md).
+
+    style: auto (Claude picks) | neon-dem | giay-muc | khoi-mau | keo-ngot | doanh-nghiep | den-vang | rung-xanh |
+    lap-trinh (GET /api/motion/styles describes them). prompt: what the video is; message: the one line it must land;
+    offer: prices/numbers exactly as they must appear (no others are invented). aspect: 16:9 | 9:16 | 1:1 | 4:5.
+    lang: on-screen language (vi | en). logo / images: local picture paths. music: auto | none | list_music id.
+    Every editable word is a brief variable: pass brief (a previous result's brief_data) + variables ({id or label:
+    value}) to re-render without the LLM, and rows ([{name, id or label: value}], max 50) for one MP4 per row
+    (result.versions). review=["brief"] waits for the owner to confirm the brief in the dashboard."""
+    return await _submit("motion", {"prompt": prompt, "style": style, "message": message, "offer": offer,
+                                    "audience": audience, "aspect": aspect, "seconds": seconds, "lang": lang,
+                                    "logo": logo, "images": images, "music": music, "brief": brief,
+                                    "variables": variables, "rows": rows, "review": review or []}, wait_seconds)
+
+
+@mcp.tool()
 async def transcribe_subtitles(media: str, lang: str | None = None, burn: bool = False,
                                translate_to: str | None = None, wait_seconds: float = 300) -> dict[str, Any]:
     """Create SRT/VTT/ASS subtitles for a local audio/video file (Whisper large-v3-turbo, word timings).

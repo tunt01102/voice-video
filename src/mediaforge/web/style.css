@@ -262,3 +262,37 @@ a.btn { display: inline-block; text-decoration: none; color: var(--text); border
 @media (max-width: 900px) { .ls-body { grid-template-columns: 1fr; } .ls-side { max-height: 30vh; } }
 .beautify { flex: 1 0 100%; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
 .beautify summary { cursor: pointer; font-weight: 600; }
+
+/* Motion tab (js/motion.js, docs/SDD-motion.md) */
+.mo-step { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; }
+.mo-step span { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; }
+.mo-styles { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-top: 12px; }
+.mo-style { text-align: left; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); cursor: pointer; overflow: hidden; font: inherit; display: flex; flex-direction: column; }
+.mo-style[aria-checked="true"] { outline: 3px solid var(--accent); outline-offset: -1px; }
+.mo-pv { aspect-ratio: 16 / 9; position: relative; padding: 14px 16px; display: flex; flex-direction: column; justify-content: center; gap: 4px; overflow: hidden; }
+.mo-pv b { font-size: 24px; line-height: 1.05; }
+.mo-pv span { font-size: 12px; }
+.mo-pv em { font-style: normal; font-size: 11px; font-weight: 700; padding: 3px 9px; align-self: flex-start; margin-top: 4px; }
+.mo-pv .mo-bar { width: 34px; height: 5px; display: block; }
+.mo-pv .mo-sw { position: absolute; right: 10px; bottom: 8px; display: flex; gap: 3px; }
+.mo-pv .mo-sw i { width: 11px; height: 11px; border-radius: 3px; border: 1px solid rgba(127,127,127,.35); }
+.mo-auto .mo-pv { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 25%, var(--panel)), color-mix(in srgb, var(--accent-2) 25%, var(--panel))); align-items: center; }
+.mo-meta { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+.mo-meta strong { font-size: 14.5px; } .mo-mood { font-weight: 600; }
+.mo-lab { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.mo-vars { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 14px; }
+.mo-vars code { font-size: 11px; opacity: .7; }
+.mo-vars input[type=color] { height: 40px; padding: 2px; }
+.mo-scenes { padding-left: 22px; }
+.mo-scenes li { margin-bottom: 14px; padding-bottom: 6px; border-bottom: 1px dashed var(--line); }
+.mo-scenes li.removed { opacity: .35; }
+.mo-scenes li.removed .grid2, .mo-scenes li.removed label:not(.mo-sec) { pointer-events: none; }
+.mo-scene-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.mo-scene-head .muted { flex: 1; font-size: 13px; }
+.mo-sec { flex-direction: row; align-items: center; margin: 0; width: 110px; }
+.mo-sec input { padding: 4px 6px; }
+.mo-after, .job-out .mo-after { flex: 1 0 100%; }
+.mo-after details { margin-top: 10px; }
+.mo-after .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mo-after .mo-csv { width: auto; }
+#motion-result > h3 { font-size: 14px; margin: 18px 0 8px; }

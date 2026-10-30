@@ -12,6 +12,7 @@
   <div class="brand"><span class="logo">◆</span> MediaForge <small id="health-dot" class="dot"></small></div>
   <nav id="tabs">
     <button data-tab="create" class="active">Tạo mới</button>
+    <button data-tab="motion">✨ Motion</button>
     <button data-tab="recite">🪷 Ngâm thơ</button>
     <button data-tab="sing">🎵 Hát</button>
     <button data-tab="jobs">Jobs</button>
@@ -173,6 +174,48 @@
 
   <div id="prescan" class="card" hidden></div>
   <div id="create-result"></div>
+</section>
+
+<!-- ============================== MOTION (js/motion.js, docs/SDD-motion.md) -->
+<section id="tab-motion" class="tab">
+  <form id="motion-form" autocomplete="off">
+    <div class="card">
+      <h3 class="mo-step"><span>1</span> Chọn phong cách</h3>
+      <p class="muted">Video nào cũng bắt đầu từ một phong cách: màu sắc, font chữ, và cách chuyển động. Bấm một thẻ để chọn, hoặc chọn “Tự chọn giúp mình”.</p>
+      <div id="mo-styles" class="mo-styles" role="radiogroup" aria-label="Phong cách"></div>
+    </div>
+    <div class="card">
+      <h3 class="mo-step"><span>2</span> Mô tả video</h3>
+      <label>Video về điều gì?
+        <textarea name="prompt" rows="3" required placeholder="VD: video quảng cáo 20 giây cho món cold brew mới của quán cà phê, ra mắt tháng 11"></textarea></label>
+      <div class="grid2">
+        <label>Thông điệp chính (một câu)<input name="message" placeholder="VD: Cold brew ủ 18 tiếng, ít đắng, nhiều hương"></label>
+        <label>Ưu đãi, giá, con số (ghi đúng như bạn muốn hiện)<input name="offer" placeholder="VD: 45.000đ, giảm 20% tuần đầu, 1.200 khách"></label>
+        <label>Ai xem, xem ở đâu<input name="audience" placeholder="VD: khách văn phòng, đăng Facebook và TikTok"></label>
+        <label>Chữ trên video bằng
+          <select name="lang"><option value="vi">Tiếng Việt</option><option value="en">English</option></select></label>
+      </div>
+      <div class="grid2">
+        <div><span class="mo-lab">Khung hình</span>
+          <div class="seg" id="mo-aspect">
+            <button type="button" data-v="16:9" class="active" title="YouTube, website, màn hình họp">16:9</button>
+            <button type="button" data-v="9:16" title="Reels, TikTok, Shorts">9:16</button>
+            <button type="button" data-v="1:1" title="Bài đăng vuông">1:1</button>
+            <button type="button" data-v="4:5" title="Bài đăng feed dọc">4:5</button></div>
+          <small class="muted" id="mo-aspect-hint">YouTube, website, màn hình họp</small></div>
+        <label>Độ dài: <output id="mo-sec-out">20 giây</output>
+          <input type="range" name="seconds" min="8" max="60" step="1" value="20"></label>
+      </div>
+      <div class="grid2">
+        <label>Logo (tuỳ chọn)<input type="file" name="logo" accept="image/*"></label>
+        <label>Ảnh sản phẩm, ảnh chụp màn hình (tuỳ chọn, tối đa 8)<input type="file" name="images" accept="image/*" multiple></label>
+        <label>Nhạc nền<select name="music" id="mo-music"><option value="auto">Tự chọn theo không khí video</option><option value="none">Không nhạc</option></select></label>
+      </div>
+      <label class="check"><input type="checkbox" name="review" checked> Cho tôi duyệt brief (thông điệp, các cảnh, chữ) trước khi dựng</label>
+      <div class="actions"><button class="primary" id="mo-submit">✨ Viết brief</button><span class="muted" id="mo-hint"></span></div>
+    </div>
+  </form>
+  <div id="motion-result"></div>
 </section>
 
 <!-- ============================== NGÂM THƠ / HÁT (filled by app.js: songForm) -->
@@ -378,5 +421,6 @@
 <script type="module" src="/js/live.js"></script>
 <script type="module" src="/js/lessons.js"></script>
 <script type="module" src="/js/jobpage.js"></script>
+<script type="module" src="/js/motion.js"></script>
 </body>
 </html>

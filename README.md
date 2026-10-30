@@ -175,6 +175,25 @@ Outputs are written to `data/outputs/<kind>/<job-id>/`:
 - `plan.json`
 - `report.json` (pronunciation QA for each sentence)
 
+### ✨ Motion (style-first motion graphics)
+
+Dashboard tab **✨ Motion** makes short videos without a voice: animated words, numbers, charts, logos and your
+pictures, with music. Good for ads, KPI clips, product intros, announcements and social posts.
+
+1. **Pick a style** from the 8 cards (Đêm neon, Giấy & mực, Khối màu, Kẹo ngọt, Doanh nghiệp, Đen & vàng, Rừng xanh,
+   Lập trình), or "Tự chọn giúp mình" and Claude picks.
+2. **Describe it**: what it is, the one message, prices/numbers (shown exactly as typed; nothing is invented),
+   audience, on-screen language, frame (16:9, 9:16, 1:1, 4:5), length, logo and pictures, music.
+3. **Confirm the brief**: Claude writes the scenes; every word you may change is a field ("ô sửa nhanh"). Edit
+   texts, drop scenes, change the style, then "Duyệt brief → dựng video". A 20 s video renders in about 30 s.
+4. **Change and re-render**: under the video, retype a field, switch style, frame or music, then "Dựng lại". Claude
+   isn't asked again.
+5. **Many versions from a spreadsheet**: "⬇ CSV mẫu", fill one row per version (columns = field names, `name` for
+   the file name, empty = keep), upload, then "Dựng mỗi dòng một video".
+
+From other sessions: MCP `motion_video` (pass a previous `brief_data` + `variables`/`rows` to re-render). Outputs go
+to `data/outputs/motion/<job-id>/` (`final.mp4`, `versions/`, `brief.json`). Design: [docs/SDD-motion.md](docs/SDD-motion.md).
+
 ### Hát & Ngâm thơ
 
 Your cloned voice chants a poem or sings lyrics, with accompaniment and an optional illustrated video.
@@ -220,6 +239,7 @@ claude mcp add -s user --transport http mediaforge http://127.0.0.1:8765/mcp
 | `generate_image` | Prompt → image(s) |
 | `prepare_video` | Writes the script and lists terms the TTS may misread, before rendering. Returns `plan_file` + `candidates`. |
 | `create_video` | `kind`: `narrated`, `short` or `explainer`. Input is a brief, your own script, slide markdown, or a `plan_file` from `prepare_video` with `pronunciations` (`{"PNJ": "Pi En Di"}`). Returns a `job_id`. |
+| `motion_video` | Style-first motion graphics (no voice): style, prompt, offer, aspect, length → brief (optionally confirmed in the dashboard) → MP4; `brief` + `variables` / `rows` re-render or batch without the LLM |
 | `list_voices` / `set_default_voice` | Voices with their `default` flag; make a voice (yours or a giọng mẫu) the default |
 | `revoice_video` | Reads a finished video again in another voice (clone, blend or stock); keeps script and pictures |
 | `resubtitle_video` | Rebuilds a finished video's subtitles (fit-to-frame, karaoke) without re-rendering voice or images |

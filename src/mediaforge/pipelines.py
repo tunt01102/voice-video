@@ -1101,6 +1101,12 @@ def run_present(p: dict[str, Any], progress: Progress, job_id: str | None = None
     return present.run(p, progress, job_id)
 
 
+def run_motion(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
+    from mediaforge import motion
+
+    return motion.run(p, progress, job_id)
+
+
 def run_eval(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:
     from mediaforge import evals
 
@@ -1122,7 +1128,7 @@ RUNNERS: dict[str, Callable[..., dict[str, Any]]] = {
     "rerender": run_rerender, "export": run_export, "prepare": run_prepare, "resubtitle": run_resubtitle,
     "repronounce": run_repronounce, "sing": run_sing, "recite": run_recite,
     "blend": run_blend, "eval": run_eval, "restage": run_restage, "stock_previews": run_stock_previews,
-    "revoice": run_revoice, "present": run_present,
+    "revoice": run_revoice, "present": run_present, "motion": run_motion,
 }
 
 

@@ -20,7 +20,7 @@ from mediaforge.config import settings
 
 log = logging.getLogger(__name__)
 
-RESOLUTIONS = {"16:9": (1920, 1080), "9:16": (1080, 1920), "1:1": (1080, 1080)}
+RESOLUTIONS = {"16:9": (1920, 1080), "9:16": (1080, 1920), "1:1": (1080, 1080), "4:5": (1080, 1350)}
 MOTIONS = ["zoom_in", "pan_right", "zoom_out", "pan_left", "pan_up", "zoom_in_tl"]
 TRANSITIONS = ["fade", "smoothleft", "fadeblack", "circleopen", "slideup", "dissolve"]
 

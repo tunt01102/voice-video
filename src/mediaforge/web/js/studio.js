@@ -101,7 +101,7 @@ function storyGate(job, out) {
   out.append(box);
 }
 
-window.renderGate = (job, out) => (job.result?.stage === "visuals" ? storyGate : planGate)(job, out);
+window.renderGate = (job, out) => (job.result?.stage === "brief" ? window.motionGate : job.result?.stage === "visuals" ? storyGate : planGate)(job, out);
 
 // Scenes of a finished video on its review page: redraw one picture or change the music without a full render.
 window.sceneStrip = async (job) => {
