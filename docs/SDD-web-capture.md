@@ -271,13 +271,28 @@ Changes from the design, each found while building or in E2E:
    left out of the menu, a repeated step (other than scrolling) stops the agent, and the LLM's missing items stay its
    goal until it answers `done`. Valid actions are checked against the numbered menus; anything else stops it.
 7. **Number check (§6).** Opt-in: `normalise(numbers=…)` runs only for jobs that used a capture and never on a
-   brief the owner passes or edits. Numbers are compared as bare digits (`45.000đ` = `45000 VND`). Videos (§12.5):
-   lint `L6` flags a digit in the narration found in neither the brief nor the approved facts. Known limit: the
-   script writer often spells numbers out for the voice ("một triệu chín trăm nghìn"), which L6 does not read.
+   brief the owner passes or edits. Videos (§12.5): lint `L6` flags a number in the narration found in neither the
+   brief nor the approved facts. Numbers are compared by value (`numbers_in`, 2026-10-31 follow-up): a written
+   number stands for every reading of a final separator with one or two digits after it (`$34.00` is 3400 or 34,
+   `1,9` is 19 or 1.9; `26.170` only 26170), times a scale word after it (`7,6 triệu` = 7 600 000, `45k`). The
+   script writer spells numbers out for the voice, so Vietnamese and English number words are read too ("một triệu
+   chín trăm nghìn", the spoken short forms "một triệu chín" = 1 900 000 and "hai triệu rưỡi", "một phẩy ba mốt
+   triệu", "thirty-four", "two point five million"). A spelled-out number counts only from 10 up ("một", "hai",
+   "one" are ordinary words), and "năm" is a digit only where the grammar needs one: "mười năm", "hai mươi năm",
+   "trăm năm" are years (15 is "mười lăm"). Not read: "hai bốn" for 24 and other elisions without mươi except
+   "ba mốt", "hai lăm", "mười tư"; a number split by punctuation.
 8. **Own fields win (§6).** An owner `offer` removes the website's price facts from the brief prompt; the owner's
    pictures and logo come before the captured ones.
 9. **prepare_video (§12.5)** captures without a gate (it is already a check step) and returns `media`; the dashboard
    passes that, without `urls`, to the render.
+10. **Shorter fact list (owner 2026-10-31).** A capture with the agent kept 32–60 facts (up to 38 page headings), and
+   only the first 40 reached the prompt although the gate showed all of them ticked. `recommend_facts` now ticks at
+   most 20 (`FACTS_SHOWN`): names, prices, brands, noted lines and each page's h1, then descriptions, then the other
+   headings in page order; never a repeat (the same text, a second name or description of one page, a price whose
+   numbers an earlier price holds: the longer line wins). The gate lists the ticked facts and folds the rest,
+   unticked, under "Thêm N dòng"; an approval keeps at most 40 (`FACTS_MAX`), and one without edits (MCP without
+   the gate, `prepare_video`) keeps the ticked ones. A capture from before this change (no marks) keeps every fact.
+   L6 and the site reference follow what was kept, so a number only in an unticked heading is flagged.
 
 E2E 2026-10-31 (data-store copy, port 8766; Motion, review capture + brief, approved as recommended):
 

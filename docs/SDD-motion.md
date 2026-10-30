@@ -95,7 +95,10 @@ editing (Studio's Design panel).
   values, style, aspect, versions[{name, video, values}], duration, report{music_id, music_credit, warnings…}`.
 - `GET /api/motion/styles`; `POST /api/jobs/{id}/approve` `{stage: "brief", brief}`.
 - MCP `motion_video` (same params; `brief` + `variables` re-render without the LLM).
-- Dashboard: tab ✨ Motion (`web/js/motion.js`), gate via `window.renderGate` → `motionGate`.
+- Dashboard: tab ✨ Motion (`web/js/motion.js`), gate via `window.renderGate` → `motionGate`. Steps 1 and 2 are
+  `<details>` cards (owner 2026-10-31): step 1 folds to the style's name when a card is clicked (not while the own-look
+  editor is open), step 2 folds when the brief of the job submitted from it is approved (or right away without a
+  brief review); a click reopens either. A finished job shows its pictures as a row of thumbnails under the video.
 - Phase 2: `GET /api/motion/styles` also returns `options` (allowed fonts/texture/deco/shadow/motion/case/transition/
   head_weight) and `roles`; each style has `own`. `POST /api/motion/styles` (save; an own `id` updates),
   `DELETE /api/motion/styles/{id}` (own only), `POST /api/motion/styles/from-image {image, name?}` → draft + `palette`.
