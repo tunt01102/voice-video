@@ -88,14 +88,22 @@
       return n;
     },
 
+    // Instant scrolls: with CSS scroll-behavior: smooth a plain scrollTo animates, and a screenshot taken meanwhile
+    // catches a sticky header over the wrong part of the page.
     async scrollThrough(maxSteps) {
       const step = innerHeight * 0.9;
       for (let i = 0; i < maxSteps && scrollY + innerHeight < document.documentElement.scrollHeight; i++) {
-        scrollBy(0, step);
+        scrollBy({ top: step, behavior: "instant" });
         await new Promise((r) => setTimeout(r, 250));
       }
-      scrollTo(0, 0);
-      await new Promise((r) => setTimeout(r, 400));
+      await this.toTop();
+    },
+
+    async toTop() {
+      scrollTo({ top: 0, left: 0, behavior: "instant" });
+      for (let i = 0; i < 20 && scrollY > 0; i++) await new Promise((r) => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 300));
+      return scrollY;
     },
 
     scan() {
@@ -145,7 +153,7 @@
         const outer = named.filter((el) => !named.some((o) => o !== el && o.contains(el)));
         const home = [...header.querySelectorAll('a[href="/"], a[href="#top"], a[href="./"], a[rel~=home], a[aria-label*="home" i], a[aria-label*="trang chủ" i]')]
           .filter((a) => fits(a) && clean(a.innerText).length <= 30);
-        for (const el of [...outer, ...home].slice(0, 3)) {
+        for (const el of [...new Set([...outer, ...home])].slice(0, 3)) {
           const r = el.getBoundingClientRect();
           logoBlocks.push({ sel: selectorOf(el), w: Math.round(r.width), h: Math.round(r.height), text: clean(el.innerText).slice(0, 40) });
         }

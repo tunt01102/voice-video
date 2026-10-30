@@ -837,6 +837,7 @@ def visit(s: Session, c: Capture, url: str, *, screenshots: bool, first: bool) -
     c.pic_cands += [{**p, "page": scan["url"]} for p in pics]
     c.logo_cands += [{**lg, "page": scan["url"]} for lg in logos if not lg.get("late")]
     for lb in (scan.get("logoBlocks") or [])[:1]:
+        s.call("__mf.toTop()")  # a sticky header is drawn where it sits at the top of the page
         png = s.screenshot(lb["sel"], omit_background=True)
         if png:
             c.logo_cands.append({"data": png, "source": "header:logo", "sel": lb["sel"], "page": scan["url"]})
@@ -849,6 +850,7 @@ def visit(s: Session, c: Capture, url: str, *, screenshots: bool, first: bool) -
             if png:
                 c.shots.append({"data": png, "kind": "block", "source": "screenshot:block", "url": scan["url"],
                                 "page": scan["url"], "sel": sel})
+        s.call("__mf.toTop()")
         png = s.screenshot()
         if png:
             c.shots.append({"data": png, "kind": "hero", "source": "screenshot:hero", "url": scan["url"], "page": scan["url"]})
@@ -1304,7 +1306,7 @@ def _act(s: Session, c: Capture, client: Any, name: str, arg: Any, menus: dict[s
         st.update(ok=True, arg=next(x for x in menus["buttons"] if x["n"] == arg)["text"])
         return "đã bấm"
     if name == "scroll":
-        s.page.evaluate("d => scrollBy(0, (d === 'down' ? 0.9 : -0.9) * innerHeight)", arg)
+        s.page.evaluate("d => scrollBy({top: (d === 'down' ? 0.9 : -0.9) * innerHeight, behavior: 'instant'})", arg)
         s.page.wait_for_timeout(400)
         st["ok"] = True
         return "đã cuộn"
