@@ -193,7 +193,11 @@ pictures, with music. Good for ads, KPI clips, product intros, announcements and
    isn't asked again.
 5. **Many versions from a spreadsheet**: "⬇ CSV mẫu", fill one row per version (columns = field names, `name` for
    the file name, empty = keep), upload, then "Dựng mỗi dòng một video".
-6. **Other formats**: the export bar under the video has **GIF** (≤ 720 px, 15 fps, no sound). Tick "MOV nền trong
+6. **Voice-over (optional)**: "Giọng đọc thuyết minh" picks any voice from the Giọng nói tab (your cloned voice,
+   a stock voice, a blend) or "Giọng mặc định". Claude then writes a spoken line per scene (editable at the brief
+   gate as "Lời đọc"); a scene grows to fit its line, music drops to narration level and ducks under the voice.
+   Choosing a voice when re-rendering a video made without one reads the words on screen.
+7. **Other formats**: the export bar under the video has **GIF** (≤ 720 px, 15 fps, no sound). Tick "MOV nền trong
    suốt" (when describing, or under "Sửa chữ… & dựng lại") for a transparent ProRes 4444 MOV to lay over other
    footage (no background, no sound, ~40 MB per second).
 

@@ -257,3 +257,77 @@ def test_alpha_mov_keeps_transparency():
     assert Path(r["video"]).exists() and abs(motion.A.probe_duration(mov) - 3.2) < 0.4
     assert not list(mov.parent.glob("scenes/*.mov"))  # the big ProRes intermediates are gone once joined
     assert mov.stat().st_size < 60e6 * 3.2  # qscale 9, not the encoder's ~90 MB/s default
+
+
+# ------------------------------------------------------------------ voice-over (§8)
+
+def test_narration_is_kept_filled_and_does_not_change_the_clip():
+    b = motion.normalise({"variables": [{"id": "price", "label": "Giá", "value": "45.000đ"}],
+                          "scenes": [{"kind": "cta", "headline": "Đặt ngay", "button": "Mua",
+                                      "narration": "Chỉ {{price}} thôi, đặt ngay hôm nay."}]}, seconds=4, images=0)
+    sc = motion.resolve_scene(b["scenes"][0], motion.values_of(b))
+    assert sc["narration"] == "Chỉ 45.000đ thôi, đặt ngay hôm nay."
+    st = motion.style_of(None)
+    d1 = motion.scene_data(sc, st, st["colors"], index=0, count=1, width=10, height=10, seconds=2, files={})
+    d2 = motion.scene_data({**sc, "narration": "khác"}, st, st["colors"], index=0, count=1, width=10, height=10,
+                           seconds=2, files={})
+    assert d1 == d2 and "narration" not in d1["scene"]  # editing a line never redraws the picture
+    # without lines, a voice reads what the scene shows
+    assert motion.narration_of({"kind": "stat", "value": "1.200+", "label": "khách"}) == "1.200+. khách."
+    assert motion.narration_of({"kind": "cta", "headline": "Đặt ngay", "sub": "x.vn", "button": "Mua"}) == "Đặt ngay. Mua."
+
+
+def test_voice_choice_is_checked_before_anything_runs():
+    from mediaforge.voice import profiles
+    assert motion.resolve_voice(None) is None and motion.resolve_voice("") is None and motion.resolve_voice("none") is None
+    with pytest.raises(ValueError):
+        motion.resolve_voice("no-such-voice")
+    v = profiles.create_voice("Thử Motion")
+    assert motion.resolve_voice(v["id"]) == v["id"]
+    with pytest.raises(ValueError):  # the LLM is never asked for a job that would fail at the voice
+        motion.run({"prompt": "x", "voice": "no-such-voice"}, lambda *_: None, job_id="bad-voice")
+    assert "narration" in motion.brief_prompt({"prompt": "x", "voice": v["id"]}, motion.style_of(None), [], False)
+    assert "narration" not in motion.brief_prompt({"prompt": "x"}, motion.style_of(None), [], False)
+
+
+@pytest.mark.skipif(not animate.available(), reason="Playwright/Chromium not installed")
+def test_voice_over_stretches_scenes_and_lands_on_them(monkeypatch):
+    import numpy as np
+
+    from mediaforge import audio as A
+    from mediaforge.video import compose
+    from mediaforge.voice import profiles
+    from mediaforge.voice import speak as S
+
+    vid = profiles.create_voice("Thử giọng đọc")["id"]
+    calls, seen = [], {}
+
+    def fake_speak(text, *, out_dir, name, **kw):
+        calls.append(text)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        t = np.arange(A.SR) / A.SR
+        return {"audio": str(A.save(Path(out_dir) / f"{name}.wav", (0.3 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)))}
+
+    real = compose.compose
+
+    def spy(*a, **kw):
+        seen.update(kw)
+        return real(*a, **kw)
+
+    monkeypatch.setattr(S, "speak", fake_speak)
+    monkeypatch.setattr(compose, "compose", spy)
+    brief = {"title": "T", "variables": [{"id": "price", "label": "Giá", "type": "text", "value": "45.000đ"}],
+             "scenes": [{"kind": "title", "seconds": 1.6, "headline": "Mới", "narration": "Chỉ {{price}}."},
+                        {"kind": "cta", "seconds": 1.6, "headline": "Đặt ngay", "button": "Mua"}]}
+    r = motion.run({"brief": brief, "aspect": "1:1", "music": "none", "voice": vid, "rows": [{"name": "giong-y-het"}]},
+                   lambda *_: None, job_id="voice-test")
+    slots = r["report"]["slots"]
+    assert slots[0] >= motion.LEAD + 1.0 + motion.TAIL - 0.01 and slots[1] == 1.6  # a scene without a line stays silent
+    assert calls == ["Chỉ 45.000đ."]  # filled, synthesised once for the video and its identical row
+    assert seen["music_volume"] == 0.18
+    track = A.load(r["narration"])
+    assert abs(len(track) / A.SR - (sum(slots) - 0.5)) < 0.02
+    rms = lambda a, b: float(np.sqrt(np.mean(track[int(a * A.SR):int(b * A.SR)] ** 2)))
+    assert rms(motion.LEAD + 0.1, motion.LEAD + 0.9) > 0.1 and rms(0, motion.LEAD - 0.05) < 1e-4
+    assert rms(slots[0] + 0.05, sum(slots) - 0.55) < 1e-4
+    assert abs(r["duration"] - sum(slots)) < 0.5 and r["report"]["voice"] == vid
