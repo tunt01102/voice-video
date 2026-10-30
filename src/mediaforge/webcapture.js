@@ -130,15 +130,27 @@
           sel: selectorOf(img) });
       }
       const icons = [...document.querySelectorAll('link[rel~="icon"], link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]')]
-        .map((l) => ({ rel: l.rel, href: abs(l.getAttribute("href")), sizes: l.getAttribute("sizes") || "" }));
-      const svgLogos = [...document.querySelectorAll("header svg, [role=banner] svg, nav svg, .header svg, #header svg")]
-        .filter((s) => visible(s) && s.getBoundingClientRect().width >= 40)
-        .filter((s) => { for (let n = s, i = 0; n && i < 4; n = n.parentElement, i++) {
-          if (LOGOISH.test((n.id || "") + " " + (n.getAttribute("class") || "") + " " + (n.getAttribute("aria-label") || ""))) return true; }
-          return false; })
-        .slice(0, 3).map((s) => ({ sel: selectorOf(s), w: Math.round(s.getBoundingClientRect().width), h: Math.round(s.getBoundingClientRect().height) }));
+        .map((l) => ({ rel: l.rel, href: abs(l.getAttribute("href")), sizes: l.getAttribute("sizes") || "", type: l.type || "" }));
+      // Logos drawn in the page rather than linked as a file: an element in the header whose id/class/aria-label
+      // says logo or brand (an inline SVG plus a wordmark), else the header's home link when it is short text or a
+      // picture (a text wordmark). Python screenshots them.
+      const header = document.querySelector("header, [role=banner]") || document.querySelector("nav");
+      const logoBlocks = [];
+      if (header) {
+        const fits = (el) => { const r = el.getBoundingClientRect();
+          return visible(el) && r.width >= 40 && r.height >= 16 && r.width <= innerWidth * 0.5 && r.height <= 220; };
+        const named = [...header.querySelectorAll("a, div, span, svg, picture")].filter((el) =>
+          LOGOISH.test((el.id || "") + " " + (el.getAttribute("class") || "") + " " + (el.getAttribute("aria-label") || "")) && fits(el));
+        const outer = named.filter((el) => !named.some((o) => o !== el && o.contains(el)));
+        const home = [...header.querySelectorAll('a[href="/"], a[href="#top"], a[href="./"], a[rel~=home], a[aria-label*="home" i], a[aria-label*="trang chủ" i]')]
+          .filter((a) => fits(a) && clean(a.innerText).length <= 30);
+        for (const el of [...outer, ...home].slice(0, 3)) {
+          const r = el.getBoundingClientRect();
+          logoBlocks.push({ sel: selectorOf(el), w: Math.round(r.width), h: Math.round(r.height), text: clean(el.innerText).slice(0, 40) });
+        }
+      }
       return { url: location.href, title: clean(document.title).slice(0, 200), meta, jsonld, headings, prices,
-        images, icons, svgLogos, text: (document.body ? document.body.innerText : "").slice(0, 200000) };
+        images, icons, logoBlocks, text: (document.body ? document.body.innerText : "").slice(0, 200000) };
     },
 
     // The smallest ancestor of the element at `sel` whose text holds one of `texts` (a price, the name) and that

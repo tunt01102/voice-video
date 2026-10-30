@@ -403,6 +403,9 @@ def facts_from(scan: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[st
     for i in icons:
         if "apple-touch-icon" in i["rel"] or _icon_size(i["sizes"]) >= MIN_LOGO:
             logos.append({"url": i["href"], "source": "link:" + i["rel"].replace(" ", "-")})
+    # an SVG icon scales to any size, but it is only the mark: after the header's own logo (visit() adds that)
+    logos += [{"url": i["href"], "source": "link:svg-icon", "late": True} for i in icons
+              if i.get("type") == "image/svg+xml" or urlsplit(i["href"]).path.endswith(".svg")]
     # page images: largest rendered first, after the declared product pictures
     declared = [p for p in pics if p["source"] != "page:img"]
     page = sorted((p for p in pics if p["source"] == "page:img"), key=lambda p: -p.get("area", 0))
@@ -784,8 +787,11 @@ class Capture:
         score, missing = checklist(cap, self.want)
         cap["confidence"] = {"checklist": score, "score": score, "missing": missing}
         if self.llm.get("confidence") is not None:  # §12.1: min(checklist, LLM)
+            said = self.llm.get("missing", [])
+            # a key the LLM explains ("price: …") replaces the bare checklist key
+            keys = {m.split(":")[0].strip().lower() for m in said}
             cap["confidence"].update(llm=self.llm["confidence"], score=min(score, self.llm["confidence"]),
-                                     missing=list(dict.fromkeys(missing + self.llm.get("missing", [])))[:8])
+                                     missing=list(dict.fromkeys([m for m in missing if m not in keys] + said))[:8])
         elif self.llm.get("note"):
             cap["confidence"]["llm_note"] = self.llm["note"]
         return cap
@@ -829,11 +835,12 @@ def visit(s: Session, c: Capture, url: str, *, screenshots: bool, first: bool) -
     facts, pics, logos = facts_from(scan)
     c.add_facts(facts)
     c.pic_cands += [{**p, "page": scan["url"]} for p in pics]
-    c.logo_cands += [{**lg, "page": scan["url"]} for lg in logos]
-    for sv in (scan.get("svgLogos") or [])[:1]:
-        png = s.screenshot(sv["sel"], omit_background=True)
+    c.logo_cands += [{**lg, "page": scan["url"]} for lg in logos if not lg.get("late")]
+    for lb in (scan.get("logoBlocks") or [])[:1]:
+        png = s.screenshot(lb["sel"], omit_background=True)
         if png:
-            c.logo_cands.append({"data": png, "source": "header:svg", "sel": sv["sel"], "page": scan["url"]})
+            c.logo_cands.append({"data": png, "source": "header:logo", "sel": lb["sel"], "page": scan["url"]})
+    c.logo_cands += [{**lg, "page": scan["url"]} for lg in logos if lg.get("late")]
     if screenshots and time.monotonic() < deadline:
         sel = _product_sel(scan, pics)
         texts = [f["value"] for f in facts if f["key"] in ("price", "name")][:6]
@@ -984,17 +991,18 @@ def llm_score(cap: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
         f"Pictures captured ({DATA_NOTE}):", fenced(pics) if pics else "(none)",
         f"Logo: {'yes' if cap.get('logo') else 'no'}.",
         "How confident are you (0-100) that this is enough to make the video well, without inventing facts? "
-        'Return JSON {"confidence": <0-100>, "missing": [what is still missing, using these words where they fit: '
-        + ", ".join(WANT_EN) + "]}.",
+        'Return JSON {"confidence": <0-100>, "missing": [what is still missing: each a short Vietnamese phrase of at '
+        "most 12 words, starting with one of " + ", ".join(k for k in WANT_EN if k != "clean")
+        + ' and a colon where it fits, e.g. "price: chưa rõ giá của gói cơ bản"]}.',
     ] if x)
     try:
         data, provider = llm.complete_json(prompt, SCORE_SYSTEM, timeout=120)
         conf = max(0, min(100, int(float(data.get("confidence")))))
     except Exception as e:  # noqa: BLE001 — no LLM: the checklist alone decides, with a note
         return {"note": f"không chấm được bằng LLM ({type(e).__name__}): chỉ dùng checklist"}
-    missing = [_nfc(m)[:60] for m in (data.get("missing") or []) if isinstance(m, str) and _nfc(m)][:6]
+    missing = [_nfc(m)[:140] for m in (data.get("missing") or []) if isinstance(m, str) and _nfc(m)][:6]
     missing = [next((k for k, v in WANT_EN.items() if m.lower() in (k, v)), m) for m in missing]
-    return {"confidence": conf, "missing": missing, "provider": provider}
+    return {"confidence": conf, "missing": [m for m in missing if m != "clean"], "provider": provider}
 
 
 def rescore(c: Capture, urls: list[str], use_llm: bool = True) -> dict[str, Any]:
@@ -1213,7 +1221,7 @@ def parse_action(data: Any, menus: dict[str, Any]) -> tuple[str, Any] | None:
             n = int(data.get("n"))
         except (TypeError, ValueError):
             return None
-        return (act, n) if 1 <= n <= len(menu) else None
+        return (act, n) if n in {x["n"] for x in menu} else None
     if act == "scroll":
         return (act, data.get("dir")) if data.get("dir") in ("down", "up") else None
     if act == "note_fact":
@@ -1229,11 +1237,13 @@ def run_agent(s: Session, c: Capture, client: Any, urls: list[str], missing: lis
 
     deadline = time.monotonic() + AGENT_SECONDS
     steps = c.agent_steps
+    tried: set[tuple[str, str, str]] = set()
     for k in range(1, AGENT_STEPS + 1):
         if time.monotonic() > deadline or not missing:
             break
         try:
             menus = s.call("__mf.menus()")
+            menus["images"] = [x for x in menus["images"] if x["src"].split("#")[0] not in c.seen]  # tried already
             text = s.call("__mf.text()")
         except Exception as e:  # noqa: BLE001 — the page went away
             steps.append({"step": k, "action": "stop", "result": f"trang lỗi: {type(e).__name__}"})
@@ -1244,11 +1254,16 @@ def run_agent(s: Session, c: Capture, client: Any, urls: list[str], missing: lis
             steps.append({"step": k, "action": "stop", "result": f"LLM lỗi: {type(e).__name__}"})
             break
         act = parse_action(data, menus)
+        if act and act[0] != "scroll" and (act[0], json.dumps(act[1], ensure_ascii=False), s.page.url) in tried:
+            steps.append({"step": k, "action": act[0], "arg": act[1] if not isinstance(act[1], tuple) else list(act[1]),
+                          "url": s.page.url, "ok": False, "result": "lặp lại một bước đã làm: dừng"})
+            break
         if act is None:
             steps.append({"step": k, "action": "invalid", "arg": json.dumps(data, ensure_ascii=False)[:160],
                           "result": "câu trả lời không hợp lệ: dừng"})
             break
         name, arg = act
+        tried.add((name, json.dumps(arg, ensure_ascii=False), s.page.url))
         st: dict[str, Any] = {"step": k, "action": name, "arg": arg if not isinstance(arg, tuple) else list(arg),
                               "url": s.page.url, "ok": False}
         steps.append(st)
@@ -1265,7 +1280,7 @@ def run_agent(s: Session, c: Capture, client: Any, urls: list[str], missing: lis
 def _act(s: Session, c: Capture, client: Any, name: str, arg: Any, menus: dict[str, Any], text: str,
          st: dict[str, Any]) -> str:
     if name == "open_link":
-        link = menus["links"][arg - 1]
+        link = next(x for x in menus["links"] if x["n"] == arg)
         st["arg"] = link["path"]
         status = s.open(link["href"])
         if status is None or status >= 400:
@@ -1284,7 +1299,7 @@ def _act(s: Session, c: Capture, client: Any, name: str, arg: Any, menus: dict[s
     if name == "click":
         s.page.locator(f'[data-mf-button="{arg}"]').first.click(timeout=5000, no_wait_after=False)
         s.page.wait_for_timeout(800)
-        st.update(ok=True, arg=menus["buttons"][arg - 1]["text"])
+        st.update(ok=True, arg=next(x for x in menus["buttons"] if x["n"] == arg)["text"])
         return "đã bấm"
     if name == "scroll":
         s.page.evaluate("d => scrollBy(0, (d === 'down' ? 0.9 : -0.9) * innerHeight)", arg)
@@ -1292,7 +1307,7 @@ def _act(s: Session, c: Capture, client: Any, name: str, arg: Any, menus: dict[s
         st["ok"] = True
         return "đã cuộn"
     if name == "capture_image":
-        im = menus["images"][arg - 1]
+        im = next(x for x in menus["images"] if x["n"] == arg)
         kept = fetch_pictures(s, c, [{"url": im["src"], "kind": "image", "source": "agent:image", "sel": im["sel"],
                                       "page": s.page.url, "alt": im["alt"]}], client)
         st.update(ok=bool(kept), arg=im["alt"] or im["src"][-60:])

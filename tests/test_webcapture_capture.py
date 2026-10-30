@@ -138,7 +138,13 @@ def test_open_graph_only_and_a_tiny_favicon(shop, tmp_path):
 def test_svg_logo_in_the_header(shop, tmp_path):
     base, _ = shop
     cap = W.capture([base + "/svglogo.html"], tmp_path, screenshots=False, improve=False)
-    assert cap["logo"]["source"] == "header:svg" and cap["logo"]["w"] >= 128
+    assert cap["logo"]["source"] == "header:logo" and cap["logo"]["w"] >= 128
+
+
+def test_text_wordmark_in_the_home_link(shop, tmp_path):
+    base, _ = shop
+    cap = W.capture([base + "/wordmark.html"], tmp_path, screenshots=False, improve=False)
+    assert cap["logo"]["source"] == "header:logo" and cap["logo"]["w"] > cap["logo"]["h"]
 
 
 def test_robots_disallow_is_obeyed(shop, tmp_path):
@@ -248,6 +254,17 @@ def test_site_reference_is_used_then_marked_stale(shop, tmp_path, fake_llm):
     fourth = W.capture([base + "/product.html"], tmp_path / "d", screenshots=False)
     assert fourth["reference"]["stale"] and fourth["reference"]["matched"] == 0
     assert W.delete_reference("127.0.0.1") and W.list_references() == []
+
+
+def test_agent_does_not_retry_a_picture(shop, tmp_path, fake_llm):
+    base, _ = shop
+    fake_llm(score=40, actions=[{"action": "scroll", "dir": "down"}, {"action": "scroll", "dir": "down"},
+                                {"action": "click", "n": 1}, {"action": "click", "n": 1}])
+    cap = W.capture([base + "/svglogo.html"], tmp_path, screenshots=False)
+    assert [s["action"] for s in cap["agent_steps"]][:2] == ["scroll", "scroll"]  # scrolling again is fine
+    menus = {"links": [], "buttons": [], "images": [{"n": 2}]}  # picture 1 was tried: left out of the menu
+    assert W.parse_action({"action": "capture_image", "n": 1}, menus) is None
+    assert W.parse_action({"action": "capture_image", "n": 2}, menus) == ("capture_image", 2)
 
 
 def test_parse_action_only_accepts_menu_items():

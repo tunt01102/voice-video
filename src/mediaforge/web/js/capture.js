@@ -28,7 +28,8 @@ function picCard(p, url, checked) {
 window.captureGate = (job, out) => {
   const r = job.result || {}, c = r.capture_data || {}, f = (job.files || {}).capture_data || {};
   const conf = c.confidence || {}, pics = c.pictures || [], facts = c.facts || [];
-  const missing = (conf.missing || []).map((m) => MISSING_VI[m] || m);
+  const missing = (conf.missing || []).map((m) => { const [k, ...rest] = m.split(":");
+    return MISSING_VI[m] || (rest.length && MISSING_VI[k.trim()] ? `${MISSING_VI[k.trim()]} (${rest.join(":").trim()})` : m); });
   const box = document.createElement("div");
   box.className = "gate cap-gate";
   const steps = c.agent_steps || [];
