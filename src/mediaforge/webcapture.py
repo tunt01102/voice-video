@@ -283,8 +283,8 @@ def robots_fetch(url: str) -> tuple[int, bytes]:
 
 # ------------------------------------------------------------------ facts (§4 "Facts, in order of trust")
 
-PRICE = re.compile(r"(?:\d[\d.,\s]{0,14}\d|\d)\s?(?:đ|₫|vnđ|vnd|usd|aud|\$|€|£)(?![a-z])|(?:\$|€|£|a\$|us\$)\s?\d[\d.,]*",
-                   re.I)
+PRICE = re.compile(r"(?:\d[\d.,\s]{0,14}\d|\d)\s?(?:đ|₫|vnđ|vnd|usd|aud|\$|€|£)(?![^\W\d_])|(?:\$|€|£|a\$|us\$)\s?\d[\d.,]*",
+                   re.I)  # a currency word must end there: "9 đánh giá" is not 9 đ
 FACT_CHARS = 300  # each fact is cut to this before it reaches an LLM (§6)
 
 
@@ -1274,7 +1274,9 @@ def run_agent(s: Session, c: Capture, client: Any, urls: list[str], missing: lis
             st["result"] = _act(s, c, client, name, arg, menus, text, st)
         except Exception as e:  # noqa: BLE001 — one failed action does not end the capture
             st["result"] = f"lỗi: {type(e).__name__}: {str(e)[:100]}"
-        missing = [m for m in checklist(c.data(urls, {}), c.want)[1] if m != "clean"]
+        # the checklist again; the LLM's own items stay until it answers "done" (no LLM score per step)
+        left = [m for m in checklist(c.data(urls, {}), c.want)[1] if m != "clean"]
+        missing = list(dict.fromkeys(left + [m for m in missing if m not in WANT_EN]))
 
 
 def _act(s: Session, c: Capture, client: Any, name: str, arg: Any, menus: dict[str, Any], text: str,

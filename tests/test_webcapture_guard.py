@@ -164,3 +164,10 @@ def test_own_sites_seed_clean_and_save():
     assert W.own_sites() == saved
     assert W.is_own("m.shop.vn") and not W.is_own("myshop.vn")
     W.save_own_sites(list(W.OWN_SITES_SEED))
+
+
+def test_price_pattern_needs_the_currency_word_to_end():
+    for ok in ("45.000đ", "Giá: 45.000 ₫", "$34.00", "25 USD", "1.900.000 VND"):
+        assert W.PRICE.search(ok), ok
+    for no in ("9 đánh giá thật", "3 đêm", "100% đúng", "2026"):
+        assert not W.PRICE.search(no), no

@@ -2,7 +2,8 @@
 // page it opened; defines window.__mf. Reads the page only, except: one consent-button click, hiding fixed overlays
 // before screenshots, and data-mf-* attributes that let Python address the elements it listed.
 (() => {
-  const PRICE = /(?:\d[\d.,\s]{0,14}\d|\d)\s?(?:đ|₫|vnđ|vnd|usd|aud|\$|€|£)(?![a-z])|(?:\$|€|£|a\$|us\$)\s?\d[\d.,]*/i;
+  // a currency word must end there: "9 đánh giá" is not 9 đ
+  const PRICE = /(?:\d[\d.,\s]{0,14}\d|\d)\s?(?:đ|₫|vnđ|vnd|usd|aud|\$|€|£)(?!\p{L})|(?:\$|€|£|a\$|us\$)\s?\d[\d.,]*/iu;
   const CONSENT_TEXT = ["accept", "accept all", "chấp nhận", "đồng ý", "ok", "got it", "đóng", "×", "x", "close",
     "allow all", "i agree", "tôi đồng ý", "đã hiểu"];
   const CONSENT_BOX = /cookie|consent|gdpr|modal|popup/i;
