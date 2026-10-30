@@ -1,6 +1,7 @@
 # SDD — Lấy thông tin và ảnh sản phẩm từ website cho video Motion (web capture)
 
-Status: **design only** (2026-10-31). Nothing built. Owner decisions received 2026-10-31: §10 (they change §2, §4, §11).
+Status: **built 2026-10-31** (all of §12.6, branch `feature/web-capture`; E2E on the three own sites, §13). Owner
+decisions 2026-10-31: §10 (they change §2, §4, §11). What changed while building it: §13.
 
 ## 1. Goal
 
@@ -232,3 +233,60 @@ is not in the owner's brief or the approved facts is flagged in the plan lint.
 4. Motion capture stage + gate; dashboard own-sites/reference card.
 5. Tạo mới / `create_video` capture stage.
 6. E2E on the three own sites, docs, merge, deploy.
+
+## 13. As built (2026-10-31)
+
+Code: `src/mediaforge/webcapture.py` (guard, robots, browser session, extraction, pictures, score, references, agent,
+gate helpers) and `webcapture.js` (in-page helpers). Motion: `motion.capture_stage` before the brief; videos:
+`pipelines.capture_for_video` before the plan. Dashboard: `web/js/capture.js` (gate + "Website của tôi" card). Tests:
+`tests/test_webcapture_guard.py` (unit), `tests/test_webcapture_capture.py` (fixture shop in `tests/fixtures/web/`,
+pictures generated at test time; fake LLM for score/agent/brief).
+
+Changes from the design, each found while building or in E2E:
+
+1. **Redirect hops (§4 Safety).** Checked on Playwright 1.64 (script in the session, 2026-10-31): a `route()` handler
+   sees only the first URL of a redirect chain, with `continue_()` and with `fetch()` + `fulfill()` alike, so a public
+   page redirecting to `127.0.0.1:8765` would have passed. `Session._route` therefore fetches every request itself one
+   hop at a time (`route.fetch(max_redirects=0)`), checks each hop before requesting it, and turns a navigation
+   redirect into a client-side `location.replace` (a new, routed request). Pictures and robots.txt go through
+   `http_get` (httpx, no automatic redirects, every hop checked). Tests: a sub-resource, a picture redirect and a link
+   that point at `localhost` are never requested.
+2. **robots.txt (§4).** `urllib.robotparser` is not used: it matches by prefix with the first rule winning and knows
+   neither `*` nor `$` (easyvisarun.com has `Disallow: /*?chat=`). `parse_robots`/`robots_allows` implement RFC 9309
+   §2.2.2 (longest match, Allow wins a tie, `*`, `$`, product-token groups combined). robots.txt is checked for every
+   page MediaForge opens (main-frame navigations), not for the pictures and scripts a page loads.
+3. **Logo (§4).** Two of the three own sites draw their logo in the page: an `<a class="…logo">` with a small SVG and a
+   wordmark (easyvisarun.com) and a text wordmark in the home link (tradeswomanmerch.com). Order now: JSON-LD
+   `Organization.logo` → apple-touch-icon / icon ≥ 128 px → header `<img>` named logo → **screenshot of the header
+   element named logo/brand, else the header's home link** → an SVG icon (the mark only). Smooth-scrolling pages left
+   a sticky header over the wrong content in the first E2E run; scrolls are instant and the page is back at the top
+   before every screenshot.
+4. **Price lines (§4 Facts 3).** A text price is a line of ≤ 40 characters and ≤ 6 words, and the currency word must end
+   there (`9 đánh giá thật` is not 9 đ). Without this, an injected sentence holding "1đ" became a price fact.
+5. **Checklist (§12.1).** "≥ 2 recommended pictures" counts product pictures, page pictures and product-block
+   screenshots; the hero screenshot does not (it is always there). The LLM's `missing` items are short Vietnamese
+   phrases "key: why" (shown in the gate); `clean` is checklist-only.
+6. **Agent (§12.2).** A noted fact must be a whole line of the page's text or at least half of one (a planted "1đ"
+   inside a sentence does not count), and a `price` note must look like a price line (4.). Pictures already tried are
+   left out of the menu, a repeated step (other than scrolling) stops the agent, and the LLM's missing items stay its
+   goal until it answers `done`. Valid actions are checked against the numbered menus; anything else stops it.
+7. **Number check (§6).** Opt-in: `normalise(numbers=…)` runs only for jobs that used a capture and never on a
+   brief the owner passes or edits. Numbers are compared as bare digits (`45.000đ` = `45000 VND`). Videos (§12.5):
+   lint `L6` flags a digit in the narration found in neither the brief nor the approved facts. Known limit: the
+   script writer often spells numbers out for the voice ("một triệu chín trăm nghìn"), which L6 does not read.
+8. **Own fields win (§6).** An owner `offer` removes the website's price facts from the brief prompt; the owner's
+   pictures and logo come before the captured ones.
+9. **prepare_video (§12.5)** captures without a gate (it is already a check step) and returns `media`; the dashboard
+   passes that, without `urls`, to the render.
+
+E2E 2026-10-31 (data-store copy, port 8766; Motion, review capture + brief, approved as recommended):
+
+| Site | Pages opened (agent) | Logo | Pictures kept | Confidence (checklist / LLM) | Video |
+|---|---|---|---|---|---|
+| aisme.vn (16:9, vi) | 1 + 4 by the agent (7 steps) | JSON-LD 512×512 | 2 (og:image, hero) | 87 / 80 | 17.5 s, 6 scenes, no number warning |
+| easyvisarun.com (9:16, vi) | 1 + 6 (8 steps) | header element 284×80 | 4 | 100 / 72 | 17.5 s, prices 1.900.000đ and 650.000đ from the site |
+| tradeswomanmerch.com (1:1, en) | 1 + 4 (8 steps) | header wordmark 292×88 | 4 (of 10) | 100 / 72 | 17.5 s, $34.00 / $64.00 from product pages |
+
+`prepare_video` (kind short) with easyvisarun.com: 4 captured pictures returned as `media`; the script used the
+site's steps and prices. The three own sites skipped robots.txt as decided (§10.2). A capture takes 1–3 minutes
+with the agent (LLM calls dominate). Not done: a full narrated-video render with captured media (GPU path unchanged).

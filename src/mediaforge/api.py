@@ -243,7 +243,7 @@ def create_app() -> FastAPI:
     def approve_stage(jid: str, body: dict[str, Any] = Body(default={})):
         """Continue a job waiting at a review step (SDD-review-upgrade §5.3).
 
-        body: {stage: plan|visuals|brief, brief? (motion), plan?: {title?, scenes?: [{narration?, visual_prompt?, from?}], art_direction?, hook?},
+        body: {stage: capture|plan|visuals|brief, capture? ({pictures, logo, facts}), brief? (motion), plan?: {title?, scenes?: [{narration?, visual_prompt?, from?}], art_direction?, hook?},
                pronunciations?: {term: reading}, verified_terms?: [term], english_terms?: [term], lexicon_voice?,
                from_owner?: bool, skip_rest?: bool}
         from_owner (the dashboard) saves the term answers to the lexicon; without it they apply to this job only.
@@ -270,6 +270,13 @@ def create_app() -> FastAPI:
                 if body.get(k):
                     params[k] = body[k]
         out = Path(job["result"]["out"])
+        if stage == "capture":  # web capture gate (docs/SDD-web-capture.md §3): pictures, logo, facts kept
+            from mediaforge import webcapture
+
+            try:
+                webcapture.apply_approval(out, body.get("capture"))
+            except (ValueError, KeyError, TypeError, OSError) as e:
+                raise HTTPException(400, f"bad capture edit: {e}") from e
         if stage == "brief" and body.get("brief"):  # motion video: the owner's edited brief (docs/SDD-motion.md)
             from mediaforge import motion
 
@@ -656,6 +663,36 @@ def create_app() -> FastAPI:
             return motion.palette_from_image(img, body.get("name"))
         except (UnidentifiedImageError, OSError) as e:
             raise HTTPException(400, f"not a picture: {e}") from e
+
+    # ---------------------------------------------------------------- web capture (docs/SDD-web-capture.md §12.4)
+    @app.get("/api/webcapture/own-sites")
+    def own_sites():
+        from mediaforge import webcapture
+
+        return {"sites": webcapture.own_sites()}
+
+    @app.put("/api/webcapture/own-sites")
+    def save_own_sites(body: dict[str, Any] = Body(...)):
+        """{sites: [domain]} — robots.txt is skipped on these sites and their subdomains (the SSRF guard still applies)."""
+        from mediaforge import webcapture
+
+        if not isinstance(body.get("sites"), list):
+            raise HTTPException(400, "sites must be a list of domains")
+        return {"sites": webcapture.save_own_sites(body["sites"])}
+
+    @app.get("/api/webcapture/sites")
+    def site_references():
+        from mediaforge import webcapture
+
+        return {"sites": webcapture.list_references()}
+
+    @app.delete("/api/webcapture/sites/{domain}")
+    def delete_site_reference(domain: str):
+        from mediaforge import webcapture
+
+        if not webcapture.delete_reference(domain):
+            raise HTTPException(404, "no reference for this site")
+        return {"deleted": domain}
 
     @app.get("/api/music")
     def list_music():

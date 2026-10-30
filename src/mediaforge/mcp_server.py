@@ -103,7 +103,8 @@ async def generate_image(prompt: str, aspect: str = "16:9", count: int = 1, styl
 async def prepare_video(brief: str | None = None, script: str | None = None, kind: str = "narrated",
                         lang: str = "auto", voice: str | None = None, seconds: int = 60, style: str = "cinematic",
                         slides_markdown: str | None = None, document: str | None = None,
-                        document_as: str = "brief", wait_seconds: float = 300) -> dict[str, Any]:
+                        document_as: str = "brief", urls: list[str] | None = None,
+                        wait_seconds: float = 300) -> dict[str, Any]:
     """Step 1 of a video: write the script and scan it for terms the TTS may misread (acronyms, foreign names,
     codes, symbols) BEFORE rendering.
 
@@ -117,10 +118,13 @@ async def prepare_video(brief: str | None = None, script: str | None = None, kin
     answered (manual / verified / English) keeps the owner's answer; the job report lists those in
     job_terms.kept_owner. Only answers the owner gives in the dashboard are saved.
     document / document_as / style: as in create_video.
+    urls: as in create_video (no capture gate here); the result's `media` lists the captured pictures: pass it to
+    create_video(media=...) with the plan_file, without urls.
     """
     return await _submit("prepare", {"brief": brief, "script": script, "kind": kind, "lang": lang, "voice": voice,
                                      "seconds": seconds, "style": style, "slides_markdown": slides_markdown,
-                                     "document": document, "document_as": document_as},
+                                     "document": document, "document_as": document_as,
+                                     **({"urls": urls} if urls else {})},
                          wait_seconds)
 
 
@@ -134,7 +138,8 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
                        english_terms: list[str] | None = None, karaoke: bool = True, document: str | None = None, document_as: str = "brief",
                        structure: str = "auto", cards: bool | None = None, critique: bool = True,
                        review: list[str] | None = None, slides_engine: str = "animated", theme: str = "midnight",
-                       one_voice: bool | None = None, wait_seconds: float = 0) -> dict[str, Any]:
+                       one_voice: bool | None = None, urls: list[str] | None = None, screenshots: bool = True,
+                       wait_seconds: float = 0) -> dict[str, Any]:
     """Create a narrated video with cloned voice, generated visuals and subtitles.
 
     kind: 'narrated' (16:9 AI visuals), 'short' (9:16 with karaoke subtitles), 'explainer' (slides).
@@ -162,6 +167,9 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
     ocean | paper | block8.
     one_voice: every sentence on one engine, chosen once for the video (VieNeu for Vietnamese under route 'best'),
     never switched during repair — no voice change mid-video. Default (None): on for Vietnamese, off otherwise.
+    urls: up to 3 web pages (the owner's own, or ones they may use) to take facts and pictures from before the
+    script (docs/SDD-web-capture.md): captured pictures follow `media`, facts are added to the brief as quoted
+    website facts. review=["capture", ...] lets the owner check them in the dashboard first.
     """
     return await _submit(kind, {"brief": brief, "script": script, "lang": lang, "voice": voice, "seconds": seconds,
                                 "style": style, "aspect": aspect, "music": music, "fx": _fx(pitch=pitch),
@@ -172,7 +180,8 @@ async def create_video(brief: str | None = None, script: str | None = None, kind
                                 "structure": structure, "critique": critique, "review": review or [],
                                 "slides_engine": slides_engine, "theme": theme,
                                 **({"cards": cards} if cards is not None else {}),
-                                **({"one_voice": one_voice} if one_voice is not None else {})},
+                                **({"one_voice": one_voice} if one_voice is not None else {}),
+                                **({"urls": urls, "screenshots": screenshots} if urls else {})},
                          wait_seconds)
 
 
@@ -313,7 +322,8 @@ async def motion_video(prompt: str | None = None, style: str = "auto", message: 
                        lang: str = "vi", logo: str | None = None, images: list[str] | None = None, music: str = "auto",
                        brief: dict[str, Any] | None = None, variables: dict[str, str] | None = None,
                        rows: list[dict[str, str]] | None = None, review: list[str] | None = None,
-                       alpha: bool = False, voice: str | None = None, wait_seconds: float = 0) -> dict[str, Any]:
+                       alpha: bool = False, voice: str | None = None, urls: list[str] | None = None,
+                       screenshots: bool = True, wait_seconds: float = 0) -> dict[str, Any]:
     """Motion-graphics video, style first (no voice): animated words, numbers, charts, logos and pictures + music,
     for ads, KPI clips, product intros, announcements, social posts (dashboard tab ✨ Motion; docs/SDD-motion.md).
 
@@ -326,12 +336,15 @@ async def motion_video(prompt: str | None = None, style: str = "auto", message: 
     (result.versions). review=["brief"] waits for the owner to confirm the brief in the dashboard. alpha=True also
     writes result.alpha: a transparent ProRes 4444 MOV (no sound) to lay over other footage. Own looks saved in the
     dashboard are valid style ids too (GET /api/motion/styles). voice: a voice-over read by a list_voices id or
-    "default" (none = text and music only); the brief then gets a spoken line per scene and scenes stretch to fit."""
+    "default" (none = text and music only); the brief then gets a spoken line per scene and scenes stretch to fit.
+    urls: up to 3 web pages (the owner's own, or ones they may use) to take facts, product pictures, screenshots
+    (screenshots=False: none) and a logo from, before the brief (docs/SDD-web-capture.md). Without review=["capture"]
+    the recommended pictures and every fact are used; with it the owner checks them in the dashboard first."""
     return await _submit("motion", {"prompt": prompt, "style": style, "message": message, "offer": offer,
                                     "audience": audience, "aspect": aspect, "seconds": seconds, "lang": lang,
                                     "logo": logo, "images": images, "music": music, "brief": brief,
                                     "variables": variables, "rows": rows, "review": review or [], "alpha": alpha,
-                                    "voice": voice},
+                                    "voice": voice, **({"urls": urls, "screenshots": screenshots} if urls else {})},
                    wait_seconds)
 
 

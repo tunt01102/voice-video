@@ -362,6 +362,46 @@ def run_subtitle(p: dict[str, Any], progress: Progress, job_id: str | None = Non
     return result
 
 
+def capture_for_video(p: dict[str, Any], out: Path, progress: Progress, review: set[str], approved: set[str], *,
+                      gate: bool = True) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Web capture before the plan (docs/SDD-web-capture.md §12.5): with `urls`, capture the pages (once per job), pause
+    at the capture gate when review has "capture", then the approved pictures follow the owner's own `media` and the
+    approved facts are added to the brief as quoted website facts. Returns (params, capture)."""
+    from mediaforge import webcapture as W
+
+    if not p.get("urls"):
+        return p, None
+    cf = out / "capture.json"
+    if cf.exists():
+        cap = json.loads(cf.read_text("utf-8"))
+    else:
+        cap = W.capture(p["urls"], out, screenshots=p.get("screenshots", True), want=W.want_of(p),
+                        progress=_sub(progress, 0.0, 0.05))
+    if not cap.get("approved"):
+        if gate and "capture" in review and "capture" not in approved:
+            raise AwaitApproval("capture", {"stage": "capture", "out": str(out), "kind": p.get("kind"), "capture": str(cf),
+                                            "capture_data": cap, "title": cap["pages"][0]["title"] if cap.get("pages")
+                                            else cap["urls"][0]})
+        cap = W.apply_approval(out, None)
+    pics, _logo, facts = W.approved_material(cap)
+    owner = [str(x) for x in p.get("media") or [] if x]
+    q = {**p, "media": owner + [x["file"] for x in pics if x["file"] not in owner], "website_facts": facts}
+    if facts and not (p.get("script") or p.get("slides_markdown") or p.get("plan_file")):
+        q["brief"] = ((p.get("brief") or "").strip() or "Video giới thiệu nội dung của các trang web dưới đây.") + \
+            "\n\n" + W.facts_block(facts) + "\nUse only numbers given above or in these website facts."
+    return q, cap
+
+
+def number_findings(plan_data: dict[str, Any], p: dict[str, Any]) -> list[dict[str, Any]]:
+    """Numbers in the narration that are in neither the owner's brief nor the approved website facts (§12.5)."""
+    from mediaforge import webcapture as W
+
+    allowed = W.number_set([p.get("brief"), p.get("script")] + [f["value"] for f in p.get("website_facts") or []])
+    return [{"code": "L6", "scene": i, "index": 0, "sentence": sc["narration"], "fix": "check",
+             "message": f"Số “{n}” không có trong ý tưởng của bạn hay thông tin lấy từ web — kiểm tra lại"}
+            for i, sc in enumerate(plan_data["scenes"]) for n in W.unsourced(sc.get("narration", ""), allowed)]
+
+
 def make_plan(p: dict[str, Any], kind: str, *, style: str, seconds: int) -> tuple[dict[str, Any], str]:
     """The script and visual prompts of a video: an earlier plan, slides, the owner's script, or the LLM."""
     p = apply_document(p)
@@ -415,6 +455,8 @@ def make_plan(p: dict[str, Any], kind: str, *, style: str, seconds: int) -> tupl
     if p.get("document_warnings"):
         plan_data["document_warnings"] = p["document_warnings"]
     lint_plan(plan_data, lang)
+    if p.get("website_facts") and not p.get("plan_file"):
+        plan_data["lint"] += number_findings(plan_data, p)
     return plan_data, lang
 
 
@@ -762,6 +804,13 @@ def run_video(p: dict[str, Any], progress: Progress, job_id: str | None = None) 
         if stage in review and stage not in approved:
             raise AwaitApproval(stage, {"stage": stage, "out": str(out), "kind": kind, "aspect": aspect, **partial})
 
+    # ---- 0. web capture (kept across the approval re-runs)
+    p, cap = capture_for_video(p, out, progress, review, approved)
+    if cap:
+        report["capture"] = {"pictures": len((cap.get("kept") or {}).get("pictures") or []),
+                             "facts": len(p.get("website_facts") or []),
+                             "confidence": (cap.get("confidence") or {}).get("score"), "robots": cap.get("robots")}
+
     # ---- 1. plan
     if state.get("plan", {}).get("done"):
         plan_data = json.loads((out / "plan.json").read_text("utf-8"))
@@ -869,6 +918,7 @@ def run_prepare(p: dict[str, Any], progress: Progress, job_id: str | None = None
 
     kind = p.get("kind", "narrated")
     out = _out_dir("plans", job_id)
+    p, cap = capture_for_video(p, out, progress, set(), set(), gate=False)
     progress(0.05, "viết kịch bản")
     plan_data, lang = make_plan(p, kind, style=p.get("style", "cinematic"),
                                 seconds=int(p.get("seconds", 45 if kind == "short" else 75)))
@@ -880,7 +930,8 @@ def run_prepare(p: dict[str, Any], progress: Progress, job_id: str | None = None
     progress(1.0, "done")
     return {"plan_file": str(plan_file), "title": plan_data.get("title"), "lang": lang, "kind": kind,
             "scenes": [sc["narration"] for sc in plan_data["scenes"]], "candidates": candidates,
-            "lint": plan_data.get("lint", [])}
+            "lint": plan_data.get("lint", []),
+            **({"media": p["media"], "capture": str(out / "capture.json")} if cap else {})}
 
 
 def run_resubtitle(p: dict[str, Any], progress: Progress, job_id: str | None = None) -> dict[str, Any]:

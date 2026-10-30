@@ -53,6 +53,9 @@
     <label class="f-text">Nội dung
       <textarea name="text" rows="7" placeholder="Nhập văn bản (Tiếng Việt / English / trộn lẫn)…"></textarea>
     </label>
+    <label class="f-video">Lấy từ website (tuỳ chọn, 1–3 địa chỉ, mỗi dòng một)
+      <textarea name="urls" rows="2" placeholder="VD: https://cua-hang.vn/san-pham/ao-thun"></textarea>
+      <small class="muted">MediaForge lấy tên, giá, mô tả và ảnh từ trang; ảnh dùng cho các cảnh đầu, thông tin được thêm vào ý tưởng để Claude viết kịch bản. Bật “Duyệt từng bước” để xem lại trước.</small></label>
     <div class="f-text doc-import">
       <label class="btn-file">📄 Nhập từ Word/PDF<input type="file" id="doc-file" accept=".docx,.pdf,.doc,.rtf,.odt" hidden></label>
       <span class="muted" id="doc-status">.docx · .pdf · .doc/.rtf/.odt — chữ và hình ảnh trong file được giữ lại</span>
@@ -210,6 +213,10 @@
         <label>Độ dài: <output id="mo-sec-out">20 giây</output>
           <input type="range" name="seconds" min="8" max="60" step="1" value="20"></label>
       </div>
+      <label>Lấy từ website (tuỳ chọn, 1–3 địa chỉ, mỗi dòng một)
+        <textarea name="urls" rows="2" placeholder="VD: https://quan-moc.vn/san-pham/cold-brew (trang sản phẩm) và https://quan-moc.vn (để lấy logo)"></textarea>
+        <small class="muted">MediaForge mở trang, lấy tên, giá, mô tả, ảnh sản phẩm và logo; bạn duyệt trước khi Claude viết brief. Chỉ dùng trang của bạn hoặc trang bạn được phép dùng.</small></label>
+      <label class="check"><input type="checkbox" name="screenshots" checked> Chụp ảnh màn hình trang (cảnh đầu trang và khối sản phẩm)</label>
       <div class="grid2">
         <label>Logo (tuỳ chọn)<input type="file" name="logo" accept="image/*"></label>
         <label>Ảnh sản phẩm, ảnh chụp màn hình (tuỳ chọn, tối đa 8)<input type="file" name="images" accept="image/*" multiple></label>
@@ -217,6 +224,7 @@
         <label>Giọng đọc thuyết minh<select name="voice" id="mo-voice"><option value="">Không đọc (chỉ chữ và nhạc)</option></select>
           <small class="muted">Giọng lấy từ tab Giọng nói. Có giọng đọc thì Claude viết thêm lời đọc cho từng cảnh; cảnh tự dài ra cho vừa lời.</small></label>
       </div>
+      <label class="check"><input type="checkbox" name="review_capture" checked> Khi lấy từ website: cho tôi duyệt ảnh và thông tin trước</label>
       <label class="check"><input type="checkbox" name="review" checked> Cho tôi duyệt brief (thông điệp, các cảnh, chữ) trước khi dựng</label>
       <label class="check"><input type="checkbox" name="alpha"> Xuất thêm bản MOV nền trong suốt (ProRes 4444, không tiếng) để chồng lên video khác — dựng lâu hơn, file nặng ~40 MB mỗi giây</label>
       <div class="actions"><button class="primary" id="mo-submit">✨ Viết brief</button><span class="muted" id="mo-hint"></span></div>
@@ -303,6 +311,16 @@
       <pre>curl -s localhost:8765/api/jobs?wait=true -H 'content-type: application/json' \
   -d '{"type":"tts","params":{"text":"Xin chào","lang":"vi"}}'</pre>
       <p>API docs: <a href="/docs" target="_blank">/docs</a></p>
+    </div>
+    <div class="card" id="web-sites">
+      <h3>Website của tôi</h3>
+      <p class="muted">Trang của bạn: khi lấy ảnh và thông tin cho video, MediaForge bỏ qua robots.txt trên các trang này và
+        tên miền con của chúng (vẫn chặn địa chỉ nội bộ như mọi trang khác). Mỗi dòng một tên miền.</p>
+      <textarea id="own-sites" rows="4" aria-label="Danh sách website của tôi"></textarea>
+      <div class="actions"><button type="button" class="ghost small" id="own-sites-save">Lưu danh sách</button></div>
+      <h3>Mẫu đã lưu theo trang</h3>
+      <p class="muted">Khi bạn duyệt ảnh và thông tin của một trang, MediaForge nhớ chỗ đã tìm thấy chúng để lần sau lấy nhanh và đủ hơn. Mẫu quá 90 ngày hoặc không còn khớp thì bị bỏ qua.</p>
+      <div id="site-refs"></div>
     </div>
   </div>
 </section>
@@ -429,5 +447,6 @@
 <script type="module" src="/js/lessons.js"></script>
 <script type="module" src="/js/jobpage.js"></script>
 <script type="module" src="/js/motion.js"></script>
+<script type="module" src="/js/capture.js"></script>
 </body>
 </html>

@@ -15,7 +15,7 @@ const HIDDEN_TYPES = ["enrol", "rerender", "export", "prepare", "resubtitle", "r
 $$("#tabs button").forEach((b) => b.onclick = () => {
   $$("#tabs button").forEach((x) => x.classList.toggle("active", x === b));
   $$(".tab").forEach((t) => t.classList.toggle("active", t.id === "tab-" + b.dataset.tab));
-  ({ jobs: loadJobs, voices: loadVoices, lexicon: loadLexicon, system: () => { loadHealth(); window.loadIncidents?.(); },
+  ({ jobs: loadJobs, voices: loadVoices, lexicon: loadLexicon, system: () => { loadHealth(); window.loadIncidents?.(); window.loadWebSites?.(); },
      lessons: () => window.loadLessons?.(), motion: () => window.loadMotion?.(), recite: syncSongForms, sing: syncSongForms })[b.dataset.tab]?.();
   history.replaceState(null, "", "#" + b.dataset.tab);
 });
@@ -143,6 +143,13 @@ async function buildParams(f) {
       if (f.music.value === "__upload") { if (f.music_file.files[0]) params.music = await upload(f.music_file.files[0]); }
       else if (f.music.value) params.music = f.music.value;
       if ($("#gates").checked) params.review = ["plan", "visuals"];
+      const urls = f.urls.value.split(/\s+/).map((x) => x.trim()).filter(Boolean);
+      if (urls.length > 3) throw new Error("Tối đa 3 địa chỉ web");
+      if (urls.length) {
+        params.urls = urls;
+        if (params.review) params.review.unshift("capture");
+        if (src === "brief" && !params.brief.trim()) params.brief = "Video giới thiệu nội dung trang web.";
+      }
     }
     if (kind !== "present" && (params.text ?? params.prompt ?? params.brief ?? params.script ?? params.slides_markdown ?? params.media ?? "").length === 0) throw new Error("Thiếu nội dung");
     return { type, params };
@@ -291,10 +298,11 @@ function markTerms(text, terms) {
   for (const m of text.matchAll(re)) { out += esc(text.slice(last, m.index)) + `<mark>${esc(m[0])}</mark>`; last = m.index + m[0].length; }
   return out + esc(text.slice(last));
 }
-const LINT_FIX = { join: "đã tự nối câu", strip: "đã tự bỏ", phrases: "sẽ đọc theo cụm", tts: "sẽ đọc như mô tả" };
+const LINT_FIX = { join: "đã tự nối câu", strip: "đã tự bỏ", phrases: "sẽ đọc theo cụm", tts: "sẽ đọc như mô tả", check: "bạn kiểm tra lại" };
 function lintHtml(findings) {
   if (!findings || !findings.length) return "";
-  return `<div class="lint"><b>Kiểm tra kịch bản:</b> ${findings.length} điểm (máy tự xử lý, không cần làm gì)<ul>${findings.map((f) =>
+  const own = findings.filter((f) => f.fix === "check").length;
+  return `<div class="lint"><b>Kiểm tra kịch bản:</b> ${findings.length} điểm (${own ? `${own} điểm cần bạn kiểm tra, còn lại máy tự xử lý` : "máy tự xử lý, không cần làm gì"})<ul>${findings.map((f) =>
     `<li><span class="badge">${esc(f.code)}</span> ${f.scene != null ? `cảnh ${f.scene + 1}: ` : ""}${esc(f.message)}${f.fix ? ` <small class="muted">— ${esc(LINT_FIX[f.fix] || f.fix)}</small>` : ""}</li>`).join("")}</ul></div>`;
 }
 function renderPrescan(job, type, params) {
@@ -356,7 +364,8 @@ function renderPrescan(job, type, params) {
       const scope = $(".ps-scope", box).value;
       if (Object.keys(readings).length || verified.length || english.length)
         await api("/api/lexicon/terms" + (scope ? "?voice=" + encodeURIComponent(scope) : ""), { method: "POST", body: JSON.stringify({ lang: r.lang, terms: readings, verified, english }) });
-      await submitJob(type, { ...params, lang: r.lang, plan_file: r.plan_file });
+      const { urls, ...rest } = params;  // the pictures were captured already: their files go in as media
+      await submitJob(type, { ...rest, lang: r.lang, plan_file: r.plan_file, ...(r.media ? { media: r.media } : {}) });
       st.textContent = `Đã lưu ${Object.keys(readings).length} cách đọc, ${verified.length} từ đúng, ${english.length} từ đọc tiếng Anh — đang dựng video bên dưới.`;
     } catch (err) { b.disabled = false; st.textContent = ""; toast(err.message); }
   };
