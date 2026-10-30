@@ -93,7 +93,8 @@ function editor(s) {
     $(".mo-ed-st", box).textContent = "Đang đọc màu…";
     try {
       const d = await api("/api/motion/styles/from-image", { method: "POST", body: JSON.stringify({ image: await upload(f), name: $(".mo-ed-name", box).value.trim() || null }) });
-      editor({ ...d, id: s.id });
+      const cur = read();  // only the colours come from the picture; fonts, shapes and motion stay as set
+      editor({ ...s, ...cur, name: cur.name || d.name, colors: d.colors, look: d.look });
       $(".mo-ed-pal", $("#mo-editor")).innerHTML = `<span class="muted">Màu trong ảnh:</span> ` + d.palette.map((p) =>
         `<i title="${esc(p.color)} · ${Math.round(p.share * 100)}%" style="background:${esc(p.color)}"></i>`).join("");
     } catch (err) { toast(err.message); $(".mo-ed-st", box).textContent = ""; }

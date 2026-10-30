@@ -130,7 +130,8 @@ includes the colours and fonts). Deleting a look an old brief names falls back t
 model, cheap enough for a request handler). bg = commonest colour; ink = the swatch (or near-black/white) with the best
 contrast on bg; accents = the most saturated swatches at least 60 RGB units from bg and ink (weighted by share);
 the accent is pushed until bg-coloured button text reads at 3:1. Fonts and the rest come from Đêm neon (dark bg) or
-Doanh nghiệp (light bg). Nothing is saved: the draft opens in the editor. Not done: a look from a website or video, an
+Doanh nghiệp (light bg) in the API draft; the dashboard editor takes only its colours (fonts, shapes and motion
+the owner already set are kept). Nothing is saved until the owner presses save. Not done: a look from a website or video, an
 LLM naming the mood.
 
 **GIF.** An `export.FORMATS` entry (all video jobs): fps 15, long side ≤ 720 px, `palettegen stats_mode=diff` +
