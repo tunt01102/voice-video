@@ -23,6 +23,7 @@ cloned voice**, in **English and Vietnamese**.
 | **Review & upgrade (v1.6, design)** — safe learning from mistakes (lessons store, reading gate, owner "nghe đúng rồi" + ratings), script lint, staged/resumable video pipeline with storyboard, art direction and mood-driven motion/music, Studio dashboard ([SDD-review-upgrade.md](SDD-review-upgrade.md)) | |
 | Video styles: **narrated + AI visuals (16:9)**, **vertical shorts (9:16)**, **slide / screen explainer** | |
 | **Thuyết trình kèm ghi hình** (Canva-style present & record): the owner's slides + own recording → camera bubble, cleaned/re-toned real voice, subtitles, music ([SDD-present-record.md](SDD-present-record.md)) | |
+| **Motion videos, style first** (tab ✨ Motion): pick a look → describe → confirm a brief → animated words, numbers, charts, logos, pictures + music; variables re-render without the LLM; one MP4 per CSV row ([SDD-motion.md](SDD-motion.md)) | |
 | Optional AI video clips (LTX-2 MLX), off by default | |
 | REST API + SSE, MCP server for Claude sessions, web dashboard | |
 
@@ -141,6 +142,7 @@ src/mediaforge/
   llm.py             Claude CLI → Ollama fallback; JSON-mode helpers
   models.py          lazy model cache with eviction (LRU by memory class)
   text/normalize.py  language detection, VI/EN normalisation, lexicon, sentence split
+  motion.py          motion videos, style first: styles, brief (LLM → normalise), variables, batch rows → video/scene_web/motion.html (SDD-motion.md)
   present.py         thuyết trình kèm ghi hình: slides (pypdfium2 PDF) + the owner's recording → bubble video (SDD-present-record.md)
   text/documents.py  Word/PDF import → text with [ảnh N] markers + pictures (SDD-doc-import-preview-chibi.md; PDF fix: SDD-pdf-import-fix.md)
   tts/base.py        TTSEngine protocol + SynthResult
@@ -372,6 +374,10 @@ result exposes as `report.music_credit` and the dashboard shows under the video.
   1080p requested, 8 Mbps) while the owner clicks through the server-rendered slide PNGs. The take plus its click
   timeline (`slide_track`, going back allowed, never re-timed) is the master. "Làm đẹp lại" re-renders the look and
   sound from it. Export `mp4_fhd` guarantees 1920×1080 — [SDD-live-studio.md](SDD-live-studio.md).
+- **Motion video** (job `motion`, 2026-10-30): no voice; 8 own styles, an LLM brief the owner confirms (stage `brief`),
+  one `motion.html` scene per brief scene (hook/title/stat/list/chart/quote/image/cta) through the same Chromium
+  renderer, cross-faded by `compose` with the music bed; `{{variables}}`, re-render and CSV batch without the LLM —
+  [SDD-motion.md](SDD-motion.md).
 - **Animated explainer** (`slides_engine="animated"`, 2026-10-15): each slide is an HTML scene — title and bullets
   animated with GSAP SplitText (2026-10-16; effect from the scene mood: rise / blur / wave / type, or plan `text_fx`),
   bullets arriving across the narration, count-up `stat` slides, rotating three.js `3d` slides, ambient drift,
@@ -402,7 +408,7 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 | `GET/POST /api/voices`, `GET/PATCH/DELETE /api/voices/{id}` | voice profiles |
 | `POST /api/voices/{id}/samples` | multipart upload/recording → processed sample |
 | `GET/PUT /api/voices/{id}/lexicon`, `GET/PUT /api/lexicon` | pronunciation lexicons |
-| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip, prepare, sing, recite, eval` (+ internal `rerender`, `export`, `resubtitle`, `repronounce`, `blend`, `restage`, `revoice`); video params `review: [plan, visuals]` pause the job in status `waiting`; `one_voice` (default on for vi videos); `pronunciations` / `verified_terms` / `english_terms` are job-local (§5.2) |
+| `POST /api/jobs` `{type, params}` | type ∈ `tts, image, subtitle, video, short, explainer, clip, prepare, sing, recite, eval, present, motion` (+ internal `rerender`, `export`, `resubtitle`, `repronounce`, `blend`, `restage`, `revoice`); video params `review: [plan, visuals]` pause the job in status `waiting`; `one_voice` (default on for vi videos); `pronunciations` / `verified_terms` / `english_terms` are job-local (§5.2) |
 | `POST /api/jobs/{id}/approve` (`from_owner: true` = dashboard answers, saved to the lexicon), `/restage`, `/sentences/{i}/accept`, `GET/POST /api/jobs/{id}/rating`, `GET /api/lessons`, `PATCH /api/lessons/{id}`, `GET /api/insights`, `GET /api/incidents`, `POST /api/lint` | review steps, partial re-renders, owner judgement and the lessons store ([SDD-review-upgrade.md](SDD-review-upgrade.md) §11.1) |
 | `GET /api/poems`, `GET /api/sing/moods` | Tang poem catalogue (Ngâm thơ tab); moods/styles for sing/recite |
 | `POST /api/jobs/{id}/sentences/{i}/rerender` | `{file?, lang?}` — AI re-renders sentence *i* as a take (recording = guide) |
@@ -419,12 +425,13 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 | `POST /api/uploads` | upload media for later jobs |
 | `POST /api/documents` | multipart Word/PDF → `{text with [ảnh N] markers, images, title, warnings}`; video params take `doc_images` |
 | `GET /api/music`, `GET /api/music/{id}/audio` | background-music library / preview |
+| `GET /api/motion/styles` | motion looks (colours, fonts, mood) and aspects; the `motion` brief gate is `POST /api/jobs/{id}/approve {stage: "brief", brief}` ([SDD-motion.md](SDD-motion.md)) |
 | `GET/POST /api/blends`, `PATCH /api/blends/{id}` | pha giọng: blend profiles (`{owner, partner, amount}` → calibration job); partner needs `consent` (`PATCH /api/voices/{id}`) |
 
 `?wait=true` on `POST /api/jobs` blocks until completion (≤ 600 s) for simple clients.
 
 ### 9.2 MCP (streamable HTTP at `http://127.0.0.1:8765/mcp`)
-Tools: `speak`, `present_recording`, `blend_voices`, `restage_video`, `revoice_video`, `rate_job`, `list_lessons`, `generate_image`, `prepare_video`, `create_video`, `resubtitle_video`, `repronounce_video`, `recite_poem`, `sing_song`, `list_poems`,
+Tools: `speak`, `present_recording`, `motion_video`, `blend_voices`, `restage_video`, `revoice_video`, `rate_job`, `list_lessons`, `generate_image`, `prepare_video`, `create_video`, `resubtitle_video`, `repronounce_video`, `recite_poem`, `sing_song`, `list_poems`,
 `transcribe_subtitles`, `job_status`, `list_voices`, `list_jobs`, `list_music`. Long jobs return a job id
 immediately plus a `wait_seconds` option; results return absolute file paths (sessions
 run on the same machine). `create_video`/`prepare_video` take `document` (+ `document_as` brief|script) to use a
@@ -448,6 +455,7 @@ CLI talks to the running server when available, otherwise runs in-process.
 | P7 Animated slides | explainer `slides_engine="animated"`: HTML scene per slide (anime.js 4.5 timelines, three.js r186 `3d` layout, GSAP 3.15 SplitText text effects from the scene mood) rendered frame-exact by Playwright Chromium → FFmpeg (§7.2); project skills in `.claude/skills` ([SKILLS-REVIEW.md](SKILLS-REVIEW.md)); licence decisions 2026-10-16 (Remotion + GSAP allowed, MPL-2.0 deferred) | Done + deployed 2026-10-16 (main 4061863). Owner decision 2026-10-16: `animated` is the default for MCP `create_video` and the CLI (`--static` for stills); the dashboard already defaulted to it; a REST/plan call without `slides_engine` stays `static` |
 | P8 Thuyết trình kèm ghi hình | job `present`: PDF/pictures/markdown slides + the owner's recording → camera bubble, cleaned voice, subtitles, music; editable slide times; MCP `present_recording`, CLI `present` ([SDD-present-record.md](SDD-present-record.md)); dep pypdfium2 (BSD-3/Apache-2.0) | Done + deployed 2026-10-17 |
 | P9 Phòng quay thuyết trình | live studio in the dashboard: camera + mic + click-stamped slide timeline (`slide_track`) → master; ✨ Làm đẹp lại; `POST /api/present/slides`; export MP4 Full HD 1080p ([SDD-live-studio.md](SDD-live-studio.md)) | Done + deployed 2026-10-18 |
+| P10 Motion videos | tab ✨ Motion, job `motion`, MCP `motion_video`: native take on the Motion Studio skill (HyperFrames not adopted: agent-built compositions, Node + Chrome toolchain, telemetry) ([SDD-motion.md](SDD-motion.md)) | Done + deployed 2026-10-31 |
 | P4 Later | install ltx-2-mlx and enable clips; music generation (ACE-Step, Apache-2.0 — evaluate); speaker-similarity score (VieNeu's own speaker encoder first; WavLM-SV rejected, ECAPA a candidate — §11.4 of SDD-review-upgrade) to auto-pick the best reference and check take timbre; fine-tune on `corrections/`; broader automated tests (unit tests for guided repair/export exist in `tests/`); React upgrade | Open |
 
 **Owner action required:** record real samples (dashboard → Voices → Record). Until then

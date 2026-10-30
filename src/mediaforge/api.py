@@ -243,7 +243,7 @@ def create_app() -> FastAPI:
     def approve_stage(jid: str, body: dict[str, Any] = Body(default={})):
         """Continue a job waiting at a review step (SDD-review-upgrade §5.3).
 
-        body: {stage: plan|visuals, plan?: {title?, scenes?: [{narration?, visual_prompt?, from?}], art_direction?, hook?},
+        body: {stage: plan|visuals|brief, brief? (motion), plan?: {title?, scenes?: [{narration?, visual_prompt?, from?}], art_direction?, hook?},
                pronunciations?: {term: reading}, verified_terms?: [term], english_terms?: [term], lexicon_voice?,
                from_owner?: bool, skip_rest?: bool}
         from_owner (the dashboard) saves the term answers to the lexicon; without it they apply to this job only.
@@ -270,6 +270,13 @@ def create_app() -> FastAPI:
                 if body.get(k):
                     params[k] = body[k]
         out = Path(job["result"]["out"])
+        if stage == "brief" and body.get("brief"):  # motion video: the owner's edited brief (docs/SDD-motion.md)
+            from mediaforge import motion
+
+            try:
+                motion.apply_brief_edits(out, body["brief"])
+            except (ValueError, KeyError, TypeError) as e:
+                raise HTTPException(400, f"bad brief edit: {e}") from e
         if stage == "plan" and body.get("plan"):
             try:
                 plan_data = pipelines.apply_plan_edits(out, body["plan"])
@@ -613,6 +620,12 @@ def create_app() -> FastAPI:
         return {"moods": list(melody.MOODS), "styles": ["ngam", "hat"]}
 
     # ---------------------------------------------------------------- music library
+    @app.get("/api/motion/styles")
+    def motion_styles():
+        from mediaforge import motion
+
+        return {"styles": motion.styles(), "aspects": list(motion.ASPECTS), "default": motion.DEFAULT_STYLE}
+
     @app.get("/api/music")
     def list_music():
         return [{**t, "url": f"/api/music/{t['id']}/audio" if t["available"] else None} for t in music.list_tracks()]

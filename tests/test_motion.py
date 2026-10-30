@@ -1,0 +1,160 @@
+"""Motion videos (docs/SDD-motion.md): brief clamping, variables, styles, the brief gate, and — when Chromium is
+available — a real two-scene render plus one spreadsheet row."""
+
+import json
+from pathlib import Path
+
+import pytest
+
+from mediaforge import motion
+from mediaforge import pipelines as P
+from mediaforge.video import animate
+
+BRIEF = {
+    "title": "Cold brew {{product}}", "summary": "Giới thiệu món mới.", "music_mood": "jazz",
+    "variables": [
+        {"id": "headline", "label": "Tiêu đề", "type": "text", "value": "Cà phê ủ lạnh mới"},
+        {"id": "Price", "label": "Giá", "type": "text", "value": "45.000đ"},
+        {"id": "product", "label": "Tên món", "type": "text", "value": "Đêm"},
+        {"id": "accent", "label": "Màu nhấn", "type": "color", "value": "#ff0000"},
+        {"id": "bad_colour", "label": "Màu sai", "type": "color", "value": "red"},
+        {"id": "headline", "label": "trùng", "type": "text", "value": "x"},
+    ],
+    "scenes": [
+        {"kind": "hook", "seconds": 3, "headline": "{{headline}}", "sub": "Món {{product}}", "note": "Chữ bật lên"},
+        {"kind": "chart", "seconds": 4, "headline": "Không số", "bars": [{"label": "A", "value": "nhiều"}]},
+        {"kind": "image", "seconds": 3, "image": 3, "headline": "Ảnh"},
+        {"kind": "explode", "seconds": 3, "headline": "Lạ {{unknown}}"},
+        {"kind": "list", "seconds": 3, "headline": "Vì sao", "items": []},
+        {"kind": "stat", "seconds": 3},
+        {"kind": "cta", "seconds": 4, "headline": "Đặt ngay", "button": "Chỉ {{price}}"},
+    ],
+}
+
+
+def test_normalise_clamps_to_what_the_renderer_draws():
+    b = motion.normalise(BRIEF, seconds=20, images=1)
+    assert [v["id"] for v in b["variables"]] == ["headline", "price", "product", "accent"]  # slugged, deduped, bad colour out
+    kinds = [s["kind"] for s in b["scenes"]]
+    # chart without numbers, image out of range, unknown kind, empty list → title; a stat with no value too; none dropped
+    assert kinds == ["hook", "title", "title", "title", "title", "cta"]
+    assert b["scenes"][3]["headline"] == "Lạ"  # undeclared {{unknown}} removed
+    assert any("unknown" in w for w in b["warnings"])
+    assert b["scenes"][-1]["button"] == "Chỉ {{price}}"
+    assert b["music_mood"] is None  # not a library mood
+    assert all(motion.MIN_SCENE <= s["seconds"] <= motion.MAX_SCENE for s in b["scenes"])
+    assert abs(sum(s["seconds"] for s in b["scenes"]) - 20) < 0.5
+
+
+def test_normalise_rejects_an_empty_brief():
+    with pytest.raises(motion.BriefError):
+        motion.normalise({"scenes": [{"kind": "title"}]}, seconds=10, images=0)
+
+
+def test_values_by_id_or_label_and_empty_keeps_default():
+    b = motion.normalise(BRIEF, seconds=20, images=0)
+    vals = motion.values_of(b, {"Giá": "39.000đ", "headline": "", "accent": "blue", "nope": "x"})
+    assert vals["price"] == "39.000đ" and vals["headline"] == "Cà phê ủ lạnh mới" and vals["accent"] == "#ff0000"
+    sc = motion.resolve_scene(b["scenes"][-1], vals)
+    assert sc["button"] == "Chỉ 39.000đ"
+    assert motion.fill("{{product}} · {{missing}}", vals) == "Đêm ·"
+
+
+def test_color_variable_named_after_a_role_overrides_the_style():
+    b = motion.normalise(BRIEF, seconds=20, images=0)
+    st = motion.style_of("giay-muc")
+    cols = motion.tokens(st, motion.values_of(b, {"accent": "#00ff00"}), b)
+    assert cols["accent"] == "#00ff00" and cols["bg"] == st["colors"]["bg"]
+
+
+def test_styles_and_aspects():
+    assert motion.style_of("nope")["id"] == motion.DEFAULT_STYLE and motion.style_of("auto")["id"] == motion.DEFAULT_STYLE
+    for s in motion.styles():
+        assert s["motion"] in motion.TEXT_FX and set(s["fonts"]) == {"head", "body", "label"}
+        assert {"bg", "ink", "accent", "accent2", "surface", "muted"} <= set(s["colors"])
+    assert all(w % 2 == 0 and h % 2 == 0 for w, h in motion.ASPECTS.values())  # videotoolbox needs even sizes
+
+
+def test_brief_prompt_offers_styles_only_on_auto():
+    st = motion.style_of(None)
+    auto = motion.brief_prompt({"prompt": "x", "style": "auto"}, st, [], False)
+    fixed = motion.brief_prompt({"prompt": "x", "style": "khoi-mau"}, motion.style_of("khoi-mau"), [], False)
+    assert "khoi-mau (" in auto and '"style"' in auto
+    assert "already fixed" in fixed and "giay-muc (" not in fixed
+
+
+def test_brief_gate_waits_then_owner_edits_apply(tmp_path, monkeypatch):
+    p = {"brief": BRIEF, "seconds": 20, "review": ["brief"], "style": "khoi-mau", "music": "none"}
+    with pytest.raises(P.AwaitApproval) as w:
+        motion.run(p, lambda *_: None, job_id="gate-test")
+    res = w.value.result
+    assert res["stage"] == "brief" and res["style"] == "khoi-mau" and Path(res["out"], "brief.json").exists()
+    edited = {**res["brief_data"], "title": "Mới", "scenes": res["brief_data"]["scenes"][:2]}
+    b = motion.apply_brief_edits(Path(res["out"]), edited)
+    assert b["title"] == "Mới" and len(b["scenes"]) == 2 and b["style"] == "khoi-mau"
+    assert json.loads(Path(res["out"], "brief.json").read_text())["title"] == "Mới"
+
+
+@pytest.mark.skipif(not animate.available(), reason="Playwright/Chromium not installed")
+def test_real_render_with_a_spreadsheet_row():
+    brief = {"title": "T", "variables": [{"id": "price", "label": "Giá", "type": "text", "value": "45.000đ"}],
+             "scenes": [{"kind": "stat", "seconds": 2, "value": "1.200+", "label": "khách"},
+                        {"kind": "cta", "seconds": 2, "headline": "Đặt ngay", "button": "Chỉ {{price}}"}]}
+    r = motion.run({"brief": brief, "aspect": "4:5", "music": "none", "style": "keo-ngot",
+                    "rows": [{"name": "Giảm giá", "Giá": "39.000đ"}]}, lambda *_: None, job_id="render-test")
+    assert Path(r["video"]).exists() and abs(r["duration"] - 4) < 0.7
+    assert r["versions"][0]["name"] == "giam_gia" and r["versions"][0]["values"]["price"] == "39.000đ"
+    assert Path(r["versions"][0]["video"]).exists()
+    # the stat scene does not read the variable: drawn once, reused by the row (3 clips, not 4)
+    assert len(list(Path(r["video"]).parent.glob("scenes/*.mp4"))) == 3
+    from mediaforge import audio as A
+    import subprocess
+    from mediaforge.config import settings
+    wh = subprocess.run([settings.ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+                         "-of", "csv=p=0", r["video"]], capture_output=True, text=True).stdout.strip()
+    assert wh.startswith("1080,1350")
+    assert A.probe_duration(r["versions"][0]["video"]) > 3
+
+
+def test_auto_style_comes_from_the_llm_brief(monkeypatch):
+    seen = {}
+
+    def fake(prompt, system=None, **kw):
+        seen["prompt"] = prompt
+        return {**BRIEF, "style": "den-vang"}, "fake"
+
+    monkeypatch.setattr(motion.llm, "complete_json", fake)
+    with pytest.raises(P.AwaitApproval) as w:
+        motion.run({"prompt": "quảng cáo nước hoa", "style": "auto", "seconds": 15, "review": ["brief"]},
+                   lambda *_: None, job_id="auto-style")
+    assert w.value.result["style"] == "den-vang" and w.value.result["brief_data"]["llm"] == "fake"
+    assert "quảng cáo nước hoa" in seen["prompt"]
+
+
+def test_a_value_may_name_another_variable():
+    b = motion.normalise({"variables": [{"id": "brand", "label": "Quán", "value": "Mộc"},
+                                        {"id": "button", "label": "Nút", "value": "Ghé {{brand}} {{button}}"}],
+                          "scenes": [{"kind": "cta", "headline": "x", "button": "{{button}}"}]}, seconds=5, images=0)
+    assert motion.values_of(b)["button"] == "Ghé Mộc"
+    assert motion.values_of(b, {"Quán": "Lá"})["button"] == "Ghé Lá"
+
+
+@pytest.mark.skipif(not animate.available(), reason="Playwright/Chromium not installed")
+def test_picture_scene_keeps_its_type_size_in_portrait(tmp_path):
+    from PIL import Image
+    pic = tmp_path / "p.png"
+    Image.new("RGB", (1600, 1000), (200, 80, 40)).save(pic)
+    files = {"img1": str(pic), "logo": str(pic)}
+    st = motion.style_of("neon-dem")
+    W, H = motion.ASPECTS["9:16"]
+    with animate.renderer(W, H) as r:
+        r.files = files
+        for sc in ({"kind": "image", "image": 1, "headline": "Ly cold brew trên quầy gỗ"},
+                   {"kind": "cta", "headline": "Đặt ngay", "button": "Mua", "sub": "x.vn"}):
+            d = motion.scene_data(sc, st, st["colors"], index=0, count=1, width=W, height=H, seconds=3, files=files)
+            r.page.goto(f"{animate.ORIGIN}/motion.html")
+            r.page.wait_for_function("window.__ready === true")
+            r.page.evaluate("d => window.__setup(d)", d)
+            u = r.page.evaluate("() => document.querySelector('#c').style.getPropertyValue('--u')")
+            assert u == "", f"{sc['kind']}: content shrunk to --u={u}"  # fits at full size: the fit loop never ran
+            assert r.page.evaluate("() => [...document.images].every(i => i.complete && i.naturalWidth > 0)")

@@ -8,7 +8,7 @@ const api = async (path, opts = {}) => {
 };
 const toast = (msg) => { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 3500); };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const TYPE_LABEL = { tts: "Giọng nói", image: "Ảnh", subtitle: "Phụ đề", short: "Short", narrated: "Video", explainer: "Explainer", screen: "Screen", video: "Video", enrol: "Thu mẫu", rerender: "Đọc lại câu", export: "Xuất file", prepare: "Chuẩn bị kịch bản", resubtitle: "Dựng lại phụ đề", repronounce: "Sửa phát âm", sing: "Hát", recite: "Ngâm thơ", restage: "Dựng lại cảnh", revoice: "Đổi giọng", eval: "Kiểm thử giọng", present: "Thuyết trình" };
+const TYPE_LABEL = { tts: "Giọng nói", image: "Ảnh", subtitle: "Phụ đề", short: "Short", narrated: "Video", explainer: "Explainer", screen: "Screen", video: "Video", enrol: "Thu mẫu", rerender: "Đọc lại câu", export: "Xuất file", prepare: "Chuẩn bị kịch bản", resubtitle: "Dựng lại phụ đề", repronounce: "Sửa phát âm", sing: "Hát", recite: "Ngâm thơ", restage: "Dựng lại cảnh", revoice: "Đổi giọng", eval: "Kiểm thử giọng", present: "Thuyết trình", motion: "Motion" };
 const HIDDEN_TYPES = ["enrol", "rerender", "export", "prepare", "resubtitle", "repronounce", "blend", "restage", "revoice"];
 
 // ------------------------------------------------------------------ tabs
@@ -16,7 +16,7 @@ $$("#tabs button").forEach((b) => b.onclick = () => {
   $$("#tabs button").forEach((x) => x.classList.toggle("active", x === b));
   $$(".tab").forEach((t) => t.classList.toggle("active", t.id === "tab-" + b.dataset.tab));
   ({ jobs: loadJobs, voices: loadVoices, lexicon: loadLexicon, system: () => { loadHealth(); window.loadIncidents?.(); },
-     lessons: () => window.loadLessons?.(), recite: syncSongForms, sing: syncSongForms })[b.dataset.tab]?.();
+     lessons: () => window.loadLessons?.(), motion: () => window.loadMotion?.(), recite: syncSongForms, sing: syncSongForms })[b.dataset.tab]?.();
   history.replaceState(null, "", "#" + b.dataset.tab);
 });
 
@@ -413,6 +413,7 @@ function renderOutputs(job, out) {
   const r = job.result || {};
   if (fileUrl(f.video) && Array.isArray(r.words) && r.plan) out.append(renderResubtitle(job));
   const isSong = ["sing", "recite"].includes(job.type);
+  if (job.type === "motion") { window.motionResult && out.append(window.motionResult(job)); return; }
   if (!isSong && (fileUrl(f.video) || (fileUrl(f.audio) && Array.isArray(r.sentences)))) out.append(renderExport(job));
   if (Array.isArray(r.sentences) && r.sentences.length) out.append(renderRepronounce(job));
   if (Array.isArray(r.sentences) && r.sentences.length) out.append(renderQA(job));

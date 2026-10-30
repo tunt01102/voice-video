@@ -34,7 +34,8 @@ voice, cleaned and re-toned, and adds subtitles and soft background music.
 
 ## 3. Pipeline (`present.run`)
 
-1. Validate the input: recording, `layout`, `camera_pos`, `aspect`. A missing library track fails fast.
+1. Validate the input: recording, `layout`, `camera_pos`, `aspect`. A missing library track fails fast. `aspect` is any key of
+   `compose.RESOLUTIONS` (16:9, 9:16, 1:1, and 4:5 = 1080×1350 since 2026-10-31, added for Motion; not render-tested for a talk).
 2. `load_slides` → frame-sized PNGs in `outputs/presentations/<job>/slides/`.
 3. `process_voice` → `voice.wav` (48 kHz mono, exactly the recording's length).
 4. Whisper on the processed voice, then align it to the script → `words` → subtitles (SRT/VTT/karaoke ASS).

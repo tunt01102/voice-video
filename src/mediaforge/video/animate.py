@@ -68,22 +68,27 @@ def _nfc(text: str) -> str:
 
 
 class Renderer:
-    """One Chromium for a whole video; `scene()` renders one slide to an MP4."""
+    """One Chromium for a whole video; `scene()` renders one slide to an MP4, `render()` any scene_web page."""
 
     def __init__(self, page: Any, width: int, height: int):
         self.page, self.width, self.height = page, width, height
+        self.files: dict[str, str] = {}  # extra local files a page may load as /file/<key> (motion: logos, photos)
 
     def scene(self, out: Path, *, title: str, bullets: list[str], seconds: float, theme: str = "midnight",
               layout: str = "bullets", shape: str = "globe", text_fx: str = "rise", stat: dict | None = None, background: str | None = None,
               counter: str = "", footer: str = "", progress: tuple[float, float] = (0.0, 0.0), fps: int = 30) -> Path:
         self._background = background if background and Path(background).is_file() else None
-        self.page.goto(f"{ORIGIN}/scene.html")
-        self.page.wait_for_function("window.__ready === true")
         data = {"title": _nfc(title), "bullets": [_nfc(b) for b in bullets[:5]],
                 "text_fx": text_fx if text_fx in TEXT_FX else "rise", "seconds": seconds, "width": self.width, "height": self.height,
                 "colors": colors(theme), "layout": layout if layout in LAYOUTS else "bullets",
                 "shape": shape if shape in SHAPES else "globe", "stat": stat, "background": bool(self._background),
                 "counter": counter, "footer": footer, "progress0": progress[0], "progress1": progress[1]}
+        return self.render("scene.html", data, out, seconds=seconds, fps=fps)
+
+    def render(self, page: str, data: dict[str, Any], out: Path, *, seconds: float, fps: int = 30) -> Path:
+        """Any page under scene_web with the same contract (`__setup(data)` once, `__seek(t)` per frame) → MP4."""
+        self.page.goto(f"{ORIGIN}/{page}")
+        self.page.wait_for_function("window.__ready === true")
         self.page.evaluate("d => window.__setup(d)", data)
         frames = max(int(round(seconds * fps)), 2)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -108,6 +113,8 @@ class Renderer:
         path = route.request.url.removeprefix(ORIGIN).split("?")[0]
         if path == "/bg" and self._background:
             f = Path(self._background)
+        elif path.startswith("/file/") and path[6:] in self.files:
+            f = Path(self.files[path[6:]])
         elif path.startswith("/font/"):
             f = slides.FONT_BOLD if path.endswith("bold.ttf") else slides.FONT_REG
         else:
