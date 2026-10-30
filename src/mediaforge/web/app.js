@@ -805,20 +805,79 @@ function cloneJob(job) {
   if (VIDEO_KINDS.includes(job.type)) { $("#gates").checked = (p.review || []).length > 0; gateUI(); }
   toast("Đã điền lại thiết lập — sửa nội dung rồi bấm tạo");
 }
-let jobsCache = [];
-function renderJobList() {
-  const q = ($("#jobs-search").value || "").trim().toLowerCase();
-  const list = $("#jobs-list"); list.innerHTML = "";
-  const hay = (j) => [j.result?.title, j.params?.brief, j.params?.script, j.params?.text, j.params?.prompt, j.params?.slides_markdown].join(" ").toLowerCase();
-  jobsCache.filter((j) => !HIDDEN_TYPES.includes(j.type) && !j.params?.preview && (!q || hay(j).includes(q))).forEach((j) => { list.append(renderJob(j, { folded: true })); if (["queued", "running"].includes(j.status)) followJob(j.id); });
-  if (!list.children.length) list.innerHTML = `<p class="muted">${q ? "Không thấy job nào khớp." : "Chưa có job nào."}</p>`;
+// Jobs tab: server-side pages (GET /api/jobs/page) filtered by status, text and a local day / week (Monday first) /
+// month / year around the date picked; ◀ ▶ step one period.
+const JOBS_PAGE = 20;
+let jobsPage = 0, jobsSearchTimer = null;
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function jobsAnchor() {
+  const v = $("#jobs-date").value;
+  return v ? new Date(+v.slice(0, 4), +v.slice(5, 7) - 1, +v.slice(8, 10)) : new Date();
+}
+function periodRange(kind, d) {
+  const y = d.getFullYear(), m = d.getMonth(), day = d.getDate();
+  if (kind === "day") return [new Date(y, m, day), new Date(y, m, day + 1)];
+  if (kind === "week") { const s = day - (d.getDay() + 6) % 7; return [new Date(y, m, s), new Date(y, m, s + 7)]; }
+  if (kind === "month") return [new Date(y, m, 1), new Date(y, m + 1, 1)];
+  return [new Date(y, 0, 1), new Date(y + 1, 0, 1)];
+}
+function periodLabel(kind, [a, b]) {
+  const last = new Date(b.getFullYear(), b.getMonth(), b.getDate() - 1);
+  if (kind === "day") return a.toLocaleDateString("vi-VN", { weekday: "long", day: "numeric", month: "numeric", year: "numeric" });
+  if (kind === "week") return `Tuần ${a.toLocaleDateString("vi-VN", { day: "numeric", month: "numeric" })} – ${last.toLocaleDateString("vi-VN")}`;
+  if (kind === "month") return `Tháng ${a.getMonth() + 1}/${a.getFullYear()}`;
+  return `Năm ${a.getFullYear()}`;
+}
+function stepPeriod(n) {
+  const kind = $("#jobs-period").value, d = jobsAnchor();
+  const next = kind === "day" ? new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
+    : kind === "week" ? new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7 * n)
+    : kind === "month" ? new Date(d.getFullYear(), d.getMonth() + n, 1) : new Date(d.getFullYear() + n, 0, 1);
+  $("#jobs-date").value = ymd(next); jobsPage = 0; loadJobs();
+}
+function renderPager(total) {
+  const pages = Math.max(1, Math.ceil(total / JOBS_PAGE)), pager = $("#jobs-pager");
+  pager.hidden = total <= JOBS_PAGE;
+  if (pager.hidden) { pager.innerHTML = ""; return; }
+  // first, last, and two around the current page; gaps as …
+  const want = [...new Set([0, pages - 1, jobsPage - 2, jobsPage - 1, jobsPage, jobsPage + 1, jobsPage + 2])]
+    .filter((i) => i >= 0 && i < pages).sort((a, b) => a - b);
+  let html = `<button class="ghost small" data-p="${jobsPage - 1}" ${jobsPage ? "" : "disabled"}>‹ Trước</button>`, prev = -1;
+  for (const i of want) {
+    if (i > prev + 1) html += `<span class="muted">…</span>`;
+    html += `<button class="ghost small ${i === jobsPage ? "active" : ""}" data-p="${i}" ${i === jobsPage ? 'aria-current="page"' : ""}>${i + 1}</button>`;
+    prev = i;
+  }
+  html += `<button class="ghost small" data-p="${jobsPage + 1}" ${jobsPage < pages - 1 ? "" : "disabled"}>Sau ›</button>
+    <small class="muted">${jobsPage * JOBS_PAGE + 1}–${Math.min(total, (jobsPage + 1) * JOBS_PAGE)} / ${total} job</small>`;
+  pager.innerHTML = html;
+  $$("button[data-p]", pager).forEach((b) => b.onclick = () => { jobsPage = +b.dataset.p; loadJobs().then(() => $("#tab-jobs").scrollIntoView({ block: "start" })); });
 }
 async function loadJobs() {
-  const status = $("#jobs-filter").value;
-  jobsCache = await api("/api/jobs?limit=100" + (status ? "&status=" + status : ""));
-  renderJobList();
+  const kind = $("#jobs-period").value, q = ($("#jobs-search").value || "").trim();
+  $("#jobs-when").hidden = !kind;
+  const qs = new URLSearchParams({ offset: jobsPage * JOBS_PAGE, limit: JOBS_PAGE, hide: HIDDEN_TYPES.join(",") });
+  if ($("#jobs-filter").value) qs.set("status", $("#jobs-filter").value);
+  if (q) qs.set("q", q);
+  if (kind) {
+    if (!$("#jobs-date").value) $("#jobs-date").value = ymd(new Date());
+    const range = periodRange(kind, jobsAnchor());
+    qs.set("since", range[0].getTime() / 1000); qs.set("until", range[1].getTime() / 1000);
+    $("#jobs-range").textContent = periodLabel(kind, range);
+  }
+  const r = await api("/api/jobs/page?" + qs);
+  if (!r.jobs.length && jobsPage > 0 && r.total) { jobsPage = Math.ceil(r.total / JOBS_PAGE) - 1; return loadJobs(); }  // page emptied (deletes)
+  const list = $("#jobs-list"); list.innerHTML = "";
+  r.jobs.forEach((j) => { list.append(renderJob(j, { folded: true })); if (["queued", "running"].includes(j.status)) followJob(j.id); });
+  if (!r.jobs.length) list.innerHTML = `<p class="muted">${q || kind || $("#jobs-filter").value ? "Không thấy job nào khớp." : "Chưa có job nào."}</p>`;
+  renderPager(r.total);
 }
-$("#jobs-filter").onchange = loadJobs; $("#jobs-refresh").onclick = loadJobs; $("#jobs-search").oninput = renderJobList;
+const jobsFirstPage = () => { jobsPage = 0; loadJobs(); };
+$("#jobs-filter").onchange = jobsFirstPage; $("#jobs-period").onchange = jobsFirstPage; $("#jobs-date").onchange = jobsFirstPage;
+$("#jobs-refresh").onclick = () => loadJobs();
+$("#jobs-search").oninput = () => { clearTimeout(jobsSearchTimer); jobsSearchTimer = setTimeout(jobsFirstPage, 300); };
+$("#jobs-prev").onclick = () => stepPeriod(-1); $("#jobs-next").onclick = () => stepPeriod(1);
+$("#jobs-now").onclick = () => { $("#jobs-date").value = ymd(new Date()); jobsFirstPage(); };
 
 // ------------------------------------------------------------------ voices
 let voices = [], selVoice = null, prompts = { vi: [], en: [] };

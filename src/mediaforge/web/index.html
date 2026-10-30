@@ -240,11 +240,22 @@
 <!-- ============================== JOBS -->
 <section id="tab-jobs" class="tab">
   <div class="toolbar">
-    <select id="jobs-filter" aria-label="Lọc theo trạng thái"><option value="">Tất cả</option><option>queued</option><option>running</option><option>waiting</option><option>done</option><option>failed</option></select>
+    <select id="jobs-filter" aria-label="Lọc theo trạng thái"><option value="">Mọi trạng thái</option><option>queued</option><option>running</option><option>waiting</option><option>done</option><option>failed</option><option>cancelled</option></select>
     <input id="jobs-search" type="search" placeholder="Tìm theo tiêu đề / nội dung…" aria-label="Tìm job">
     <button id="jobs-refresh" class="ghost">↻ Làm mới</button>
   </div>
+  <div class="toolbar jobs-period">
+    <select id="jobs-period" aria-label="Lọc theo thời gian"><option value="">Mọi lúc</option><option value="day">Theo ngày</option>
+      <option value="week">Theo tuần</option><option value="month">Theo tháng</option><option value="year">Theo năm</option></select>
+    <span class="jobs-when" id="jobs-when" hidden>
+      <button type="button" class="ghost small" id="jobs-prev" aria-label="Kỳ trước">◀</button>
+      <input type="date" id="jobs-date" aria-label="Ngày trong kỳ cần xem">
+      <button type="button" class="ghost small" id="jobs-next" aria-label="Kỳ sau">▶</button>
+      <button type="button" class="ghost small" id="jobs-now">Hiện tại</button>
+      <b id="jobs-range"></b></span>
+  </div>
   <div id="jobs-list" class="jobs"></div>
+  <nav class="pager" id="jobs-pager" aria-label="Chuyển trang"></nav>
 </section>
 
 <!-- ============================== VOICES -->

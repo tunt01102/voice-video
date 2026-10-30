@@ -142,6 +142,37 @@ def list_jobs(limit: int = 50, status: str | None = None, type_: str | None = No
         return [_row(r) for r in c.execute(q, args).fetchall()]  # type: ignore[misc]
 
 
+def page_jobs(*, offset: int = 0, limit: int = 20, status: str | None = None, since: float | None = None,
+              until: float | None = None, hide_types: tuple[str, ...] = (), q: str = "") -> tuple[list[dict[str, Any]], int]:
+    """One page of the dashboard's job list, newest first, and how many jobs match: status, created_at in [since,
+    until), types left out, preview jobs left out, q (case-insensitive) in the title or the text the owner wrote.
+    Search and the preview check run in Python on the rows SQL kept (a few thousand at most)."""
+    sql, args = "SELECT * FROM jobs WHERE 1=1", []
+    if status:
+        sql += " AND status=?"
+        args.append(status)
+    if since is not None:
+        sql += " AND created_at>=?"
+        args.append(since)
+    if until is not None:
+        sql += " AND created_at<?"
+        args.append(until)
+    if hide_types:
+        sql += f" AND type NOT IN ({','.join('?' * len(hide_types))})"
+        args += list(hide_types)
+    q = q.strip().casefold()
+    with connect() as c:
+        rows = [_row(r) for r in c.execute(sql + " ORDER BY created_at DESC", args).fetchall()]
+    jobs = [j for j in rows if j and not j["params"].get("preview") and (not q or q in _haystack(j))]
+    return jobs[offset:offset + limit], len(jobs)
+
+
+def _haystack(j: dict[str, Any]) -> str:
+    p = j["params"]
+    return " ".join(str(x or "") for x in ((j["result"] or {}).get("title"), p.get("brief"), p.get("script"),
+                                          p.get("text"), p.get("prompt"), p.get("slides_markdown"))).casefold()
+
+
 def queued_ids() -> list[str]:
     with connect() as c:
         return [r[0] for r in c.execute("SELECT id FROM jobs WHERE status='queued' ORDER BY created_at").fetchall()]

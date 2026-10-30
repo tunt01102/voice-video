@@ -358,3 +358,11 @@ form.inline button { white-space: nowrap; }
 .job.folded { padding-top: 10px; padding-bottom: 10px; margin-bottom: 8px; }
 .job-fold { transition: transform .15s; }
 .job.folded .job-fold { transform: rotate(-90deg); }
+/* Jobs tab: period filter and pages */
+.jobs-period { align-items: center; }
+.jobs-when { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.jobs-when input[type=date] { width: auto; }
+.jobs-when b { font-size: 14px; margin-left: 4px; }
+.pager { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0 20px; }
+.pager button.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.pager small { margin-left: 8px; }

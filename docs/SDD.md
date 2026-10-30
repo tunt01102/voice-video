@@ -426,6 +426,7 @@ Uses: scene planning, image prompts, respellings for pronunciation repair, trans
 | `POST /api/jobs/{id}/export` | `{selection: {i: take_id}, format}` — mp4 (default), mov, mkv, webm, mp3, wav, m4a |
 | `GET /api/export-formats`, `GET /api/voices/{id}/corrections` | format catalogue; a voice's sentence guides |
 | `GET /api/jobs`, `GET /api/jobs/{id}` | list / detail (status, progress, result, report) |
+| `GET /api/jobs/page` | Jobs tab: `{jobs, total}` newest first; `offset`, `limit` (≤ 100), `status`, `since`/`until` (unix s, the dashboard's local day / week from Monday / month / year), `hide` (types), `q` (title and owner text, case-insensitive) |
 | `GET /api/jobs/{id}/events` | SSE progress stream |
 | `POST /api/jobs/{id}/cancel`, `DELETE /api/jobs/{id}` | control |
 | `GET /files/{path}` | download outputs (path-confined to `data/`) |

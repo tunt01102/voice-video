@@ -110,6 +110,15 @@ def create_app() -> FastAPI:
     def list_jobs(limit: int = 50, status: str | None = None, type: str | None = None):
         return [_public_job(j) for j in db.list_jobs(limit, status, type)]
 
+    @app.get("/api/jobs/page")  # before /api/jobs/{jid}
+    def page_jobs(offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100), status: str | None = None,
+                  since: float | None = None, until: float | None = None, hide: str = "", q: str = ""):
+        """The Jobs tab: one page of jobs and the total. since/until: unix seconds (the dashboard computes the
+        owner's local day/week/month/year); hide: comma-separated job types left out."""
+        jobs, total = db.page_jobs(offset=offset, limit=limit, status=status or None, since=since, until=until,
+                                   hide_types=tuple(t for t in hide.split(",") if t), q=q)
+        return {"jobs": [_public_job(j) for j in jobs], "total": total, "offset": offset, "limit": limit}
+
     @app.get("/api/jobs/{jid}")
     def get_job(jid: str):
         job = db.get_job(jid)
