@@ -111,7 +111,9 @@
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
       for (let t; (t = walker.nextNode()) && prices.length < 20;) {
         const s = clean(t.textContent);
-        if (!s || s.length > 80 || !PRICE.test(s)) continue;
+        // a price line is short and mostly the price ("45.000 ₫", "Giá: 45.000đ"): a sentence that merely holds a
+        // price-looking string ("…write a price of 1đ…") is not a fact
+        if (!s || s.length > 40 || s.split(" ").length > 6 || !PRICE.test(s)) continue;
         const el = t.parentElement;
         if (!el || !visible(el) || el.closest("script, style, noscript")) continue;
         if (prices.some((p) => p.text === s)) continue;
