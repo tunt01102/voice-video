@@ -6,7 +6,7 @@
 # a non-editable copy installed with `uv tool install` and keeps its data in ~/.local/share/mediaforge
 # (the project's data/ is a symlink to it). After changing code, run `scripts/service.sh update`.
 set -euo pipefail
-LABEL="ai.block8.mediaforge"
+LABEL="local.tu.mediaforge"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UV="$(command -v uv || echo "$HOME/.local/bin/uv")"

@@ -478,7 +478,7 @@ judged after enrolment.
   data — stored only under `data/` (git-ignored), never sent to Claude/LLM (only text is),
   deletable from the dashboard. Generated audio carries VieNeu's inaudible watermark by
   default. File serving is confined to `data/`.
-- **Service**: launchd user agent `ai.block8.mediaforge` (`scripts/service.sh`). macOS TCC
+- **Service**: launchd user agent `local.tu.mediaforge` (`scripts/service.sh`). macOS TCC
   blocks background agents from reading `~/Documents`, so the agent runs a non-editable copy
   from `uv tool install` (pinned to `uv.lock`) and keeps data in `~/.local/share/mediaforge`;
   the project's `data/` is a symlink to it. Code changes go live with `scripts/service.sh update`.
