@@ -104,8 +104,18 @@ class JobRunner:
     def _loop(self) -> None:
         from mediaforge import pipelines
 
+        from mediaforge import models
+        from mediaforge.config import settings
+
         while True:
-            _, _, jid = self.q.get()
+            try:
+                _, _, jid = self.q.get(timeout=60)
+            except queue.Empty:
+                try:
+                    models.evict_idle(settings.model_idle_seconds)
+                except Exception:  # noqa: BLE001 — never let cleanup kill the worker
+                    log.exception("idle model eviction failed")
+                continue
             job = db.get_job(jid)
             if not job or job["status"] != "queued":
                 continue
@@ -139,6 +149,11 @@ class JobRunner:
                 self._cancel.discard(jid)
                 self.current = None
                 self._done(jid)
+                if job["type"] == "image":
+                    try:
+                        models.unload("image:")  # Flux/zimage is the heaviest model and reloads in ~1 s
+                    except Exception:  # noqa: BLE001
+                        log.exception("image model unload failed")
 
 
 runner = JobRunner()

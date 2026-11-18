@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 
 from mediaforge import audio as A
+from mediaforge import models
 from mediaforge.config import settings
 from mediaforge.text.normalize import qa_tokens
 
@@ -45,6 +46,7 @@ def transcribe(src: str | Path | np.ndarray, lang: str | None = None, sr: int = 
         kw["initial_prompt"] = initial_prompt
     if temperature is not None:
         kw["temperature"] = temperature
+    models.touch("asr:whisper")  # mlx_whisper caches the model itself; let idle eviction release it
     r = mlx_whisper.transcribe(audio16, **kw)
     words = [
         Word(w["word"].strip(), float(w["start"]), float(w["end"]))

@@ -141,7 +141,7 @@ src/mediaforge/
   db.py              SQLite: jobs, voices, assets
   jobs.py            queue, GPU worker thread, progress events, restart recovery
   llm.py             Claude CLI → Ollama fallback; JSON-mode helpers
-  models.py          lazy model cache with eviction (LRU by memory class)
+  models.py          lazy model cache; the worker frees models idle > MEDIAFORGE_MODEL_IDLE_SECONDS (600, 0 = off) and image models after each image job
   text/normalize.py  language detection, VI/EN normalisation, lexicon, sentence split
   motion.py          motion videos, style first: styles, brief (LLM → normalise), variables, batch rows → video/scene_web/motion.html (SDD-motion.md)
   webcapture.py      web capture: SSRF guard (every hop), RFC 9309 robots + own sites, guarded Chromium session, JSON-LD/OG/text facts, pictures, logo, confidence, site references, guarded agent (SDD-web-capture.md); webcapture.js = in-page helpers

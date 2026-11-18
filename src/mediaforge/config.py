@@ -45,6 +45,8 @@ class Settings:
     qa_max_wer_en: float = field(default_factory=lambda: float(_env("qa_max_wer_en", "0.10")))
     # ACE-Step 1.5 sidecar (own venv; scripts/install_ace_step.sh) — optional "AI phối khí" accompaniment.
     ace_step_root: Path = field(default_factory=lambda: Path(_env("ace_step_root", "~/.local/share/mediaforge-sidecars/ace-step")).expanduser())
+    # Free cached models unused for this many seconds (checked when the job queue is idle); 0 disables.
+    model_idle_seconds: int = field(default_factory=lambda: int(_env("model_idle_seconds", "600")))
     qa_max_attempts: int = field(default_factory=lambda: int(_env("qa_max_attempts", "4")))
     # Web capture (docs/SDD-web-capture.md §9): hosts the SSRF guard lets through although they resolve to a private
     # address. Test-only (the fixture shop on 127.0.0.1); empty in normal use.

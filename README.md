@@ -392,7 +392,7 @@ else's voice needs recorded consent (Giọng nói tab). MCP: `revoice_video(job_
 scripts/service.sh status | restart | logs | uninstall
 scripts/service.sh update                                 # after changing code: reinstall + restart
 uv run mediaforge doctor
-curl -X POST localhost:8765/api/models/unload            # free GPU memory
+curl -X POST localhost:8765/api/models/unload            # free GPU memory now (idle models are also freed after 10 min: MEDIAFORGE_MODEL_IDLE_SECONDS)
 ```
 
 Configuration uses environment variables:
